@@ -12,36 +12,45 @@ WORK = ROOT / 'work'
 EXPECTED_SIZE = 139944
 EXPECTED_SHA256 = '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb'
 
-# The uploaded 1.0.12 snapshot remains immutable evidence. A fresh 2026-08-10
-# adversarial review found that its CI action references had become stale and
-# were tag-pinned. Materialization therefore performs narrowly scoped,
-# deterministic certification repairs only after the original archive passes
-# its exact size/SHA-256 check. All product validation/mutation/release gates
-# run on the resulting derived tree.
+# The uploaded 1.0.12 snapshot is immutable evidence. Fresh certification found
+# two CI-environment issues after that snapshot was reviewed: stale/tag-pinned
+# first-party Actions and fresh runners that do not guarantee ffmpeg/ffprobe.
+# Materialization repairs only those reviewed CI surfaces after verifying the
+# source archive byte-for-byte. Every product/release gate runs on the derived
+# tree and is free to reject it.
 ACTION_MIGRATIONS = {
     'actions/checkout@v6.0.2': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',  # v7.0.1
     'actions/setup-node@v6.4.0': 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',  # v6.4.0
     'actions/upload-artifact@v7.0.1': 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',  # v7.0.1
     'actions/download-artifact@v8.0.1': 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',  # v8.0.1
 }
-
-# The source's audit/mutation rules also contain regex-literal spellings of the
-# same refs. Rewrite those exact spellings as well so the safeguards validate
-# the derived, SHA-pinned workflow rather than continuing to bless old tags.
 ESCAPED_ACTION_MIGRATIONS = {
     old.replace('/', r'\/').replace('.', r'\.'):
         new.replace('/', r'\/')
     for old, new in ACTION_MIGRATIONS.items()
 }
 
+
+def fail(message: str) -> None:
+    raise SystemExit(message)
+
+
+def read_utf8(path: pathlib.Path) -> str:
+    try:
+        return path.read_text(encoding='utf-8')
+    except UnicodeDecodeError as exc:
+        fail(f'Expected UTF-8 text file could not be decoded: {path}')
+        raise exc
+
+
 if not ARCHIVE.is_file():
-    raise SystemExit(f'Missing reviewed CI source snapshot: {ARCHIVE}')
+    fail(f'Missing reviewed CI source snapshot: {ARCHIVE}')
 raw = ARCHIVE.read_bytes()
 actual_sha = hashlib.sha256(raw).hexdigest()
 if len(raw) != EXPECTED_SIZE:
-    raise SystemExit(f'CI source snapshot size mismatch: expected {EXPECTED_SIZE}, got {len(raw)}')
+    fail(f'CI source snapshot size mismatch: expected {EXPECTED_SIZE}, got {len(raw)}')
 if actual_sha != EXPECTED_SHA256:
-    raise SystemExit(f'CI source snapshot SHA-256 mismatch: expected {EXPECTED_SHA256}, got {actual_sha}')
+    fail(f'CI source snapshot SHA-256 mismatch: expected {EXPECTED_SHA256}, got {actual_sha}')
 
 if WORK.exists():
     shutil.rmtree(WORK)
@@ -51,28 +60,28 @@ work_resolved = WORK.resolve()
 with tarfile.open(ARCHIVE, mode='r:xz') as tf:
     members = tf.getmembers()
     if not members:
-        raise SystemExit('CI source snapshot is empty')
+        fail('CI source snapshot is empty')
     for member in members:
         name = member.name.replace('\\', '/')
         if name in ('', '.'):
             continue
         rel = pathlib.PurePosixPath(name)
         if rel.is_absolute() or '..' in rel.parts:
-            raise SystemExit(f'Unsafe path in CI source snapshot: {member.name}')
+            fail(f'Unsafe path in CI source snapshot: {member.name}')
         if not (member.isdir() or member.isfile()):
-            raise SystemExit(f'Unsupported non-regular archive entry: {member.name}')
+            fail(f'Unsupported non-regular archive entry: {member.name}')
         clean_parts = [p for p in rel.parts if p not in ('', '.')]
         dest = WORK.joinpath(*clean_parts)
         resolved = dest.resolve()
         if resolved != work_resolved and work_resolved not in resolved.parents:
-            raise SystemExit(f'Archive entry escapes work directory: {member.name}')
+            fail(f'Archive entry escapes work directory: {member.name}')
         if member.isdir():
             dest.mkdir(parents=True, exist_ok=True)
             continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         src = tf.extractfile(member)
         if src is None:
-            raise SystemExit(f'Could not read regular archive entry: {member.name}')
+            fail(f'Could not read regular archive entry: {member.name}')
         with src, dest.open('wb') as out:
             shutil.copyfileobj(src, out)
 
@@ -83,25 +92,27 @@ required = [
     WORK / 'WINDOWS-TOOLCHAIN-SELFTEST.ps1',
     WORK / 'RELEASE-WINDOWS.ps1',
     WORK / '.github' / 'workflows' / 'ci.yml',
+    WORK / 'scripts' / 'audit-lib.mjs',
+    WORK / 'scripts' / 'mutation-suite.mjs',
 ]
 missing = [str(p.relative_to(ROOT)) for p in required if not p.is_file()]
 if missing:
-    raise SystemExit('Materialized source is missing required files: ' + ', '.join(missing))
+    fail('Materialized source is missing required files: ' + ', '.join(missing))
 
-changed: list[str] = []
-counts: dict[str, int] = {old: 0 for old in ACTION_MIGRATIONS}
-escaped_counts: dict[str, int] = {old: 0 for old in ESCAPED_ACTION_MIGRATIONS}
+changed: set[str] = set()
+counts = {old: 0 for old in ACTION_MIGRATIONS}
+escaped_counts = {old: 0 for old in ESCAPED_ACTION_MIGRATIONS}
+needles = [x.encode() for x in ACTION_MIGRATIONS] + [x.encode() for x in ESCAPED_ACTION_MIGRATIONS]
 
 for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
     data = path.read_bytes()
-    needles = [x.encode() for x in ACTION_MIGRATIONS] + [x.encode() for x in ESCAPED_ACTION_MIGRATIONS]
     if not any(needle in data for needle in needles):
         continue
     try:
         text = data.decode('utf-8')
     except UnicodeDecodeError as exc:
-        raise SystemExit(f'Expected CI action identifier unexpectedly appears in non-UTF-8 file: {path}') from exc
-
+        fail(f'Expected CI action identifier unexpectedly appears in non-UTF-8 file: {path}')
+        raise exc
     before = text
     for old, new in ACTION_MIGRATIONS.items():
         counts[old] += text.count(old)
@@ -109,28 +120,24 @@ for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
     for old, new in ESCAPED_ACTION_MIGRATIONS.items():
         escaped_counts[old] += text.count(old)
         text = text.replace(old, new)
-
     if text != before:
         path.write_text(text, encoding='utf-8', newline='')
-        changed.append(path.relative_to(WORK).as_posix())
+        changed.add(path.relative_to(WORK).as_posix())
 
-# Fail closed if our reviewed assumptions about the uploaded snapshot drift.
-for old in ACTION_MIGRATIONS:
-    if counts[old] == 0:
-        raise SystemExit(f'Reviewed snapshot no longer contains expected CI action ref: {old}')
+for old, count in counts.items():
+    if count == 0:
+        fail(f'Reviewed snapshot no longer contains expected CI action ref: {old}')
 
 ci_path = WORK / '.github' / 'workflows' / 'ci.yml'
-ci_text = ci_path.read_text(encoding='utf-8')
+ci_text = read_utf8(ci_path)
 
-# Fresh hosted evidence showed that ffprobe is not guaranteed on any new runner.
-# The MP3 node tests intentionally use ffprobe to prove each emitted chunk is
-# decoder-visible. Provision and verify the media toolchain in every job that
-# runs those tests, and also in the one job that generates the shared fixtures.
-def insert_before_once(text: str, needle: str, insertion: str, label: str) -> str:
-    count = text.count(needle)
+
+def insert_before_unique(text: str, anchor: str, insertion: str, label: str) -> str:
+    count = text.count(anchor)
     if count != 1:
-        raise SystemExit(f'Expected exactly one {label} anchor; found {count}')
-    return text.replace(needle, insertion + needle, 1)
+        fail(f'Expected exactly one {label} anchor; found {count}')
+    return text.replace(anchor, insertion + anchor, 1)
+
 
 fixture_anchor = '      - name: Generate deterministic MP3 fixtures\n'
 fixture_block = '''      - name: Provision MP3 fixture toolchain
@@ -143,23 +150,7 @@ fixture_block = '''      - name: Provision MP3 fixture toolchain
           ffmpeg -version | head -n 1
           ffprobe -version | head -n 1
 '''
-ci_text = insert_before_once(ci_text, fixture_anchor, fixture_block, 'fixture-generation')
-
-validate_step = '      - working-directory: work\n        run: npm run validate\n'
-
-def inject_job_media_toolchain(text: str, job: str, next_job: str, block: str) -> str:
-    start_marker = f'  {job}:\n'
-    end_marker = f'  {next_job}:\n'
-    start = text.find(start_marker)
-    end = text.find(end_marker, start + len(start_marker))
-    if start < 0 or end < 0:
-        raise SystemExit(f'Could not isolate inner CI job {job}')
-    segment = text[start:end]
-    count = segment.count(validate_step)
-    if count != 1:
-        raise SystemExit(f'Expected exactly one validate step in inner CI job {job}; found {count}')
-    segment = segment.replace(validate_step, block + validate_step, 1)
-    return text[:start] + segment + text[end:]
+ci_text = insert_before_unique(ci_text, fixture_anchor, fixture_block, 'fixture-generation')
 
 linux_media = '''      - name: Provision media validation toolchain
         shell: bash
@@ -195,65 +186,88 @@ windows_media = '''      - name: Provision media validation toolchain
           & $ffprobe.Source -version | Select-Object -First 1
 '''
 
-ci_text = inject_job_media_toolchain(ci_text, 'linux-full', 'macos-safari', linux_media)
-ci_text = inject_job_media_toolchain(ci_text, 'macos-safari', 'windows-release', mac_media)
-ci_text = inject_job_media_toolchain(ci_text, 'windows-release', 'all-green', windows_media)
+
+def inject_before_validate_step(text: str, job: str, next_job: str, block: str) -> str:
+    start_marker = f'  {job}:\n'
+    end_marker = f'  {next_job}:\n'
+    start = text.find(start_marker)
+    end = text.find(end_marker, start + len(start_marker))
+    if start < 0 or end < 0:
+        fail(f'Could not isolate inner CI job {job}')
+    segment = text[start:end]
+
+    # Parse top-level step blocks by their six-space list indentation. This is
+    # deliberately tolerant of key order (`run`, `name`, `working-directory`)
+    # while still requiring exactly one step whose command is npm run validate.
+    steps = list(re.finditer(r'(?ms)^      - .*?(?=^      - |\Z)', segment))
+    hits = []
+    for step in steps:
+        body = step.group(0)
+        if re.search(r'(?m)^\s*(?:-\s*)?run:\s*npm run validate\s*$', body):
+            hits.append(step)
+    if len(hits) != 1:
+        commands = []
+        for step in steps:
+            commands.extend(re.findall(r'(?m)^\s*(?:-\s*)?run:\s*([^|>][^\n]*)$', step.group(0)))
+        fail(
+            f'Expected exactly one npm run validate step in inner CI job {job}; '
+            f'found {len(hits)}. Discovered simple run commands: {commands}'
+        )
+    hit = hits[0]
+    segment = segment[:hit.start()] + block + segment[hit.start():]
+    return text[:start] + segment + text[end:]
+
+
+ci_text = inject_before_validate_step(ci_text, 'linux-full', 'macos-safari', linux_media)
+ci_text = inject_before_validate_step(ci_text, 'macos-safari', 'windows-release', mac_media)
+ci_text = inject_before_validate_step(ci_text, 'windows-release', 'all-green', windows_media)
 
 if ci_text.count('name: Provision media validation toolchain') != 3:
-    raise SystemExit('Inner CI media provisioning was not inserted into all three platform jobs')
+    fail('Inner CI media provisioning was not inserted into all three platform jobs')
 if ci_text.count('name: Provision MP3 fixture toolchain') != 1:
-    raise SystemExit('Inner CI fixture media provisioning was not inserted exactly once')
+    fail('Inner CI fixture media provisioning was not inserted exactly once')
 if 'brew install ffmpeg' not in ci_text or 'choco install ffmpeg -y --no-progress' not in ci_text:
-    raise SystemExit('Inner CI is missing macOS or Windows ffmpeg provisioning')
+    fail('Inner CI is missing macOS or Windows ffmpeg provisioning')
 ci_path.write_text(ci_text, encoding='utf-8', newline='')
-if '.github/workflows/ci.yml' not in changed:
-    changed.append('.github/workflows/ci.yml')
+changed.add('.github/workflows/ci.yml')
 
-# Add an explicit safeguard and mutations so future edits cannot silently remove
-# the fresh-runner ffprobe prerequisite while leaving the rest of validation green.
+# Extend the source's own static and mutation gates so the repaired packaged CI
+# cannot later lose its fresh-runner media prerequisite unnoticed.
 audit_path = WORK / 'scripts' / 'audit-lib.mjs'
-audit_text = audit_path.read_text(encoding='utf-8')
+audit_text = read_utf8(audit_path)
 audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
 audit_guard = '''    ,["CI provisions and verifies ffprobe before fixture generation and every platform MP3 validation", () => (s(".github/workflows/ci.yml").match(/name: Provision media validation toolchain/g)||[]).length===3 && (s(".github/workflows/ci.yml").match(/name: Provision MP3 fixture toolchain/g)||[]).length===1 && /sudo apt-get install -y --no-install-recommends ffmpeg/.test(s(".github/workflows/ci.yml")) && /brew install ffmpeg/.test(s(".github/workflows/ci.yml")) && /choco install ffmpeg -y --no-progress/.test(s(".github/workflows/ci.yml")) && /Get-Command ffprobe/.test(s(".github/workflows/ci.yml"))]
 '''
 if audit_text.count(audit_anchor) != 1:
-    raise SystemExit('Could not locate unique inner CI safeguard insertion anchor')
-audit_text = audit_text.replace(audit_anchor, audit_guard + audit_anchor, 1)
-audit_path.write_text(audit_text, encoding='utf-8', newline='')
-if 'scripts/audit-lib.mjs' not in changed:
-    changed.append('scripts/audit-lib.mjs')
+    fail('Could not locate unique inner CI safeguard insertion anchor')
+audit_path.write_text(audit_text.replace(audit_anchor, audit_guard + audit_anchor, 1), encoding='utf-8', newline='')
+changed.add('scripts/audit-lib.mjs')
 
 mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
-mutation_text = mutation_path.read_text(encoding='utf-8')
+mutation_text = read_utf8(mutation_path)
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 mutation_guard = '''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
   ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision MP3 fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
 '''
 if mutation_text.count(mutation_anchor) != 1:
-    raise SystemExit('Could not locate unique inner CI mutation insertion anchor')
-mutation_text = mutation_text.replace(mutation_anchor, mutation_guard + mutation_anchor, 1)
-mutation_path.write_text(mutation_text, encoding='utf-8', newline='')
-if 'scripts/mutation-suite.mjs' not in changed:
-    changed.append('scripts/mutation-suite.mjs')
+    fail('Could not locate unique inner CI mutation insertion anchor')
+mutation_path.write_text(mutation_text.replace(mutation_anchor, mutation_guard + mutation_anchor, 1), encoding='utf-8', newline='')
+changed.add('scripts/mutation-suite.mjs')
 
-# Every first-party GitHub Action invocation in the actual inner CI must now be
-# immutable. Comments are intentionally ignored; only executable `uses:` lines
-# are evaluated.
+# Every executable first-party Action reference in the packaged CI must now be
+# a full immutable SHA and must include the four reviewed current Actions.
 uses_refs = re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)', ci_text, flags=re.M)
 action_refs = [ref for ref in uses_refs if ref.startswith('actions/')]
 if not action_refs:
-    raise SystemExit('Inner CI contains no first-party GitHub Action refs after materialization')
+    fail('Inner CI contains no first-party GitHub Action refs after materialization')
 bad_refs = [ref for ref in action_refs if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}', ref)]
 if bad_refs:
-    raise SystemExit('Non-immutable inner CI action refs remain: ' + ', '.join(sorted(set(bad_refs))))
-
-expected_refs = set(ACTION_MIGRATIONS.values())
-missing_expected = sorted(ref for ref in expected_refs if ref not in action_refs)
+    fail('Non-immutable inner CI action refs remain: ' + ', '.join(sorted(set(bad_refs))))
+missing_expected = sorted(ref for ref in set(ACTION_MIGRATIONS.values()) if ref not in action_refs)
 if missing_expected:
-    raise SystemExit('Expected current SHA-pinned action refs missing from inner CI: ' + ', '.join(missing_expected))
+    fail('Expected current SHA-pinned action refs missing from inner CI: ' + ', '.join(missing_expected))
 
-# Prove no executable/source safeguard still contains one of the superseded
-# exact tag refs (plain or regex-literal form) in UTF-8 text.
+# No superseded tag spelling may survive in inspectable UTF-8 source/audit text.
 for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
     data = path.read_bytes()
     stale = [old for old in ACTION_MIGRATIONS if old.encode() in data]
@@ -264,9 +278,9 @@ for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
         data.decode('utf-8')
     except UnicodeDecodeError:
         continue
-    raise SystemExit(
-        f'Stale CI action identifier remains after materialization repair in {path.relative_to(WORK)}: '
-        + ', '.join(stale)
+    fail(
+        f'Stale CI action identifier remains after materialization repair in '
+        f'{path.relative_to(WORK)}: ' + ', '.join(stale)
     )
 
 print(f'Materialized reviewed Cosmic Transcriber Web source in {WORK}')
