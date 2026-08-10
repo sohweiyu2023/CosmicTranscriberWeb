@@ -14,10 +14,10 @@ EXPECTED_SHA256 = '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8
 
 # The uploaded 1.0.12 snapshot remains immutable evidence. A fresh 2026-08-10
 # adversarial review found that its CI action references had become stale and
-# were tag-pinned. Materialization therefore performs one narrowly scoped,
-# deterministic CI-tooling migration only after the original archive passes its
-# exact size/SHA-256 check. All product validation/mutation/release gates run on
-# the resulting derived tree.
+# were tag-pinned. Materialization therefore performs narrowly scoped,
+# deterministic certification repairs only after the original archive passes
+# its exact size/SHA-256 check. All product validation/mutation/release gates
+# run on the resulting derived tree.
 ACTION_MIGRATIONS = {
     'actions/checkout@v6.0.2': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',  # v7.0.1
     'actions/setup-node@v6.4.0': 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',  # v6.4.0
@@ -122,6 +122,120 @@ for old in ACTION_MIGRATIONS:
 ci_path = WORK / '.github' / 'workflows' / 'ci.yml'
 ci_text = ci_path.read_text(encoding='utf-8')
 
+# Fresh hosted evidence showed that ffprobe is not guaranteed on any new runner.
+# The MP3 node tests intentionally use ffprobe to prove each emitted chunk is
+# decoder-visible. Provision and verify the media toolchain in every job that
+# runs those tests, and also in the one job that generates the shared fixtures.
+def insert_before_once(text: str, needle: str, insertion: str, label: str) -> str:
+    count = text.count(needle)
+    if count != 1:
+        raise SystemExit(f'Expected exactly one {label} anchor; found {count}')
+    return text.replace(needle, insertion + needle, 1)
+
+fixture_anchor = '      - name: Generate deterministic MP3 fixtures\n'
+fixture_block = '''      - name: Provision MP3 fixture toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+'''
+ci_text = insert_before_once(ci_text, fixture_anchor, fixture_block, 'fixture-generation')
+
+validate_step = '      - working-directory: work\n        run: npm run validate\n'
+
+def inject_job_media_toolchain(text: str, job: str, next_job: str, block: str) -> str:
+    start_marker = f'  {job}:\n'
+    end_marker = f'  {next_job}:\n'
+    start = text.find(start_marker)
+    end = text.find(end_marker, start + len(start_marker))
+    if start < 0 or end < 0:
+        raise SystemExit(f'Could not isolate inner CI job {job}')
+    segment = text[start:end]
+    count = segment.count(validate_step)
+    if count != 1:
+        raise SystemExit(f'Expected exactly one validate step in inner CI job {job}; found {count}')
+    segment = segment.replace(validate_step, block + validate_step, 1)
+    return text[:start] + segment + text[end:]
+
+linux_media = '''      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+'''
+mac_media = '''      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+'''
+windows_media = '''      - name: Provision media validation toolchain
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
+          & $ffmpeg.Source -version | Select-Object -First 1
+          & $ffprobe.Source -version | Select-Object -First 1
+'''
+
+ci_text = inject_job_media_toolchain(ci_text, 'linux-full', 'macos-safari', linux_media)
+ci_text = inject_job_media_toolchain(ci_text, 'macos-safari', 'windows-release', mac_media)
+ci_text = inject_job_media_toolchain(ci_text, 'windows-release', 'all-green', windows_media)
+
+if ci_text.count('name: Provision media validation toolchain') != 3:
+    raise SystemExit('Inner CI media provisioning was not inserted into all three platform jobs')
+if ci_text.count('name: Provision MP3 fixture toolchain') != 1:
+    raise SystemExit('Inner CI fixture media provisioning was not inserted exactly once')
+if 'brew install ffmpeg' not in ci_text or 'choco install ffmpeg -y --no-progress' not in ci_text:
+    raise SystemExit('Inner CI is missing macOS or Windows ffmpeg provisioning')
+ci_path.write_text(ci_text, encoding='utf-8', newline='')
+if '.github/workflows/ci.yml' not in changed:
+    changed.append('.github/workflows/ci.yml')
+
+# Add an explicit safeguard and mutations so future edits cannot silently remove
+# the fresh-runner ffprobe prerequisite while leaving the rest of validation green.
+audit_path = WORK / 'scripts' / 'audit-lib.mjs'
+audit_text = audit_path.read_text(encoding='utf-8')
+audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
+audit_guard = '''    ,["CI provisions and verifies ffprobe before fixture generation and every platform MP3 validation", () => (s(".github/workflows/ci.yml").match(/name: Provision media validation toolchain/g)||[]).length===3 && (s(".github/workflows/ci.yml").match(/name: Provision MP3 fixture toolchain/g)||[]).length===1 && /sudo apt-get install -y --no-install-recommends ffmpeg/.test(s(".github/workflows/ci.yml")) && /brew install ffmpeg/.test(s(".github/workflows/ci.yml")) && /choco install ffmpeg -y --no-progress/.test(s(".github/workflows/ci.yml")) && /Get-Command ffprobe/.test(s(".github/workflows/ci.yml"))]
+'''
+if audit_text.count(audit_anchor) != 1:
+    raise SystemExit('Could not locate unique inner CI safeguard insertion anchor')
+audit_text = audit_text.replace(audit_anchor, audit_guard + audit_anchor, 1)
+audit_path.write_text(audit_text, encoding='utf-8', newline='')
+if 'scripts/audit-lib.mjs' not in changed:
+    changed.append('scripts/audit-lib.mjs')
+
+mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
+mutation_text = mutation_path.read_text(encoding='utf-8')
+mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
+mutation_guard = '''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
+  ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision MP3 fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
+'''
+if mutation_text.count(mutation_anchor) != 1:
+    raise SystemExit('Could not locate unique inner CI mutation insertion anchor')
+mutation_text = mutation_text.replace(mutation_anchor, mutation_guard + mutation_anchor, 1)
+mutation_path.write_text(mutation_text, encoding='utf-8', newline='')
+if 'scripts/mutation-suite.mjs' not in changed:
+    changed.append('scripts/mutation-suite.mjs')
+
 # Every first-party GitHub Action invocation in the actual inner CI must now be
 # immutable. Comments are intentionally ignored; only executable `uses:` lines
 # are evaluated.
@@ -159,12 +273,13 @@ print(f'Materialized reviewed Cosmic Transcriber Web source in {WORK}')
 print(f'CI source snapshot bytes: {len(raw)}')
 print(f'CI source snapshot SHA-256: {actual_sha}')
 print(f'Inner CI immutable action pin gate PASS ({len(action_refs)} refs).')
+print('Inner CI fresh-runner ffmpeg/ffprobe provisioning gate PASS (fixture + Linux + macOS + Windows).')
 for old, new in ACTION_MIGRATIONS.items():
     escaped_old = old.replace('/', r'\/').replace('.', r'\.')
     print(
         f'  migrated {old} -> {new}: {counts[old]} plain + '
         f'{escaped_counts[escaped_old]} escaped occurrence(s)'
     )
-print(f'CI action migration touched {len(changed)} UTF-8 file(s):')
-for rel in changed:
+print(f'Deterministic certification repair touched {len(changed)} UTF-8 file(s):')
+for rel in sorted(changed):
     print(f'  migrated: {rel}')
