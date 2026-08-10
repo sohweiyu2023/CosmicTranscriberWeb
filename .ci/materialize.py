@@ -9,7 +9,7 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PARTS = sorted((ROOT / ".ci").glob("source.part*"))
-EXPECTED_ARCHIVE_SHA256 = "efb3f6c794d8f0ecbcaa42b8d9ce3f584a310c4832218ae8b087a3e1d3d27a47"
+EXPECTED_ARCHIVE_SHA256 = "995bd4d1f4e2933eb96d2fa96fe19bb708aa9109a1650d48adcc46f52fa7bd08"
 
 if not PARTS:
     raise SystemExit("No CI source archive parts found")
