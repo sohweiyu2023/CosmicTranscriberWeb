@@ -286,21 +286,24 @@ if ci_text.count('name: Provision MP3 fixture toolchain') != 1:
     fail('Inner CI fixture media provisioning was not inserted exactly once')
 if 'brew install ffmpeg' not in ci_text or 'choco install ffmpeg -y --no-progress' not in ci_text:
     fail('Inner CI is missing macOS or Windows ffmpeg provisioning')
-validate_count = len(re.findall(r'(?m)^\s*run:\s*npm run validate\s*$', ci_text))
-if validate_count != 4:
-    fail(
-        'Derived inner CI must contain exactly four full validation sites '
-        f'(resolve-lock, Linux, macOS, Windows); found {validate_count}'
-    )
-for job, next_job in (
+
+validation_jobs = (
     ('resolve-lock', 'linux-full'),
     ('linux-full', 'macos-safari'),
     ('macos-safari', 'windows-release'),
     ('windows-release', 'all-green'),
-):
+)
+validation_counts: dict[str, int] = {}
+for job, next_job in validation_jobs:
     _, _, segment = isolate_job(ci_text, job, next_job)
-    if len(command_step_hits(segment, 'npm run validate')) != 1:
-        fail(f'Derived inner CI job {job} does not contain exactly one full validation step')
+    validation_counts[job] = len(command_step_hits(segment, 'npm run validate'))
+
+if any(count != 1 for count in validation_counts.values()):
+    detail = ', '.join(f'{job}={count}' for job, count in validation_counts.items())
+    fail('Derived inner CI must contain exactly one full validation step in each certification job; ' + detail)
+if sum(validation_counts.values()) != 4:
+    fail(f'Derived inner CI normalized validation count must be 4; got {sum(validation_counts.values())}')
+
 ci_path.write_text(ci_text, encoding='utf-8', newline='')
 changed.add('.github/workflows/ci.yml')
 
@@ -309,7 +312,7 @@ changed.add('.github/workflows/ci.yml')
 audit_path = WORK / 'scripts' / 'audit-lib.mjs'
 audit_text = read_utf8(audit_path)
 audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
-audit_guard = '''    ,["CI provisions ffprobe and runs full validation in resolve-lock Linux macOS and Windows", () => (s(".github/workflows/ci.yml").match(/name: Provision media validation toolchain/g)||[]).length===3 && (s(".github/workflows/ci.yml").match(/name: Provision MP3 fixture toolchain/g)||[]).length===1 && (s(".github/workflows/ci.yml").match(/run: npm run validate/g)||[]).length===4 && /resolve-lock:[\\s\\S]*?run: npm run validate[\\s\\S]*?linux-full:/.test(s(".github/workflows/ci.yml")) && /linux-full:[\\s\\S]*?run: npm run validate[\\s\\S]*?macos-safari:/.test(s(".github/workflows/ci.yml")) && /macos-safari:[\\s\\S]*?run: npm run validate[\\s\\S]*?windows-release:/.test(s(".github/workflows/ci.yml")) && /windows-release:[\\s\\S]*?run: npm run validate[\\s\\S]*?all-green:/.test(s(".github/workflows/ci.yml")) && /sudo apt-get install -y --no-install-recommends ffmpeg/.test(s(".github/workflows/ci.yml")) && /brew install ffmpeg/.test(s(".github/workflows/ci.yml")) && /choco install ffmpeg -y --no-progress/.test(s(".github/workflows/ci.yml")) && /Get-Command ffprobe/.test(s(".github/workflows/ci.yml"))]
+audit_guard = r'''    ,["CI provisions ffprobe and runs full validation in resolve-lock Linux macOS and Windows", () => (s(".github/workflows/ci.yml").match(/name: Provision media validation toolchain/g)||[]).length===3 && (s(".github/workflows/ci.yml").match(/name: Provision MP3 fixture toolchain/g)||[]).length===1 && (s(".github/workflows/ci.yml").match(/run: npm run validate/g)||[]).length===4 && /resolve-lock:[\s\S]*?run: npm run validate[\s\S]*?linux-full:/.test(s(".github/workflows/ci.yml")) && /linux-full:[\s\S]*?run: npm run validate[\s\S]*?macos-safari:/.test(s(".github/workflows/ci.yml")) && /macos-safari:[\s\S]*?run: npm run validate[\s\S]*?windows-release:/.test(s(".github/workflows/ci.yml")) && /windows-release:[\s\S]*?run: npm run validate[\s\S]*?all-green:/.test(s(".github/workflows/ci.yml")) && /sudo apt-get install -y --no-install-recommends ffmpeg/.test(s(".github/workflows/ci.yml")) && /brew install ffmpeg/.test(s(".github/workflows/ci.yml")) && /choco install ffmpeg -y --no-progress/.test(s(".github/workflows/ci.yml")) && /Get-Command ffprobe/.test(s(".github/workflows/ci.yml"))]
 '''
 if audit_text.count(audit_anchor) != 1:
     fail('Could not locate unique inner CI safeguard insertion anchor')
@@ -321,9 +324,9 @@ mutation_text = read_utf8(mutation_path)
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 mutation_guard = r'''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
   ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision MP3 fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
-  ["remove Linux full validation from CI", ".github/workflows/ci.yml", /        run: npm run validate\n(?=      - working-directory: work\n        run: npm run test:worker)/, ""],
-  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /        run: npm run validate\n(?=      - working-directory: work\n        run: npm run build\n      - working-directory: work\n        run: npm run browsers:install:webkit)/, ""],
-  ["remove Windows full validation from CI", ".github/workflows/ci.yml", /        run: npm run validate\n(?=      - working-directory: work\n        run: npm run build\n      - working-directory: work\n        run: npm run browsers:install:branded)/, ""],
+  ["remove Linux full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,160}?run: npm run test:worker)/, ""],
+  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,220}?run: npm run browsers:install:webkit)/, ""],
+  ["remove Windows full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,220}?run: npm run browsers:install:branded)/, ""],
 '''
 if mutation_text.count(mutation_anchor) != 1:
     fail('Could not locate unique inner CI mutation insertion anchor')
