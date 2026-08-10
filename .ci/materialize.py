@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import pathlib
+import re
 import shutil
 import tarfile
 
@@ -11,16 +12,27 @@ WORK = ROOT / 'work'
 EXPECTED_SIZE = 139944
 EXPECTED_SHA256 = '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb'
 
-# The uploaded 1.0.12 snapshot remains immutable evidence. During the fresh
-# 2026-08-10 adversarial review, actions/checkout v7.0.1 superseded the older
-# reviewed checkout release. Materialization therefore performs one narrowly
-# scoped, deterministic CI-tooling migration after verifying the original
-# archive byte-for-byte. The full source validation/mutation/release gates run
-# only after this derived tree is produced.
-OLD_CHECKOUT_SHA = 'de0fac2e4500dabe0009e67214ff5f5447ce83dd'  # v6.0.2
-NEW_CHECKOUT_SHA = '3d3c42e5aac5ba805825da76410c181273ba90b1'  # v7.0.1
-OLD_CHECKOUT_TAG = 'v6.0.2'
-NEW_CHECKOUT_TAG = 'v7.0.1'
+# The uploaded 1.0.12 snapshot remains immutable evidence. A fresh 2026-08-10
+# adversarial review found that its CI action references had become stale and
+# were tag-pinned. Materialization therefore performs one narrowly scoped,
+# deterministic CI-tooling migration only after the original archive passes its
+# exact size/SHA-256 check. All product validation/mutation/release gates run on
+# the resulting derived tree.
+ACTION_MIGRATIONS = {
+    'actions/checkout@v6.0.2': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',  # v7.0.1
+    'actions/setup-node@v6.4.0': 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',  # v6.4.0
+    'actions/upload-artifact@v7.0.1': 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',  # v7.0.1
+    'actions/download-artifact@v8.0.1': 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',  # v8.0.1
+}
+
+# The source's audit/mutation rules also contain regex-literal spellings of the
+# same refs. Rewrite those exact spellings as well so the safeguards validate
+# the derived, SHA-pinned workflow rather than continuing to bless old tags.
+ESCAPED_ACTION_MIGRATIONS = {
+    old.replace('/', r'\/').replace('.', r'\.'):
+        new.replace('/', r'\/')
+    for old, new in ACTION_MIGRATIONS.items()
+}
 
 if not ARCHIVE.is_file():
     raise SystemExit(f'Missing reviewed CI source snapshot: {ARCHIVE}')
@@ -76,72 +88,79 @@ missing = [str(p.relative_to(ROOT)) for p in required if not p.is_file()]
 if missing:
     raise SystemExit('Materialized source is missing required files: ' + ', '.join(missing))
 
-# Fail-closed current-tooling migration. Only UTF-8 text files containing the
-# exact reviewed checkout identifiers are rewritten; binaries are never
-# touched. Escaped v6\.0\.2 is included because the adversarial audit/mutation
-# rules intentionally match the exact reviewed action release.
 changed: list[str] = []
-sha_replacements = 0
-tag_replacements = 0
-escaped_tag_replacements = 0
+counts: dict[str, int] = {old: 0 for old in ACTION_MIGRATIONS}
+escaped_counts: dict[str, int] = {old: 0 for old in ESCAPED_ACTION_MIGRATIONS}
+
 for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
     data = path.read_bytes()
-    if (OLD_CHECKOUT_SHA.encode() not in data and
-            OLD_CHECKOUT_TAG.encode() not in data and
-            b'v6\\.0\\.2' not in data):
+    needles = [x.encode() for x in ACTION_MIGRATIONS] + [x.encode() for x in ESCAPED_ACTION_MIGRATIONS]
+    if not any(needle in data for needle in needles):
         continue
     try:
         text = data.decode('utf-8')
     except UnicodeDecodeError as exc:
-        raise SystemExit(f'Old checkout identifier unexpectedly appears in non-UTF-8 file: {path}') from exc
+        raise SystemExit(f'Expected CI action identifier unexpectedly appears in non-UTF-8 file: {path}') from exc
+
     before = text
-    sha_replacements += text.count(OLD_CHECKOUT_SHA)
-    tag_replacements += text.count(OLD_CHECKOUT_TAG)
-    escaped_tag_replacements += text.count(r'v6\.0\.2')
-    text = text.replace(OLD_CHECKOUT_SHA, NEW_CHECKOUT_SHA)
-    text = text.replace(OLD_CHECKOUT_TAG, NEW_CHECKOUT_TAG)
-    text = text.replace(r'v6\.0\.2', r'v7\.0\.1')
+    for old, new in ACTION_MIGRATIONS.items():
+        counts[old] += text.count(old)
+        text = text.replace(old, new)
+    for old, new in ESCAPED_ACTION_MIGRATIONS.items():
+        escaped_counts[old] += text.count(old)
+        text = text.replace(old, new)
+
     if text != before:
         path.write_text(text, encoding='utf-8', newline='')
         changed.append(path.relative_to(WORK).as_posix())
 
+# Fail closed if our reviewed assumptions about the uploaded snapshot drift.
+for old in ACTION_MIGRATIONS:
+    if counts[old] == 0:
+        raise SystemExit(f'Reviewed snapshot no longer contains expected CI action ref: {old}')
+
 ci_path = WORK / '.github' / 'workflows' / 'ci.yml'
 ci_text = ci_path.read_text(encoding='utf-8')
-new_checkout_ref = f'actions/checkout@{NEW_CHECKOUT_SHA}'
-old_checkout_refs = (
-    f'actions/checkout@{OLD_CHECKOUT_SHA}',
-    f'actions/checkout@{OLD_CHECKOUT_TAG}',
-)
-if any(ref in ci_text for ref in old_checkout_refs):
-    raise SystemExit('Checkout v6 reference survived the deterministic 1.0.12 materialization repair')
-if ci_text.count(new_checkout_ref) < 4:
-    raise SystemExit(
-        'Expected checkout v7.0.1 immutable SHA in at least four inner CI jobs; '
-        f'found {ci_text.count(new_checkout_ref)}'
-    )
-if sha_replacements == 0 and tag_replacements == 0:
-    raise SystemExit('Reviewed snapshot no longer contains the expected checkout v6 identifiers; repair assumptions drifted')
 
-# Prove the old exact checkout identifiers are gone from all UTF-8 files we can
-# safely inspect. This prevents stale audit rules/comments from continuing to
-# bless the superseded action release.
+# Every first-party GitHub Action invocation in the actual inner CI must now be
+# immutable. Comments are intentionally ignored; only executable `uses:` lines
+# are evaluated.
+uses_refs = re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)', ci_text, flags=re.M)
+action_refs = [ref for ref in uses_refs if ref.startswith('actions/')]
+if not action_refs:
+    raise SystemExit('Inner CI contains no first-party GitHub Action refs after materialization')
+bad_refs = [ref for ref in action_refs if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}', ref)]
+if bad_refs:
+    raise SystemExit('Non-immutable inner CI action refs remain: ' + ', '.join(sorted(set(bad_refs))))
+
+expected_refs = set(ACTION_MIGRATIONS.values())
+missing_expected = sorted(ref for ref in expected_refs if ref not in action_refs)
+if missing_expected:
+    raise SystemExit('Expected current SHA-pinned action refs missing from inner CI: ' + ', '.join(missing_expected))
+
+# Prove no executable/source safeguard still contains one of the superseded
+# exact tag refs (plain or regex-literal form) in UTF-8 text.
 for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
     data = path.read_bytes()
-    if OLD_CHECKOUT_SHA.encode() in data or OLD_CHECKOUT_TAG.encode() in data or b'v6\\.0\\.2' in data:
-        try:
-            data.decode('utf-8')
-        except UnicodeDecodeError:
-            continue
-        raise SystemExit(f'Stale checkout v6 identifier remains after materialization repair: {path.relative_to(WORK)}')
+    stale = [old for old in ACTION_MIGRATIONS if old.encode() in data]
+    stale += [old for old in ESCAPED_ACTION_MIGRATIONS if old.encode() in data]
+    if not stale:
+        continue
+    try:
+        data.decode('utf-8')
+    except UnicodeDecodeError:
+        continue
+    raise SystemExit(
+        f'Stale CI action identifier remains after materialization repair in {path.relative_to(WORK)}: '
+        + ', '.join(stale)
+    )
 
 print(f'Materialized reviewed Cosmic Transcriber Web source in {WORK}')
 print(f'CI source snapshot bytes: {len(raw)}')
 print(f'CI source snapshot SHA-256: {actual_sha}')
-print(
-    'Checkout tooling migration: '
-    f'v6.0.2 -> v7.0.1 ({NEW_CHECKOUT_SHA}); '
-    f'{sha_replacements} SHA, {tag_replacements} tag, '
-    f'{escaped_tag_replacements} escaped-tag replacement(s) across {len(changed)} file(s)'
-)
+print(f'Inner CI immutable action pin gate PASS ({len(action_refs)} refs).')
+for old, new in ACTION_MIGRATIONS.items():
+    print(f'  migrated {old} -> {new}: {counts[old]} plain + {escaped_counts[old.replace("/", r"\/").replace(".", r"\.")]} escaped occurrence(s)')
+print(f'CI action migration touched {len(changed)} UTF-8 file(s):')
 for rel in changed:
     print(f'  migrated: {rel}')
