@@ -1,0 +1,242 @@
+name: Cosmic Transcriber Web 1.0.12 Certification
+
+on:
+  push:
+    branches: ['ci/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-lock:
+    name: Resolve one reviewed dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Materialize exact audited source
+        run: python .ci/materialize.py
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Activate reviewed npm
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify tool versions
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Resolve direct dependencies to current registry latest without lifecycle scripts
+        working-directory: work
+        run: node scripts/deps-latest.mjs
+      - name: Verify lock-wide lifecycle-script policy before rebuild
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Rebuild only after install-script policy passes
+        working-directory: work
+        run: npm rebuild
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+      - name: Require current direct dependencies
+        working-directory: work
+        run: npm outdated --depth=0
+      - name: Generate deterministic MP3 fixtures
+        working-directory: work
+        run: node scripts/generate-test-fixtures.mjs
+      - name: Full dependency-free adversarial gate
+        working-directory: work
+        run: npm run validate
+      - name: Upload one reviewed lock and fixtures
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: reviewed-release-inputs
+          path: |
+            work/package-lock.json
+            work/tests/fixtures/*.mp3
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-full:
+    name: Linux Worker + integration + browser matrix
+    needs: resolve-lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - run: python .ci/materialize.py
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: reviewed-release-inputs
+          path: reviewed
+      - name: Restore exact reviewed lock and fixtures
+        run: |
+          cp reviewed/package-lock.json work/package-lock.json
+          mkdir -p work/tests/fixtures
+          cp reviewed/*.mp3 work/tests/fixtures/
+      - working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - working-directory: work
+        run: npm ci
+      - working-directory: work
+        run: npm run deps:install-scripts:verify
+      - working-directory: work
+        run: npm audit
+      - working-directory: work
+        run: npm run validate
+      - working-directory: work
+        run: npm run test:worker
+      - working-directory: work
+        run: npm run test:integration
+      - working-directory: work
+        run: npm run browsers:install:ci
+      - working-directory: work
+        run: npm run test:e2e:core
+      - working-directory: work
+        run: npm run build:inspect
+
+  macos-safari:
+    name: macOS WebKit + real Safari
+    needs: resolve-lock
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - run: python3 .ci/materialize.py
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: reviewed-release-inputs
+          path: reviewed
+      - name: Restore exact reviewed lock and fixtures
+        run: |
+          cp reviewed/package-lock.json work/package-lock.json
+          mkdir -p work/tests/fixtures
+          cp reviewed/*.mp3 work/tests/fixtures/
+      - working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - working-directory: work
+        run: npm ci
+      - working-directory: work
+        run: npm run deps:install-scripts:verify
+      - working-directory: work
+        run: npm audit
+      - working-directory: work
+        run: npm run validate
+      - working-directory: work
+        run: npm run build
+      - working-directory: work
+        run: npm run browsers:install:webkit
+      - working-directory: work
+        run: npm run test:e2e:webkit
+      - name: Enable SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Real Safari WebDriver smoke
+        working-directory: work
+        run: npm run test:safari:real
+
+  windows-release:
+    name: Windows toolchain + Chrome/Edge + certified ZIP
+    needs: resolve-lock
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Materialize exact audited source
+        shell: pwsh
+        run: python .ci/materialize.py
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: reviewed-release-inputs
+          path: reviewed
+      - name: Restore exact reviewed lock and fixtures
+        shell: pwsh
+        run: |
+          Copy-Item reviewed\package-lock.json work\package-lock.json -Force
+          New-Item -ItemType Directory -Path work\tests\fixtures -Force | Out-Null
+          Copy-Item reviewed\*.mp3 work\tests\fixtures\ -Force
+      - name: Activate reviewed npm for shared-lock preflight
+        shell: pwsh
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - working-directory: work
+        run: npm ci
+      - working-directory: work
+        run: npm run deps:install-scripts:verify
+      - working-directory: work
+        run: npm audit
+      - name: Execute private Windows toolchain regression/smoke test
+        shell: pwsh
+        working-directory: work
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\WINDOWS-TOOLCHAIN-SELFTEST.ps1
+      - working-directory: work
+        run: npm run validate
+      - working-directory: work
+        run: npm run test:worker
+      - working-directory: work
+        run: npm run test:integration
+      - working-directory: work
+        run: npm run build
+      - working-directory: work
+        run: npm run browsers:install:branded
+      - working-directory: work
+        run: npm run test:e2e:branded
+      - working-directory: work
+        run: npm run build:inspect
+      - name: Record reviewed lock hash
+        id: lock-before
+        shell: pwsh
+        working-directory: work
+        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
+      - name: Run complete Windows release certification
+        shell: pwsh
+        working-directory: work
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
+      - name: Prove certification did not alter reviewed dependency graph
+        shell: pwsh
+        working-directory: work
+        env:
+          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
+        run: |
+          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($after -ne $env:LOCK_BEFORE) { throw "Release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
+      - name: Locate certified release ZIP
+        id: certified
+        shell: pwsh
+        working-directory: work
+        run: |
+          $zip=Resolve-Path ..\CosmicTranscriberWeb-1.0.12-source.zip
+          if (-not (Test-Path $zip)) { throw 'Certified release ZIP missing.' }
+          Write-Output ('path=' + $zip.Path) >> $env:GITHUB_OUTPUT
+      - name: Upload certified release candidate
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.0.12-certified
+          path: ${{ steps.certified.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  all-green:
+    name: ALL RELEASE GATES GREEN
+    needs: [linux-full, macos-safari, windows-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: CosmicTranscriberWeb-1.0.12-certified
+          path: certified
+      - name: Require certified ZIP and print SHA-256
+        run: |
+          test -f certified/CosmicTranscriberWeb-1.0.12-source.zip
+          sha256sum certified/CosmicTranscriberWeb-1.0.12-source.zip
+          echo 'ALL RELEASE GATES GREEN'
