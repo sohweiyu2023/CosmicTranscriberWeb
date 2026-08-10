@@ -62,8 +62,8 @@ def js_regex_escape(text: str) -> str:
 
 def top_level_comma_count(text: str) -> int:
     # Count commas that separate constructor arguments, ignoring nested JS
-    # delimiters and quoted strings. The reviewed parser has one body argument;
-    # fail closed rather than accidentally adding a third argument if it drifts.
+    # delimiters and quoted strings. The reviewed parser must have one body
+    # argument; fail closed if its constructor shape drifts.
     depths = {"(": 0, "[": 0, "{": 0}
     pairs = {")": "(", "]": "[", "}": "{"}
     quote: str | None = None
@@ -97,6 +97,52 @@ def top_level_comma_count(text: str) -> int:
     return commas
 
 
+def find_matching_paren(text: str, open_index: int) -> int:
+    # Find the close paren for one reviewed constructor while respecting nested
+    # calls and quoted strings. This is deliberately narrow rather than a JS
+    # parser: comments/templates are not accepted if they make the target
+    # constructor ambiguous.
+    if open_index < 0 or open_index >= len(text) or text[open_index] != "(":
+        fail("Multipart parser Response constructor opening parenthesis missing")
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(open_index, len(text)):
+        ch = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"', "`"):
+            quote = ch
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+            if depth < 0:
+                fail("Multipart parser Response constructor parentheses are unbalanced")
+    fail("Multipart parser Response constructor has no matching closing parenthesis")
+    raise AssertionError("unreachable")
+
+
+def print_multipart_structure(block: str) -> None:
+    # Bounded, source-only diagnostic. Never print request values, headers, or
+    # handler errors; only lines containing parser structure tokens.
+    print("CTW_MULTIPART_STRUCTURE_DIAGNOSTIC_BEGIN")
+    for number, line in enumerate(block.splitlines(), 1):
+        if any(token in line for token in ("formData", "new Response", "request.clone", "arrayBuffer")):
+            safe = line[:500]
+            print(f"{number:04d}: {safe}")
+    print("CTW_MULTIPART_STRUCTURE_DIAGNOSTIC_END")
+
+
 # Preserve the reviewed whole-Worker integration contract.
 integration = read(INTEGRATION)
 policies = list(re.finditer(r'onUnhandledRequest\s*:\s*["\']error["\']', integration))
@@ -117,11 +163,12 @@ for assertion in (
         fail(f"Integration assertion missing or duplicated: {assertion}")
 
 # The successful outbound POST now reaches MSW. Hosted evidence shows the only
-# remaining 8/9 failure is Response.formData() rejecting a test-only synthetic
-# Response because that Response does not carry the intercepted multipart
-# Content-Type/boundary. Anchor on the unique BYOK ownership test, then locate
-# exactly one new Response(...).formData() structurally inside that bounded test
-# instead of assuming one exact body spelling (body stream vs arrayBuffer etc.).
+# remaining 8/9 failure is the test handler's multipart parser: Worker response
+# is 200 and the OpenAI MSW mock is hit exactly once, but handlerError records a
+# Content-Type TypeError. Anchor on that unique BYOK ownership test, locate its
+# single .formData() receiver, trace that receiver to a unique one-argument
+# synthetic Response, and add only the already-captured multipart Content-Type.
+# The original streamed-body expression is preserved byte-for-byte.
 target_title = "constructs upstream Authorization from BYOK and ignores browser Authorization"
 title_hits = [m.start() for m in re.finditer(re.escape(target_title), integration)]
 if len(title_hits) != 1:
@@ -137,35 +184,52 @@ test_end = (
 )
 test_block = integration[test_start:test_end]
 
-multipart_parser_re = re.compile(
-    r"new\s+Response\(\s*(?P<args>[\s\S]{1,1200}?)\s*\)\s*\.formData\(\)"
+form_calls = list(re.finditer(
+    r"\b(?P<receiver>[A-Za-z_$][\w$]*)\s*\.\s*formData\s*\(\s*\)",
+    test_block,
+))
+if len(form_calls) != 1:
+    print_multipart_structure(test_block)
+    fail(f"Expected exactly one multipart .formData() receiver inside BYOK outbound test; found {len(form_calls)}")
+parser_receiver = form_calls[0].group("receiver")
+response_decl_re = re.compile(
+    rf"\b(?:const|let|var)\s+{re.escape(parser_receiver)}\s*=\s*new\s+Response\s*\("
 )
-multipart_hits = list(multipart_parser_re.finditer(test_block))
-if len(multipart_hits) != 1:
+response_decls = list(response_decl_re.finditer(test_block))
+if len(response_decls) != 1:
+    print_multipart_structure(test_block)
     fail(
-        "Expected exactly one streamed multipart synthetic Response parser "
-        f"inside BYOK outbound test; found {len(multipart_hits)}"
+        f"Expected .formData() receiver {parser_receiver!r} to be created by exactly one "
+        f"synthetic Response inside BYOK outbound test; found {len(response_decls)}"
     )
-multipart_hit = multipart_hits[0]
-original_parser = multipart_hit.group(0)
-original_args = multipart_hit.group("args").strip()
-if not original_args:
+response_decl = response_decls[0]
+open_paren = response_decl.end() - 1
+close_paren = find_matching_paren(test_block, open_paren)
+ctor_start = test_block.find("new", response_decl.start(), open_paren)
+if ctor_start < 0:
+    fail("Could not locate multipart synthetic Response constructor start")
+original_args = test_block[open_paren + 1:close_paren]
+if not original_args.strip():
     fail("Multipart parser synthetic Response unexpectedly has no body argument")
 if top_level_comma_count(original_args) != 0:
+    print_multipart_structure(test_block)
     fail("Multipart parser synthetic Response no longer has exactly one constructor argument")
-if re.search(r"\bheaders\s*:", original_args) or "seenContentType" in original_args:
+if "seenContentType" in original_args or re.search(r"\bheaders\s*:", original_args):
     fail("Reviewed multipart parser unexpectedly already carries response headers")
-multipart_parser = (
-    f"new Response({original_args},{{headers:{{'Content-Type':seenContentType}}}}).formData()"
+original_ctor = test_block[ctor_start:close_paren + 1]
+repaired_ctor = (
+    f"new Response({original_args},{{headers:{{'Content-Type':seenContentType}}}})"
 )
 repaired_test_block = (
-    test_block[:multipart_hit.start()]
-    + multipart_parser
-    + test_block[multipart_hit.end():]
+    test_block[:ctor_start]
+    + repaired_ctor
+    + test_block[close_paren + 1:]
 )
 integration = integration[:test_start] + repaired_test_block + integration[test_end:]
-if integration.count(multipart_parser) != 1:
-    fail("Derived integration multipart parser Content-Type propagation invariant failed")
+if integration.count(repaired_ctor) != 1:
+    fail("Derived integration multipart Response Content-Type propagation invariant failed")
+if len(re.findall(rf"\b{re.escape(parser_receiver)}\s*\.\s*formData\s*\(\s*\)", integration)) != 1:
+    fail("Derived integration multipart formData receiver drifted")
 for pattern, label in (
     (r"seenContentType\s*=\s*request\.headers\.get\(['\"]content-type['\"]\)\s*\|\|\s*['\"]['\"]", "captured outbound Content-Type"),
     (r"expect\(handlerError\)\.toBeNull\(\)", "handler error assertion"),
@@ -247,7 +311,7 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
 
 # Preserve the existing redirect safeguard's complete array entry. Migrate only
 # its exact "error" mode token. Also preserve the existing streamed-body
-# safeguard if it happened to encode the exact old parser call, then add
+# safeguard if it encoded the exact old synthetic Response constructor, then add
 # explicit redirect and Content-Type checks at a stable top-level anchor.
 audit = read(AUDIT)
 entry_start, entry_end, entry = top_level_entry(audit, "redirect errors")
@@ -260,14 +324,14 @@ audit = audit[:entry_start] + entry + audit[entry_end:]
 
 stream_label = "integration consumes streamed multipart body without masking handler failures"
 stream_start, stream_end, stream_entry = top_level_entry(audit, stream_label)
-old_literal_count = stream_entry.count(original_parser)
-old_regex = js_regex_escape(original_parser)
-new_regex = js_regex_escape(multipart_parser)
+old_literal_count = stream_entry.count(original_ctor)
+old_regex = js_regex_escape(original_ctor)
+new_regex = js_regex_escape(repaired_ctor)
 old_regex_count = stream_entry.count(old_regex)
 if old_literal_count + old_regex_count > 1:
-    fail("Existing streamed-body safeguard ambiguously contains the old parser more than once")
+    fail("Existing streamed-body safeguard ambiguously contains the old Response constructor more than once")
 if old_literal_count == 1:
-    stream_entry = stream_entry.replace(original_parser, multipart_parser, 1)
+    stream_entry = stream_entry.replace(original_ctor, repaired_ctor, 1)
 elif old_regex_count == 1:
     stream_entry = stream_entry.replace(old_regex, new_regex, 1)
 audit = audit[:stream_start] + stream_entry + audit[stream_end:]
@@ -285,8 +349,8 @@ guard_check = (
 )
 multipart_check = (
     '    ,["integration multipart parser carries intercepted Content-Type", () => '
-    + '/new\\s+Response\\([\\s\\S]{1,1200}?,\\{headers:\\{[\\\'"]Content-Type[\\\'"]'
-    + ':seenContentType\\}\\}\\)\\s*\\.formData\\(\\)/'
+    + f's("tests/integration/worker.test.js").includes({json.dumps(repaired_ctor)})'
+    + f' && /\\b{re.escape(parser_receiver)}\\s*\\.\\s*formData\\s*\\(\\s*\\)/'
     + '.test(s("tests/integration/worker.test.js"))'
     + ' && /seenContentType\\s*=\\s*request\\.headers\\.get\\([\\\'"]content-type[\\\'"]\\)/'
     + '.test(s("tests/integration/worker.test.js"))'
@@ -298,8 +362,8 @@ write(AUDIT, audit)
 
 
 # Migrate the existing follow-redirect mutation payload. If the pre-existing
-# streamed-body mutation encoded the exact old parser call, migrate that target
-# dynamically too; broader body-consumption mutations remain valid unchanged.
+# streamed-body mutation encoded the exact old Response constructor, migrate
+# that target dynamically too; broader body-consumption mutations remain valid.
 # Then add deliberate regressions for removing the all-3xx rejection and the
 # multipart parser's Content-Type propagation.
 mutations = read(MUTATIONS)
@@ -318,13 +382,13 @@ for old, new, count in hits:
     if count:
         mutations = mutations.replace(old, new, 1)
 
-parser_literal_count = mutations.count(original_parser)
+parser_literal_count = mutations.count(original_ctor)
 parser_regex_count = mutations.count(old_regex)
 if parser_literal_count + parser_regex_count > 1:
-    fail("Existing streamed multipart mutation ambiguously contains the old parser more than once")
+    fail("Existing streamed multipart mutation ambiguously contains the old Response constructor more than once")
 parser_payload_hits = 0
 if parser_literal_count == 1:
-    mutations = mutations.replace(original_parser, multipart_parser, 1)
+    mutations = mutations.replace(original_ctor, repaired_ctor, 1)
     parser_payload_hits = 1
 elif parser_regex_count == 1:
     mutations = mutations.replace(old_regex, new_regex, 1)
@@ -367,8 +431,8 @@ if any(old in final_mutations for old, _ in target_forms):
 
 print(f"Integration harness verification PASS: harness={wrangler_listens[0].group(1)}; MSW precedes Wrangler.")
 print(
-    "Integration streamed multipart parser repair PASS: the original single-body "
-    "synthetic Response now carries intercepted Content-Type into test-only Response.formData()."
+    "Integration streamed multipart parser repair PASS: the original one-body "
+    f"synthetic Response assigned to {parser_receiver} now carries intercepted Content-Type."
 )
 print(
     f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses '
@@ -378,7 +442,7 @@ print("Redirect static safeguards preserve the original entry and add an explici
 print("Multipart parser safeguard + Content-Type-removal mutation PASS.")
 print("Payload-migrated follow mutation + explicit 3xx-guard removal mutation PASS.")
 if parser_payload_hits:
-    print("Existing streamed-body mutation payload migrated to corrected multipart parser.")
+    print("Existing streamed-body mutation payload migrated to corrected multipart Response constructor.")
 else:
     print("Existing streamed-body mutation uses a broader parser fragment; no payload migration required.")
 if test_changes:
