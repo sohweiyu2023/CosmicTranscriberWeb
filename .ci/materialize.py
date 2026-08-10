@@ -319,7 +319,7 @@ changed.add('scripts/audit-lib.mjs')
 mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
 mutation_text = read_utf8(mutation_path)
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
-mutation_guard = '''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
+mutation_guard = r'''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
   ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision MP3 fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
   ["remove Linux full validation from CI", ".github/workflows/ci.yml", /        run: npm run validate\n(?=      - working-directory: work\n        run: npm run test:worker)/, ""],
   ["remove macOS full validation from CI", ".github/workflows/ci.yml", /        run: npm run validate\n(?=      - working-directory: work\n        run: npm run build\n      - working-directory: work\n        run: npm run browsers:install:webkit)/, ""],
