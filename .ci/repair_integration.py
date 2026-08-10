@@ -30,6 +30,21 @@ def write(path: pathlib.Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="")
 
 
+def top_level_entry(text: str, label: str) -> tuple[int, int, str]:
+    pattern = re.compile(
+        rf'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["{re.escape(label)}"'
+    )
+    hits = list(pattern.finditer(text))
+    if len(hits) != 1:
+        fail(f'Safeguard "{label}" entry count drifted: {len(hits)}')
+    hit = hits[0]
+    indent = hit.group("indent")
+    next_re = re.compile(rf'(?m)^{re.escape(indent)},?[ \t]*\["')
+    nxt = next_re.search(text, hit.end())
+    end = nxt.start() if nxt else len(text)
+    return hit.start(), end, text[hit.start():end]
+
+
 # Preserve the reviewed whole-Worker integration contract.
 integration = read(INTEGRATION)
 policies = list(re.finditer(r'onUnhandledRequest\s*:\s*["\']error["\']', integration))
@@ -50,20 +65,16 @@ for assertion in (
         fail(f"Integration assertion missing or duplicated: {assertion}")
 
 
-# Hosted evidence from the exact pinned 1.0.12 snapshot shows:
-#   response = await fetchImpl(OPENAI_TRANSCRIPT_URL, { ... redirect: "error" ... });
-# Current workerd rejects redirect="error". Preserve the no-redirect policy with
-# manual handling and an immediate all-3xx rejection before reading any body.
+# Current workerd rejects redirect="error". Preserve the no-redirect policy by
+# using manual mode and rejecting every 3xx before any response body is read.
 source = read(OPENAI)
 if "CTW_WORKER_REDIRECT_FAIL_CLOSED" in source:
     fail("Reviewed source unexpectedly already contains redirect repair")
-
 redirect_re = re.compile(r'\bredirect\s*:\s*(?P<q>["\'])error(?P=q)')
 redirects = list(redirect_re.finditer(source))
 if len(redirects) != 1:
     fail(f'Expected exactly one redirect:"error" option; found {len(redirects)}')
 redirect = redirects[0]
-
 assignments = list(re.finditer(
     r'(?m)^(?P<indent>[ \t]*)(?P<var>[A-Za-z_$][\w$]*)\s*=\s*await\s+fetchImpl\s*\(',
     source[:redirect.start()],
@@ -73,32 +84,24 @@ if len(assignments) != 1:
 assignment = assignments[0]
 response_var = assignment.group("var")
 indent = assignment.group("indent")
-
-# The first `});` line after the redirect option is the reviewed fetchImpl call
-# terminator. Require exactly the expected indentation relationship.
 terminator_re = re.compile(r'(?m)^(?P<indent>[ \t]*)\}\);\s*$')
 terminator = terminator_re.search(source, redirect.end())
-if terminator is None:
-    fail("Could not locate reviewed fetchImpl call terminator after redirect option")
-if terminator.group("indent") != indent:
-    fail("Reviewed fetchImpl terminator indentation drifted")
-
+if terminator is None or terminator.group("indent") != indent:
+    fail("Reviewed fetchImpl terminator missing or indentation drifted")
 source, changed = redirect_re.subn('redirect: "manual"', source, count=1)
 if changed != 1:
     fail(f"Expected one redirect replacement; got {changed}")
-
-# Re-find terminator after equal-length replacement.
 terminator = terminator_re.search(source, redirect.end())
 if terminator is None:
     fail("Could not re-locate fetchImpl terminator after redirect replacement")
-guard = "\n".join([
+guard_lines = [
     f"{indent}// CTW_WORKER_REDIRECT_FAIL_CLOSED",
     f"{indent}if ({response_var}.status >= 300 && {response_var}.status <= 399) {{",
     f'{indent}  throw new Error("Unexpected OpenAI redirect blocked after dispatch.");',
     f"{indent}}}",
-])
-insert_at = terminator.end()
-source = source[:insert_at] + "\n" + guard + source[insert_at:]
+]
+guard = "\n".join(guard_lines)
+source = source[:terminator.end()] + "\n" + guard + source[terminator.end():]
 if source.count('redirect: "manual"') != 1 or redirect_re.search(source):
     fail("Derived source redirect mode invariant failed")
 if source.count("CTW_WORKER_REDIRECT_FAIL_CLOSED") != 1:
@@ -130,28 +133,34 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
         test_changes.append(path.relative_to(WORK).as_posix())
 
 
-# Strengthen the source's existing static redirect safeguard.
+# Preserve the existing redirect safeguard's complete array entry. Migrate only
+# its exact "error" mode token, then add a separate guard check at a stable
+# already-verified top-level safeguard anchor.
 audit = read(AUDIT)
-audit_re = re.compile(r'(?m)^(?P<prefix>[ \t]*,?[ \t]*)\["redirect errors".*$')
-audit_hits = list(audit_re.finditer(audit))
-if len(audit_hits) != 1:
-    fail(f'Static safeguard "redirect errors" count drifted: {len(audit_hits)}')
-hit = audit_hits[0]
-audit_replacement = (
-    hit.group("prefix")
-    + '["redirect errors", () => '
+entry_start, entry_end, entry = top_level_entry(audit, "redirect errors")
+mode_tokens = list(re.finditer(r'(?P<q>["\'])error(?P=q)', entry))
+if len(mode_tokens) != 1:
+    fail(f'Existing "redirect errors" safeguard mode token count drifted: {len(mode_tokens)}')
+m = mode_tokens[0]
+entry = entry[:m.start()] + m.group("q") + "manual" + m.group("q") + entry[m.end():]
+audit = audit[:entry_start] + entry + audit[entry_end:]
+audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
+if audit.count(audit_anchor) != 1:
+    fail(f"Stable audit insertion anchor drifted: {audit.count(audit_anchor)}")
+guard_check = (
+    '    ,["redirect manual mode rejects every 3xx before body parsing", () => '
     + 's("src/openai.js").includes(\'redirect: "manual"\')'
-    + f' && s("src/openai.js").includes({json.dumps(guard)})'
-    + ' && !s("src/openai.js").includes(\'redirect: "error"\')]'
+    + ' && s("src/openai.js").includes("// CTW_WORKER_REDIRECT_FAIL_CLOSED")'
+    + f' && s("src/openai.js").includes({json.dumps(f"if ({response_var}.status >= 300 && {response_var}.status <= 399) {{")})'
+    + ' && s("src/openai.js").includes(\'throw new Error("Unexpected OpenAI redirect blocked after dispatch.");\')'
+    + ' && !s("src/openai.js").includes(\'redirect: "error"\')]\n'
 )
-audit = audit[:hit.start()] + audit_replacement + audit[hit.end():]
+audit = audit.replace(audit_anchor, guard_check + audit_anchor, 1)
 write(AUDIT, audit)
 
 
-# Migrate the existing follow-redirect mutation by its payload rather than its
-# display label. Earlier validation proved the mutation exists, but its label is
-# generated/non-literal in the source. Exactly one redirect-error target must be
-# changed to manual; the insecure replacement remains "follow".
+# Migrate the existing follow-redirect mutation payload, then add a deliberate
+# regression that removes the explicit 3xx rejection.
 mutations = read(MUTATIONS)
 target_forms = [
     ('redirect: "error"', 'redirect: "manual"'),
@@ -167,34 +176,37 @@ if total_hits != 1:
 for old, new, count in hits:
     if count:
         mutations = mutations.replace(old, new, 1)
-
-# Add a second deliberate regression for removing the explicit all-3xx guard.
-# This anchor is already required by materialize.py and therefore verified in
-# the same derived mutation suite before this repair runs.
-anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
-if mutations.count(anchor) != 1:
-    fail(f"Stable mutation insertion anchor drifted: {mutations.count(anchor)}")
+mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
+if mutations.count(mutation_anchor) != 1:
+    fail(f"Stable mutation insertion anchor drifted: {mutations.count(mutation_anchor)}")
 response_var_re = re.escape(response_var)
 new_mutation = (
     '  ["remove explicit redirect status rejection -> redirect errors", "src/openai.js", '
     rf'/if \({response_var_re}\.status >= 300 && {response_var_re}\.status <= 399\) \{{\n\s*throw new Error\("Unexpected OpenAI redirect blocked after dispatch\."\);\n\s*\}}/, ""],'
 )
-mutations = mutations.replace(anchor, new_mutation + "\n" + anchor, 1)
+mutations = mutations.replace(mutation_anchor, new_mutation + "\n" + mutation_anchor, 1)
 write(MUTATIONS, mutations)
 
-if read(AUDIT).count('"redirect errors"') != 1:
-    fail("Final static redirect safeguard count drifted")
-if read(MUTATIONS).count("remove explicit redirect status rejection -> redirect errors") != 1:
+
+final_audit = read(AUDIT)
+final_mutations = read(MUTATIONS)
+if final_audit.count('"redirect errors"') != 1:
+    fail('Existing "redirect errors" safeguard count drifted')
+if final_audit.count('"redirect manual mode rejects every 3xx before body parsing"') != 1:
+    fail("Explicit redirect 3xx safeguard missing or duplicated")
+if final_mutations.count("remove explicit redirect status rejection -> redirect errors") != 1:
     fail("Explicit redirect-guard removal mutation missing or duplicated")
-if any(old in read(MUTATIONS) for old, _ in target_forms):
+if any(old in final_mutations for old, _ in target_forms):
     fail("Old redirect-error mutation payload target survived migration")
+
 
 print(f"Integration harness verification PASS: harness={wrangler_listens[0].group(1)}; MSW precedes Wrangler.")
 print(
     f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses '
     'redirect="manual" + immediate all-3xx fail-closed rejection.'
 )
-print("Static redirect safeguard + payload-migrated follow mutation + explicit 3xx-guard mutation PASS.")
+print("Redirect static safeguards preserve the original entry and add an explicit all-3xx guard check.")
+print("Payload-migrated follow mutation + explicit 3xx-guard removal mutation PASS.")
 if test_changes:
     print("Redirect-mode test migrations: " + ", ".join(test_changes))
 else:
