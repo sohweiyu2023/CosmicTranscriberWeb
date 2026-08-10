@@ -12,13 +12,13 @@ WORK = ROOT / 'work'
 EXPECTED_SIZE = 139944
 EXPECTED_SHA256 = '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb'
 
-# The uploaded 1.0.12 snapshot is immutable evidence. Fresh certification found
-# four CI-environment/coverage issues after that snapshot was reviewed:
-# stale/tag-pinned first-party Actions; fresh runners that do not guarantee
-# ffmpeg/ffprobe; and the packaged macOS and Windows jobs not running the full
-# validation suite. Materialization repairs only those reviewed CI surfaces
-# after verifying the source archive byte-for-byte. Every product/release gate
-# runs on the derived tree and is free to reject it.
+# The uploaded 1.0.12 snapshot remains immutable evidence. Hosted certification
+# discovered CI-only issues after that snapshot was reviewed: stale/tag-pinned
+# first-party Actions; fresh runners that do not guarantee ffmpeg/ffprobe; and
+# incomplete full-validation coverage in the packaged resolve-lock, macOS and
+# Windows jobs. Materialization repairs only those reviewed CI surfaces after
+# verifying the archive byte-for-byte. Every product/release gate then runs on
+# the derived tree and remains free to reject it.
 ACTION_MIGRATIONS = {
     'actions/checkout@v6.0.2': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',  # v7.0.1
     'actions/setup-node@v6.4.0': 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',  # v6.4.0
@@ -42,6 +42,119 @@ def read_utf8(path: pathlib.Path) -> str:
     except UnicodeDecodeError as exc:
         fail(f'Expected UTF-8 text file could not be decoded: {path}')
         raise exc
+
+
+def insert_before_unique(text: str, anchor: str, insertion: str, label: str) -> str:
+    count = text.count(anchor)
+    if count != 1:
+        fail(f'Expected exactly one {label} anchor; found {count}')
+    return text.replace(anchor, insertion + anchor, 1)
+
+
+def isolate_job(text: str, job: str, next_job: str) -> tuple[int, int, str]:
+    start_marker = f'  {job}:\n'
+    end_marker = f'  {next_job}:\n'
+    start = text.find(start_marker)
+    end = text.find(end_marker, start + len(start_marker))
+    if start < 0 or end < 0:
+        fail(f'Could not isolate inner CI job {job}')
+    return start, end, text[start:end]
+
+
+def step_blocks(segment: str) -> list[re.Match[str]]:
+    return list(re.finditer(r'(?ms)^      - .*?(?=^      - |\Z)', segment))
+
+
+def simple_run_commands(segment: str) -> list[str]:
+    commands: list[str] = []
+    for step in step_blocks(segment):
+        commands.extend(
+            re.findall(r'(?m)^\s*(?:-\s*)?run:\s*([^|>][^\n]*)$', step.group(0))
+        )
+    return commands
+
+
+def command_step_hits(segment: str, command: str) -> list[re.Match[str]]:
+    pattern = re.compile(rf'(?m)^\s*(?:-\s*)?run:\s*{re.escape(command)}\s*$')
+    return [step for step in step_blocks(segment) if pattern.search(step.group(0))]
+
+
+def named_step_hits(segment: str, name: str) -> list[re.Match[str]]:
+    pattern = re.compile(rf'(?m)^\s*(?:-\s*)?name:\s*{re.escape(name)}\s*$')
+    return [step for step in step_blocks(segment) if pattern.search(step.group(0))]
+
+
+def inject_before_required_command(
+    text: str,
+    job: str,
+    next_job: str,
+    command: str,
+    block: str,
+) -> str:
+    start, end, segment = isolate_job(text, job, next_job)
+    hits = command_step_hits(segment, command)
+    if len(hits) != 1:
+        fail(
+            f'Expected exactly one {command} step in inner CI job {job}; found {len(hits)}. '
+            f'Discovered simple run commands: {simple_run_commands(segment)}'
+        )
+    hit = hits[0]
+    segment = segment[:hit.start()] + block + segment[hit.start():]
+    return text[:start] + segment + text[end:]
+
+
+def ensure_validation_before_command(
+    text: str,
+    job: str,
+    next_job: str,
+    media_block: str,
+    anchor_command: str,
+) -> str:
+    start, end, segment = isolate_job(text, job, next_job)
+    validate_hits = command_step_hits(segment, 'npm run validate')
+    if len(validate_hits) > 1:
+        fail(
+            f'Expected at most one npm run validate step in inner CI job {job}; '
+            f'found {len(validate_hits)}. Discovered simple run commands: {simple_run_commands(segment)}'
+        )
+    if len(validate_hits) == 1:
+        hit = validate_hits[0]
+        segment = segment[:hit.start()] + media_block + segment[hit.start():]
+    else:
+        anchor_hits = command_step_hits(segment, anchor_command)
+        if len(anchor_hits) != 1:
+            fail(
+                f'Expected exactly one {anchor_command} anchor in inner CI job {job}; '
+                f'found {len(anchor_hits)}. Discovered simple run commands: {simple_run_commands(segment)}'
+            )
+        hit = anchor_hits[0]
+        validation_step = '      - run: npm run validate\n'
+        segment = segment[:hit.start()] + media_block + validation_step + segment[hit.start():]
+    return text[:start] + segment + text[end:]
+
+
+def ensure_resolve_validation(text: str) -> str:
+    start, end, segment = isolate_job(text, 'resolve-lock', 'linux-full')
+    hits = command_step_hits(segment, 'npm run validate')
+    if len(hits) > 1:
+        fail(f'Expected at most one npm run validate step in inner resolve-lock; found {len(hits)}')
+    if len(hits) == 1:
+        return text
+
+    fixture_hits = named_step_hits(segment, 'Generate deterministic MP3 fixtures')
+    if len(fixture_hits) != 1:
+        fail(
+            'Expected exactly one deterministic fixture-generation step in inner resolve-lock; '
+            f'found {len(fixture_hits)}'
+        )
+    hit = fixture_hits[0]
+    insertion_at = hit.end()
+    validation_step = (
+        '      - name: Full dependency-free adversarial gate\n'
+        '        run: npm run validate\n'
+    )
+    segment = segment[:insertion_at] + validation_step + segment[insertion_at:]
+    return text[:start] + segment + text[end:]
 
 
 if not ARCHIVE.is_file():
@@ -103,7 +216,9 @@ if missing:
 changed: set[str] = set()
 counts = {old: 0 for old in ACTION_MIGRATIONS}
 escaped_counts = {old: 0 for old in ESCAPED_ACTION_MIGRATIONS}
-needles = [x.encode() for x in ACTION_MIGRATIONS] + [x.encode() for x in ESCAPED_ACTION_MIGRATIONS]
+needles = [x.encode() for x in ACTION_MIGRATIONS] + [
+    x.encode() for x in ESCAPED_ACTION_MIGRATIONS
+]
 
 for path in sorted(p for p in WORK.rglob('*') if p.is_file()):
     data = path.read_bytes()
@@ -131,14 +246,6 @@ for old, count in counts.items():
 
 ci_path = WORK / '.github' / 'workflows' / 'ci.yml'
 ci_text = read_utf8(ci_path)
-
-
-def insert_before_unique(text: str, anchor: str, insertion: str, label: str) -> str:
-    count = text.count(anchor)
-    if count != 1:
-        fail(f'Expected exactly one {label} anchor; found {count}')
-    return text.replace(anchor, insertion + anchor, 1)
-
 
 fixture_anchor = '      - name: Generate deterministic MP3 fixtures\n'
 fixture_block = '''      - name: Provision MP3 fixture toolchain
@@ -186,93 +293,20 @@ windows_media = '''      - name: Provision media validation toolchain
           & $ffmpeg.Source -version | Select-Object -First 1
           & $ffprobe.Source -version | Select-Object -First 1
 '''
-validate_step = '''      - working-directory: work
-        run: npm run validate
-'''
 
+# Resolve-lock owns the deterministic fixtures and now also runs the complete
+# dependency-free gate before publishing the reviewed lock/fixture artifact.
+ci_text = ensure_resolve_validation(ci_text)
 
-def isolate_job(text: str, job: str, next_job: str) -> tuple[int, int, str]:
-    start_marker = f'  {job}:\n'
-    end_marker = f'  {next_job}:\n'
-    start = text.find(start_marker)
-    end = text.find(end_marker, start + len(start_marker))
-    if start < 0 or end < 0:
-        fail(f'Could not isolate inner CI job {job}')
-    return start, end, text[start:end]
-
-
-def step_blocks(segment: str) -> list[re.Match[str]]:
-    return list(re.finditer(r'(?ms)^      - .*?(?=^      - |\Z)', segment))
-
-
-def simple_run_commands(segment: str) -> list[str]:
-    commands: list[str] = []
-    for step in step_blocks(segment):
-        commands.extend(re.findall(r'(?m)^\s*(?:-\s*)?run:\s*([^|>][^\n]*)$', step.group(0)))
-    return commands
-
-
-def command_step_hits(segment: str, command: str) -> list[re.Match[str]]:
-    hits: list[re.Match[str]] = []
-    pattern = re.compile(rf'(?m)^\s*(?:-\s*)?run:\s*{re.escape(command)}\s*$')
-    for step in step_blocks(segment):
-        if pattern.search(step.group(0)):
-            hits.append(step)
-    return hits
-
-
-def inject_before_required_command(text: str, job: str, next_job: str, command: str, block: str) -> str:
-    start, end, segment = isolate_job(text, job, next_job)
-    hits = command_step_hits(segment, command)
-    if len(hits) != 1:
-        fail(
-            f'Expected exactly one {command} step in inner CI job {job}; found {len(hits)}. '
-            f'Discovered simple run commands: {simple_run_commands(segment)}'
-        )
-    hit = hits[0]
-    segment = segment[:hit.start()] + block + segment[hit.start():]
-    return text[:start] + segment + text[end:]
-
-
-def ensure_validation_before_command(
-    text: str,
-    job: str,
-    next_job: str,
-    media_block: str,
-    anchor_command: str,
-) -> str:
-    start, end, segment = isolate_job(text, job, next_job)
-    validate_hits = command_step_hits(segment, 'npm run validate')
-    if len(validate_hits) > 1:
-        fail(
-            f'Expected at most one npm run validate step in inner CI job {job}; found {len(validate_hits)}. '
-            f'Discovered simple run commands: {simple_run_commands(segment)}'
-        )
-    if len(validate_hits) == 1:
-        hit = validate_hits[0]
-        segment = segment[:hit.start()] + media_block + segment[hit.start():]
-    else:
-        anchor_hits = command_step_hits(segment, anchor_command)
-        if len(anchor_hits) != 1:
-            fail(
-                f'Expected exactly one {anchor_command} anchor in inner CI job {job} when adding validation; '
-                f'found {len(anchor_hits)}. Discovered simple run commands: {simple_run_commands(segment)}'
-            )
-        hit = anchor_hits[0]
-        segment = segment[:hit.start()] + media_block + validate_step + segment[hit.start():]
-    return text[:start] + segment + text[end:]
-
-
-# Linux already had full validation; preserve it and put the decoder/probe
-# prerequisite immediately before that existing step.
+# Linux already had full validation; preserve it and put the media prerequisite
+# immediately before that existing step.
 ci_text = inject_before_required_command(
     ci_text, 'linux-full', 'macos-safari', 'npm run validate', linux_media
 )
 
-# Fresh hosted evidence proved that the packaged macOS and Windows jobs never
-# ran full validation. Add it before their existing build/browser/release stages.
-# If a future source already contains exactly one validation step, keep it and
-# only add the media prerequisite immediately before it.
+# Hosted evidence showed that the packaged macOS and Windows jobs lacked full
+# validation. Add it before their build/browser/release stages. The inserted
+# command intentionally uses the repository root (no wrapper-only `work/` path).
 ci_text = ensure_validation_before_command(
     ci_text, 'macos-safari', 'windows-release', mac_media, 'npm run build'
 )
@@ -297,18 +331,18 @@ validation_counts: dict[str, int] = {}
 for job, next_job in validation_jobs:
     _, _, segment = isolate_job(ci_text, job, next_job)
     validation_counts[job] = len(command_step_hits(segment, 'npm run validate'))
-
 if any(count != 1 for count in validation_counts.values()):
     detail = ', '.join(f'{job}={count}' for job, count in validation_counts.items())
-    fail('Derived inner CI must contain exactly one full validation step in each certification job; ' + detail)
-if sum(validation_counts.values()) != 4:
-    fail(f'Derived inner CI normalized validation count must be 4; got {sum(validation_counts.values())}')
+    fail(
+        'Derived inner CI must contain exactly one full validation step in each '
+        'certification job; ' + detail
+    )
 
 ci_path.write_text(ci_text, encoding='utf-8', newline='')
 changed.add('.github/workflows/ci.yml')
 
-# Extend the source's own static and mutation gates so the repaired packaged CI
-# cannot later lose its fresh-runner media prerequisite or platform validation.
+# Extend the source's own static gate so the repaired packaged CI cannot later
+# lose its fresh-runner media prerequisite or any platform validation site.
 audit_path = WORK / 'scripts' / 'audit-lib.mjs'
 audit_text = read_utf8(audit_path)
 audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
@@ -316,33 +350,50 @@ audit_guard = r'''    ,["CI provisions ffprobe and runs full validation in resol
 '''
 if audit_text.count(audit_anchor) != 1:
     fail('Could not locate unique inner CI safeguard insertion anchor')
-audit_path.write_text(audit_text.replace(audit_anchor, audit_guard + audit_anchor, 1), encoding='utf-8', newline='')
+audit_path.write_text(
+    audit_text.replace(audit_anchor, audit_guard + audit_anchor, 1),
+    encoding='utf-8',
+    newline='',
+)
 changed.add('scripts/audit-lib.mjs')
 
+# Add deliberate regressions for each repaired CI property. Regexes tolerate
+# both YAML spellings (`- run:` and `run:`) instead of depending on formatting.
 mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
 mutation_text = read_utf8(mutation_path)
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 mutation_guard = r'''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
   ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision MP3 fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
-  ["remove Linux full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,160}?run: npm run test:worker)/, ""],
-  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,220}?run: npm run browsers:install:webkit)/, ""],
-  ["remove Windows full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,220}?run: npm run browsers:install:branded)/, ""],
+  ["remove resolve-lock full validation from CI", ".github/workflows/ci.yml", /      - name: Full dependency-free adversarial gate\n        run: npm run validate\n/, ""],
+  ["remove Linux full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,180}?run: npm run test:worker)/, ""],
+  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,260}?run: npm run browsers:install:webkit)/, ""],
+  ["remove Windows full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,260}?run: npm run browsers:install:branded)/, ""],
 '''
 if mutation_text.count(mutation_anchor) != 1:
     fail('Could not locate unique inner CI mutation insertion anchor')
-mutation_path.write_text(mutation_text.replace(mutation_anchor, mutation_guard + mutation_anchor, 1), encoding='utf-8', newline='')
+mutation_path.write_text(
+    mutation_text.replace(mutation_anchor, mutation_guard + mutation_anchor, 1),
+    encoding='utf-8',
+    newline='',
+)
 changed.add('scripts/mutation-suite.mjs')
 
-# Every executable first-party Action reference in the packaged CI must now be
-# a full immutable SHA and must include the four reviewed current Actions.
+# Every executable first-party Action reference in packaged CI must be a full
+# immutable SHA and must include all reviewed current first-party Actions.
 uses_refs = re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)', ci_text, flags=re.M)
 action_refs = [ref for ref in uses_refs if ref.startswith('actions/')]
 if not action_refs:
     fail('Inner CI contains no first-party GitHub Action refs after materialization')
-bad_refs = [ref for ref in action_refs if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}', ref)]
+bad_refs = [
+    ref
+    for ref in action_refs
+    if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}', ref)
+]
 if bad_refs:
     fail('Non-immutable inner CI action refs remain: ' + ', '.join(sorted(set(bad_refs))))
-missing_expected = sorted(ref for ref in set(ACTION_MIGRATIONS.values()) if ref not in action_refs)
+missing_expected = sorted(
+    ref for ref in set(ACTION_MIGRATIONS.values()) if ref not in action_refs
+)
 if missing_expected:
     fail('Expected current SHA-pinned action refs missing from inner CI: ' + ', '.join(missing_expected))
 
