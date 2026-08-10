@@ -1,0 +1,2 @@
+Cosmic Transcriber Web 1.0.12 hosted certification trigger.
+Exact source snapshot SHA-256: 7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb
