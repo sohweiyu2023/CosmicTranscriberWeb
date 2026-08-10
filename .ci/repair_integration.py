@@ -42,12 +42,11 @@ def top_level_entry(text: str, label: str) -> tuple[int, int, str]:
     return hit.start(), end, text[hit.start():end]
 
 
-# Preserve the reviewed whole-Worker integration contract. This diagnostic run
-# keeps the current test-only foreign Request normalizer, but emits only bounded
-# booleans/type names so we can determine the actual Wrangler -> Node/MSW call
-# shape without logging URLs, header values, multipart boundaries, keys, bodies,
-# audio, or arbitrary exception text. A sentinel is appended below so no release
-# can be certified from this diagnostic commit.
+# Preserve the reviewed whole-Worker integration contract. Current Wrangler's
+# createTestHarness forwards a foreign Request-like object as RequestInit to
+# Node's global fetch. Identify that cross-realm streamed request by capabilities,
+# not by constructor name, and normalize it before handing it to MSW. Production
+# Worker behavior is unchanged.
 integration = read(INTEGRATION)
 policies = list(re.finditer(r'onUnhandledRequest\s*:\s*["\']error["\']', integration))
 wrangler_listens = list(re.finditer(r'(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$', integration))
@@ -57,7 +56,13 @@ wrangler_listen = wrangler_listens[0]
 msw_listen_start = integration.rfind(".listen(", 0, policies[0].start())
 if msw_listen_start < 0 or integration.rfind("\n", 0, msw_listen_start) + 1 > wrangler_listen.start():
     fail("Integration harness must start MSW before Wrangler listen()")
-for marker in ("CTW_DIAGNOSTIC_ONLY", "CTW_UPSTREAM_FETCH_EXCEPTION", "ctwInstallHarnessFetchAdapter"):
+for marker in (
+    "CTW_DIAGNOSTIC_ONLY",
+    "CTW_UPSTREAM_FETCH_EXCEPTION",
+    "CTW_HARNESS_REQUEST_DIAGNOSTIC",
+    "CTW_MSW_MULTIPART_DIAGNOSTIC",
+    "ctwInstallHarnessFetchAdapter",
+):
     if marker in integration:
         fail(f"Temporary/legacy integration marker unexpectedly present: {marker}")
 for assertion in (
@@ -73,44 +78,17 @@ adapter = r'''
 let ctwRestoreHarnessFetch=null;
 function ctwInstallHarnessRequestNormalizer(){
   const mswFetch=globalThis.fetch;
-  let diagnosticCount=0;
   globalThis.fetch=(input,init)=>{
-    const hasInit=Boolean(init && typeof init==='object');
-    const hasBody=Boolean(hasInit && init.body!=null);
     const foreignRequest=Boolean(
-      hasBody && init.constructor?.name==='Request' && !(init instanceof Request)
+      init && typeof init==='object' && init.body!=null &&
+      !(init instanceof Request) &&
+      typeof init.headers?.get==='function' &&
+      typeof init.headers?.forEach==='function'
     );
-    let copiedHeaders=null;
-    if(hasBody){
-      copiedHeaders=new Headers();
-      init.headers?.forEach?.((value,name)=>copiedHeaders.append(name,value));
-      if(diagnosticCount<4){
-        const sourceContentType=typeof init.headers?.get==='function'
-          ? init.headers.get('content-type')
-          : null;
-        const copiedContentType=copiedHeaders.get('content-type');
-        console.error('CTW_HARNESS_REQUEST_DIAGNOSTIC',{
-          inputCtor:String(input?.constructor?.name||typeof input).slice(0,40),
-          inputNativeRequest:typeof Request!=='undefined' && input instanceof Request,
-          inputHasBody:Boolean(input && typeof input==='object' && input.body!=null),
-          initCtor:String(init?.constructor?.name||typeof init).slice(0,40),
-          initNativeRequest:typeof Request!=='undefined' && init instanceof Request,
-          initHasBody:hasBody,
-          headersGet:typeof init.headers?.get==='function',
-          headersForEach:typeof init.headers?.forEach==='function',
-          headersIterable:Boolean(init.headers?.[Symbol.iterator]),
-          sourceContentTypePresent:Boolean(sourceContentType),
-          sourceContentTypeMultipart:/^multipart\/form-data(?:;|$)/i.test(String(sourceContentType||'')),
-          sourceBoundaryPresent:/boundary=/i.test(String(sourceContentType||'')),
-          copiedContentTypePresent:Boolean(copiedContentType),
-          copiedContentTypeMultipart:/^multipart\/form-data(?:;|$)/i.test(String(copiedContentType||'')),
-          copiedBoundaryPresent:/boundary=/i.test(String(copiedContentType||'')),
-          foreignRequest
-        });
-        diagnosticCount++;
-      }
-    }
     if(!foreignRequest)return mswFetch(input,init);
+
+    const headers=new Headers();
+    init.headers.forEach((value,name)=>headers.append(name,value));
 
     let signal=init.signal;
     if(signal && typeof AbortSignal!=='undefined' && !(signal instanceof AbortSignal)){
@@ -122,7 +100,7 @@ function ctwInstallHarnessRequestNormalizer(){
 
     return mswFetch(input,{
       method:init.method,
-      headers:copiedHeaders,
+      headers,
       body:init.body,
       redirect:init.redirect,
       signal,
@@ -159,46 +137,24 @@ cleanup = (
 )
 integration = integration[:network_close.start()] + cleanup + integration[network_close.end():]
 
-# Also classify the Content-Type seen by MSW itself immediately before the
-# existing Request.formData() call. Only booleans/type names are printed.
-content_type_assignment = re.compile(
-    r"(?m)^(?P<indent>\s*)seenContentType\s*=\s*request\.headers\.get\(['\"]content-type['\"]\)\s*\|\|\s*['\"]['\"]\s*;\s*$"
-)
-ct_hits = list(content_type_assignment.finditer(integration))
-if len(ct_hits) != 1:
-    fail(f"Expected exactly one seenContentType assignment; found {len(ct_hits)}")
-ct = ct_hits[0]
-ct_indent = ct.group("indent")
-msw_diag = "\n".join([
-    ct.group(0),
-    f"{ct_indent}console.error('CTW_MSW_MULTIPART_DIAGNOSTIC',{{",
-    f"{ct_indent}  requestCtor:String(request?.constructor?.name||typeof request).slice(0,40),",
-    f"{ct_indent}  requestNativeRequest:typeof Request!=='undefined' && request instanceof Request,",
-    f"{ct_indent}  contentTypePresent:Boolean(seenContentType),",
-    f"{ct_indent}  contentTypeMultipart:/^multipart\\/form-data(?:;|$)/i.test(seenContentType),",
-    f"{ct_indent}  boundaryPresent:/boundary=/i.test(seenContentType)",
-    f"{ct_indent}}});",
-])
-integration = integration[:ct.start()] + msw_diag + integration[ct.end():]
-
 for invariant, count in (
     ("ctwRestoreHarnessFetch=ctwInstallHarnessRequestNormalizer()", 1),
     ("ctwRestoreHarnessFetch?.()", 1),
-    ("CTW_HARNESS_REQUEST_DIAGNOSTIC", 1),
-    ("CTW_MSW_MULTIPART_DIAGNOSTIC", 1),
+    ("!(init instanceof Request)", 1),
+    ("typeof init.headers?.get==='function'", 1),
+    ("typeof init.headers?.forEach==='function'", 1),
+    ("init.headers.forEach((value,name)=>headers.append(name,value))", 1),
     ("duplex:'half'", 1),
 ):
     if integration.count(invariant) != count:
-        fail(f"Harness diagnostic invariant drifted: {invariant}")
-
-# Diagnostic safety latch: even if the target 9 production/integration tests
-# become green, this extra test forces the job red and prevents browser/release
-# certification until diagnostics are removed in the follow-up commit.
-integration += (
-    "\n\nit('CI diagnostic sentinel prevents release certification',()=>{\n"
-    "  throw new Error('CTW_DIAGNOSTIC_ONLY');\n"
-    "});\n"
-)
+        fail(f"Harness Request normalizer invariant drifted: {invariant}")
+for marker in (
+    "CTW_DIAGNOSTIC_ONLY",
+    "CTW_HARNESS_REQUEST_DIAGNOSTIC",
+    "CTW_MSW_MULTIPART_DIAGNOSTIC",
+):
+    if marker in integration:
+        fail(f"Diagnostic marker survived clean integration repair: {marker}")
 write(INTEGRATION, integration)
 
 
@@ -269,7 +225,9 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
         test_changes.append(path.relative_to(WORK).as_posix())
 
 
-# Preserve the existing redirect safeguard and current normalizer safeguard.
+# Preserve the existing redirect safeguard's complete entry, migrate only its
+# mode token, then enforce the production all-3xx rejection and capability-based
+# test-harness normalization required for the streamed multipart MSW proof.
 audit = read(AUDIT)
 entry_start, entry_end, entry = top_level_entry(audit, "redirect errors")
 mode_tokens = list(re.finditer(r'(?P<q>["\'])error(?P=q)', entry))
@@ -293,10 +251,16 @@ guard_check = (
 bridge_check = (
     '    ,["integration normalizes foreign harness Request before MSW", () => '
     + 's("tests/integration/worker.test.js").includes("function ctwInstallHarnessRequestNormalizer()")'
-    + ' && s("tests/integration/worker.test.js").includes("init.headers?.forEach?.((value,name)=>copiedHeaders.append(name,value))")'
-    + ' && s("tests/integration/worker.test.js").includes("duplex:\'half\'")'
+    + ' && s("tests/integration/worker.test.js").includes("!(init instanceof Request)")'
+    + ' && s("tests/integration/worker.test.js").includes("typeof init.headers?.get===\\\'function\\\'")'
+    + ' && s("tests/integration/worker.test.js").includes("typeof init.headers?.forEach===\\\'function\\\'")'
+    + ' && s("tests/integration/worker.test.js").includes("init.headers.forEach((value,name)=>headers.append(name,value))")'
+    + ' && s("tests/integration/worker.test.js").includes("duplex:\\\'half\\\'")'
     + ' && s("tests/integration/worker.test.js").includes("ctwRestoreHarnessFetch=ctwInstallHarnessRequestNormalizer()")'
     + ' && s("tests/integration/worker.test.js").includes("ctwRestoreHarnessFetch?.()")'
+    + ' && !s("tests/integration/worker.test.js").includes("CTW_DIAGNOSTIC_ONLY")'
+    + ' && !s("tests/integration/worker.test.js").includes("CTW_HARNESS_REQUEST_DIAGNOSTIC")'
+    + ' && !s("tests/integration/worker.test.js").includes("CTW_MSW_MULTIPART_DIAGNOSTIC")'
     + ' && /request\\s*\\.\\s*clone\\s*\\(\\s*\\)\\s*\\.\\s*formData\\s*\\(\\s*\\)/'
     + '.test(s("tests/integration/worker.test.js"))]\n'
 )
@@ -334,7 +298,7 @@ new_mutations = "\n".join([
     (
         '  ["drop foreign harness Request header normalization -> integration normalizes foreign harness Request before MSW", '
         '"tests/integration/worker.test.js", '
-        r'/\s*init\.headers\?\.forEach\?\.\(\(value,name\)=>copiedHeaders\.append\(name,value\)\);/, ""],'
+        r'/\s*init\.headers\.forEach\(\(value,name\)=>headers\.append\(name,value\)\);/, ""],'
     ),
 ])
 mutations = mutations.replace(mutation_anchor, new_mutations + "\n" + mutation_anchor, 1)
@@ -359,11 +323,9 @@ if any(old in final_mutations for old, _ in target_forms):
     fail("Old redirect-error mutation payload target survived migration")
 
 print(f"Integration harness verification PASS: harness={wrangler_listen.group(1)}; MSW precedes Wrangler.")
-print("Diagnostic foreign Request normalizer installed; direct request.clone().formData() proof preserved.")
-print("Bounded harness/MSW multipart shape diagnostics installed; no header values or body data are logged.")
-print("Diagnostic release sentinel installed: this commit cannot certify a release.")
+print("Capability-based foreign streamed Request normalization installed test-only before MSW; direct request.clone().formData() proof preserved.")
 print(f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses redirect="manual" + immediate all-3xx fail-closed rejection.')
-print("Redirect and harness-normalizer safeguards/mutations installed.")
+print("Redirect and harness-normalizer safeguards/mutations installed; diagnostics/sentinel absent.")
 if test_changes:
     print("Redirect-mode test migrations: " + ", ".join(test_changes))
 else:
