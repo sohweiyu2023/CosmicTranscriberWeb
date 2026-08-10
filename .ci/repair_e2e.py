@@ -210,18 +210,18 @@ if app.count(checkpoint_import) != 1:
 
 # ---------------------------------------------------------------------------
 # 4. Browser app repair: constrain every programmatic prompt assignment through
-# the textarea's native value setter. The prior microtask/load clamp ran before
-# the app's asynchronous saved-preference restoration, so the 13k prompt could
-# overwrite the already-clamped value later. This instance setter is installed
-# before queued asynchronous restoration resumes and applies the same maxLength
-# plus surrogate-pair boundary on every subsequent direct value assignment.
+# the textarea's native value setter. Hosted cross-engine evidence proved that
+# app startup can restore saved preferences before an end-of-module guard is
+# reached (for example across top-level-await initialization). Install this
+# guard immediately after the complete import block and checkpoint import, before
+# any original application startup statement can execute. The declared textarea
+# maxLength plus surrogate-pair boundary is then enforced on every later direct
+# programmatic value assignment, including saved-preference restoration.
 # ---------------------------------------------------------------------------
 prompt_marker = "// CTW_RESTORED_PROMPT_BOUND"
 if prompt_marker in app:
     fail("Restored-prompt bound marker unexpectedly already present")
-prompt_repair = r'''
-
-// CTW_RESTORED_PROMPT_BOUND
+prompt_repair = r'''// CTW_RESTORED_PROMPT_BOUND
 {
   const ctwPromptInput = document.getElementById("promptInput");
   if (ctwPromptInput) {
@@ -252,11 +252,13 @@ prompt_repair = r'''
       ctwPromptInput.value = ctwPromptInput.value;
     }
   }
-}
-'''
-app = app.rstrip() + prompt_repair + "\n"
+}'''
+startup_insert_at = insert_at + len(checkpoint_import) + 1
+app = app[:startup_insert_at] + prompt_repair + "\n" + app[startup_insert_at:]
+prompt_prefix = checkpoint_import + "\n" + prompt_marker
 for invariant, expected in (
     (prompt_marker, 1),
+    (prompt_prefix, 1),
     ('document.getElementById("promptInput")', 1),
     ('Object.defineProperty(ctwPromptInput, "value"', 1),
     ("this.maxLength", 3),
@@ -266,6 +268,8 @@ for invariant, expected in (
 ):
     if app.count(invariant) != expected:
         fail(f"Restored-prompt derived invariant drifted: {invariant} -> {app.count(invariant)} (expected {expected})")
+if app.index(prompt_marker) != app.index(checkpoint_import) + len(checkpoint_import) + 1:
+    fail("Restored-prompt guard is not immediately after imports/checkpoint binding and before original app startup")
 write(APP, app)
 
 
@@ -307,6 +311,7 @@ for label in labels:
 port_seed = "process.env.COSMIC_E2E_PORT ||= String(randomInt(20000,60000))"
 token_seed = "process.env.COSMIC_E2E_TOKEN ||= randomBytes(16).toString('hex')"
 server_env = "env:{...process.env,COSMIC_E2E_PORT:String(e2ePort),COSMIC_E2E_TOKEN:e2eToken}"
+prompt_marker_offset = len(checkpoint_import) + 1
 checks = [
     (
         shared_label,
@@ -339,7 +344,8 @@ checks = [
         + ' && s("public/js/app.js").includes("Object.defineProperty(ctwPromptInput, \\\"value\\\"")'
         + ' && s("public/js/app.js").includes("this.maxLength")'
         + ' && s("public/js/app.js").includes("ctwSet.call(this, bounded);")'
-        + ' && s("public/js/app.js").includes("last >= 0xD800 && last <= 0xDBFF")',
+        + ' && s("public/js/app.js").includes("last >= 0xD800 && last <= 0xDBFF")'
+        + f' && s("public/js/app.js").indexOf({json.dumps(prompt_marker)})===s("public/js/app.js").indexOf({json.dumps(checkpoint_import)})+{prompt_marker_offset}',
     ),
     (
         sort_label,
@@ -416,6 +422,6 @@ print("Playwright E2E endpoint repair PASS: random port/token are generated once
 print("E2E HTTPS repair PASS: ephemeral localhost TLS preserves production Secure __Host cookie semantics across browsers; Playwright accepts only the test certificate error.")
 print("Playwright CI fail-fast repair PASS: no CI retries; browser actions/navigation have bounded waits while test assertions retain explicit long-operation timeouts.")
 print(f"Browser checkpoint reuse binding PASS: checkpointResultReusable imported from {rel}.")
-print("Restored prompt bound PASS: all programmatic textarea value assignments are clamped to maxLength without splitting a trailing high surrogate.")
+print("Restored prompt bound PASS: prompt setter guard is installed before original app startup and clamps every programmatic assignment to maxLength without splitting a trailing high surrogate.")
 print("Natural-sort E2E synchronization PASS: ordering is asserted only after both files reach Ready.")
 print("Browser/E2E static safeguards and deliberate mutations installed; existing fixed-port mutation preserved.")
