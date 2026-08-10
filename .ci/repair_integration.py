@@ -29,31 +29,19 @@ def write(path: pathlib.Path, text: str) -> None:
 
 text = read(TEST)
 
-# Cloudflare's createTestHarness integration contract proxies Worker outbound
-# fetches through Node globalThis.fetch(), where MSW can intercept them. The
-# reviewed 1.0.12 source already starts the interceptor before Wrangler; verify
-# that contract here instead of rewriting unrelated validation machinery.
-policy_matches = list(
-    re.finditer(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text)
-)
+# Cloudflare's createTestHarness contract proxies Worker outbound fetches through
+# Node globalThis.fetch(), where MSW can intercept them. Keep the reviewed
+# fail-closed ordering and direct-Worker proof intact.
+policy_matches = list(re.finditer(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text))
 if len(policy_matches) != 1:
-    fail(
-        "Expected exactly one MSW onUnhandledRequest:error policy; "
-        f"found {len(policy_matches)}"
-    )
+    fail(f"Expected exactly one MSW onUnhandledRequest:error policy; found {len(policy_matches)}")
 policy_match = policy_matches[0]
 
 harness_matches = list(
-    re.finditer(
-        r"(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$",
-        text,
-    )
+    re.finditer(r"(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$", text)
 )
 if len(harness_matches) != 1:
-    fail(
-        "Expected exactly one awaited Wrangler harness listen(); "
-        f"found {len(harness_matches)}"
-    )
+    fail(f"Expected exactly one awaited Wrangler harness listen(); found {len(harness_matches)}")
 harness_match = harness_matches[0]
 harness_name = harness_match.group(1)
 
@@ -64,10 +52,96 @@ msw_line_start = text.rfind("\n", 0, listen_start) + 1
 if msw_line_start > harness_match.start():
     fail("Integration harness must start MSW interception before Wrangler listen()")
 
-# Keep the two outbound-interception assertions strict, but make any remaining
-# failure useful: Wrangler's server.debug() prints the harness timeline/runtime
-# logs, and the synthetic test response status/body tells us whether the request
-# was rejected before reaching Node/MSW.
+if "CTW_HARNESS_FETCH_BRIDGE" in text or "ctwInstallHarnessFetchAdapter" in text:
+    fail("Harness fetch adapter unexpectedly already present in reviewed integration test")
+if "CTW_DIAGNOSTIC_ONLY" in text:
+    fail("Diagnostic sentinel unexpectedly already present in reviewed integration test")
+
+# Wrangler 4.120.0's test harness forwards Miniflare's own undici Request as the
+# RequestInit to globalThis.fetch(). MSW then reconstructs that with Node's
+# global Request. GET subrequests already pass, while POST bodies fail before
+# the MSW handler. Normalize ONLY this foreign-Request/body bridge in the test
+# process: explicit method/headers/body/redirect, Node-compatible AbortSignal,
+# and duplex:'half'. Production Worker fetch semantics are not modified.
+adapter = r'''
+let ctwRestoreHarnessFetch=null;
+function ctwInstallHarnessFetchAdapter(){
+  const mswFetch=globalThis.fetch;
+  globalThis.fetch=(input,init)=>{
+    const foreignRequest=Boolean(
+      init && typeof init==='object' &&
+      init.constructor?.name==='Request' &&
+      !(init instanceof Request)
+    );
+    if(!foreignRequest || init.body==null)return mswFetch(input,init);
+
+    const body=init.body;
+    let signal=init.signal;
+    let signalBridged=false;
+    if(signal && typeof AbortSignal!=='undefined' && !(signal instanceof AbortSignal)){
+      const bridge=new AbortController();
+      signalBridged=true;
+      if(signal.aborted)bridge.abort(signal.reason);
+      else signal.addEventListener?.('abort',()=>bridge.abort(signal.reason),{once:true});
+      signal=bridge.signal;
+    }
+
+    const normalized={
+      method:init.method,
+      headers:new Headers(init.headers),
+      body,
+      redirect:init.redirect,
+      signal,
+      duplex:'half'
+    };
+    console.error('CTW_HARNESS_FETCH_BRIDGE',{
+      foreignRequest:true,
+      method:String(init.method||''),
+      mode:String(init.mode||''),
+      modeNavigate:init.mode==='navigate',
+      redirect:String(init.redirect||''),
+      hasBody:true,
+      bodyLocked:Boolean(body?.locked),
+      signalBridged
+    });
+    return mswFetch(input,normalized);
+  };
+  return ()=>{globalThis.fetch=mswFetch;};
+}
+'''.strip("\n") + "\n\n"
+
+before_all = re.search(r"(?m)^beforeAll\(async\(\)=>\{\s*$", text)
+if before_all is None:
+    fail("Could not locate integration beforeAll()")
+text = text[: before_all.start()] + adapter + text[before_all.start() :]
+
+network_listen = re.search(
+    r"(?m)^(?P<indent>\s*)network\.listen\(\{onUnhandledRequest:['\"]error['\"]\}\);\s*$",
+    text,
+)
+if network_listen is None:
+    fail("Could not locate exact MSW network.listen() startup")
+indent = network_listen.group("indent")
+startup_replacement = (
+    network_listen.group(0)
+    + "\n"
+    + f"{indent}ctwRestoreHarnessFetch=ctwInstallHarnessFetchAdapter();"
+)
+text = text[: network_listen.start()] + startup_replacement + text[network_listen.end() :]
+
+network_close = re.search(r"(?m)^(?P<indent>\s*)network\.close\(\);\s*$", text)
+if network_close is None:
+    fail("Could not locate MSW network.close() cleanup")
+indent = network_close.group("indent")
+cleanup_replacement = (
+    f"{indent}ctwRestoreHarnessFetch?.();\n"
+    f"{indent}ctwRestoreHarnessFetch=null;\n"
+    + network_close.group(0)
+)
+text = text[: network_close.start()] + cleanup_replacement + text[network_close.end() :]
+
+# Preserve strict hit-count assertions, but make a failure expose only bounded
+# non-secret status information and Wrangler's own debug timeline.
 if "CTW_INTEGRATION_OUTBOUND_DIAGNOSTIC" not in text:
     success_assertion = re.search(
         r"(?m)^(?P<indent>\s*)expect\(mockHits\s*,\s*['\"]OpenAI MSW mock must be reached exactly once['\"]\)\.toBe\(1\);\s*$",
@@ -102,38 +176,35 @@ if "CTW_INTEGRATION_REDIRECT_DIAGNOSTIC" not in text:
     )
     text = text[: redirect_assertion.start()] + diagnostic + text[redirect_assertion.start() :]
 
-# Fail closed if the repair accidentally weakened the original proof points.
 if text.count("OpenAI MSW mock must be reached exactly once") != 1:
     fail("Successful outbound MSW hit-count assertion was altered unexpectedly")
 if text.count("redirect MSW mock must be reached exactly once") != 1:
     fail("Redirect outbound MSW hit-count assertion was altered unexpectedly")
-if text.count("onUnhandledRequest:'error'") + text.count('onUnhandledRequest:"error"') < 1:
-    if not re.search(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text):
-        fail("MSW fail-closed unhandled-request policy disappeared")
+if text.count("ctwRestoreHarnessFetch=ctwInstallHarnessFetchAdapter()") != 1:
+    fail("Harness fetch adapter startup was not installed exactly once")
+if text.count("ctwRestoreHarnessFetch?.()") != 1:
+    fail("Harness fetch adapter cleanup was not installed exactly once")
 
-# This commit is diagnostic-only. Even if the two target integration assertions
-# unexpectedly turn green, a sentinel test prevents browser/release gates from
-# certifying a tree containing temporary transport diagnostics.
-diagnostic_sentinel = (
+# Diagnostic-only safety latch: integration tests execute first, then this test
+# deliberately fails so browsers/release packaging cannot bless temporary
+# bridge diagnostics even if the two target tests turn green.
+text += (
     "\n\nit('CI diagnostic sentinel prevents release certification', () => {\n"
     "  throw new Error('CTW_DIAGNOSTIC_ONLY');\n"
     "});\n"
 )
-if "CTW_DIAGNOSTIC_ONLY" in text:
-    fail("Diagnostic sentinel unexpectedly already present in reviewed integration test")
-text += diagnostic_sentinel
-
 write(TEST, text)
-print(
-    "Integration harness verification PASS: existing MSW interception already "
-    f"precedes Wrangler listen; harness={harness_name}."
-)
-print("Strict outbound assertions preserved; failure diagnostics installed.")
 
-# The prior duplex='half' experiment was intentionally removed: hosted Linux,
-# macOS, and Windows evidence showed no behavioral change. Keep the reviewed
-# request semantics intact and expose only non-secret categorical information
-# about the exception swallowed by the production billing-safe error wrapper.
+print(
+    "Integration harness verification PASS: MSW precedes Wrangler listen; "
+    f"harness={harness_name}."
+)
+print("Foreign Miniflare POST-body fetch bridge adapter installed for diagnostic run.")
+print("Strict outbound assertions preserved; diagnostic release sentinel installed.")
+
+# Keep the production source behavior unchanged except for a bounded temporary
+# exception classifier. Never print arbitrary exception text, request headers,
+# API keys, audio, or bodies.
 openai_text = read(OPENAI_SOURCE)
 if re.search(r"(?m)^\s*duplex\s*:", openai_text):
     fail("Reviewed OpenAI source unexpectedly contains a duplex option")
@@ -143,39 +214,36 @@ catch_anchor = (
     '    if (error instanceof ApiError) throw error;\n'
     '    const reason = String(error?.message || error || "");\n'
 )
-catch_matches = [m.start() for m in re.finditer(re.escape(catch_anchor), openai_text)]
-if len(catch_matches) != 1:
-    fail(
-        "Expected exactly one outbound-fetch billing-safe catch anchor; "
-        f"found {len(catch_matches)}"
-    )
+if openai_text.count(catch_anchor) != 1:
+    fail("Expected exactly one outbound-fetch billing-safe catch anchor")
 
 transport_diagnostic = (
     '  } catch (error) {\n'
     '    if (error instanceof ApiError) throw error;\n'
     '    const reason = String(error?.message || error || "");\n'
     '    const causeReason = String(error?.cause?.message || error?.cause || "");\n'
+    '    const stack = String(error?.stack || "");\n'
     '    console.error("CTW_UPSTREAM_FETCH_EXCEPTION", {\n'
     '      name: String(error?.name || "").slice(0, 80),\n'
     '      code: String(error?.code || "").slice(0, 80),\n'
     '      causeName: String(error?.cause?.name || "").slice(0, 80),\n'
     '      causeCode: String(error?.cause?.code || "").slice(0, 80),\n'
-    '      errorKeys: Object.keys(error || {}).slice(0, 20),\n'
-    '      causeKeys: Object.keys(error?.cause || {}).slice(0, 20),\n'
     '      flags: {\n'
     '        typeError: error?.name === "TypeError",\n'
+    '        invalid: /invalid/i.test(reason) || /invalid/i.test(causeReason),\n'
+    '        mode: /mode/i.test(reason) || /mode/i.test(causeReason),\n'
+    '        navigate: /navigate/i.test(reason) || /navigate/i.test(causeReason),\n'
     '        duplex: /duplex/i.test(reason) || /duplex/i.test(causeReason),\n'
     '        stream: /stream/i.test(reason) || /stream/i.test(causeReason),\n'
     '        locked: /locked/i.test(reason) || /locked/i.test(causeReason),\n'
     '        body: /body/i.test(reason) || /body/i.test(causeReason),\n'
-    '        unsupported: /unsupported|not supported/i.test(reason) || /unsupported|not supported/i.test(causeReason),\n'
-    '        invalid: /invalid/i.test(reason) || /invalid/i.test(causeReason),\n'
-    '        fetch: /fetch/i.test(reason) || /fetch/i.test(causeReason),\n'
-    '        network: /network/i.test(reason) || /network/i.test(causeReason),\n'
-    '        proxy: /proxy/i.test(reason) || /proxy/i.test(causeReason),\n'
-    '        request: /request/i.test(reason) || /request/i.test(causeReason),\n'
-    '        contentLength: /content[- ]?length/i.test(reason) || /content[- ]?length/i.test(causeReason),\n'
-    '        abort: /abort/i.test(reason) || /abort/i.test(causeReason)\n'
+    '        signal: /signal/i.test(reason) || /signal/i.test(causeReason),\n'
+    '        header: /header/i.test(reason) || /header/i.test(causeReason),\n'
+    '        referrer: /referrer/i.test(reason) || /referrer/i.test(causeReason),\n'
+    '        requestCtor: /Request constructor/i.test(reason) || /Request constructor/i.test(causeReason),\n'
+    '        mswStack: /@mswjs[\\/]interceptors|interceptors[\\/]fetch/i.test(stack),\n'
+    '        undiciStack: /undici/i.test(stack),\n'
+    '        workerdStack: /workerd|wrangler|\.wrangler/i.test(stack)\n'
     '      }\n'
     '    });\n'
 )
@@ -184,109 +252,5 @@ if openai_text.count("CTW_UPSTREAM_FETCH_EXCEPTION") != 1:
     fail("Expected exactly one bounded upstream-fetch exception diagnostic")
 if 'message: String(error?.message' in openai_text or 'causeMessage:' in openai_text:
     fail("Diagnostic must not log arbitrary transport exception message text")
-
 write(OPENAI_SOURCE, openai_text)
-print("Bounded upstream-fetch exception diagnostic installed; raw messages remain unlogged.")
-
-# Print the integration dispatch path explicitly. Cloudflare's documented MSW
-# example uses the direct Worker handle; this bounded excerpt lets hosted logs
-# prove which handle/path this reviewed suite actually invokes.
-print("CTW_INTEGRATION_PATH_DIAGNOSTIC_BEGIN")
-test_lines = text.splitlines()
-path_hits = [
-    i for i, line in enumerate(test_lines)
-    if any(marker in line for marker in (
-        "createTestHarness",
-        "getWorker(",
-        ".getWorker<",
-        ".fetch(",
-        "mockHits",
-        "redirectMockHits",
-        "setupServer",
-    ))
-]
-path_windows: list[tuple[int, int]] = []
-for hit in path_hits:
-    start = max(0, hit - 5)
-    end = min(len(test_lines), hit + 9)
-    if path_windows and start <= path_windows[-1][1] + 2:
-        path_windows[-1] = (path_windows[-1][0], max(path_windows[-1][1], end))
-    else:
-        path_windows.append((start, end))
-path_printed = 0
-for start, end in path_windows:
-    if path_printed >= 180:
-        break
-    allowed_end = min(end, start + (180 - path_printed))
-    print(f"--- tests/integration/worker.test.js:{start + 1}-{allowed_end} ---")
-    for lineno in range(start, allowed_end):
-        print(f"{lineno + 1:04d}: {test_lines[lineno]}")
-        path_printed += 1
-print(f"CTW_INTEGRATION_PATH_DIAGNOSTIC_END lines={path_printed}")
-
-# Hosted evidence proves the remaining failure is inside the Worker streaming
-# dispatch boundary: /api/transcribe enters post-dispatch ambiguity in a few ms
-# and the Node-side MSW mock never observes the request. Print only bounded
-# excerpts from first-party source containing the dispatch/error markers.
-source_markers = (
-    "upstream_ambiguous",
-    "api.openai.com/v1/audio/transcriptions",
-)
-stream_markers = (
-    "request.body",
-    ".body",
-    "getReader(",
-    "ReadableStream",
-    "TransformStream",
-    "fetch(",
-    "CTW_UPSTREAM_FETCH_EXCEPTION",
-)
-excluded_parts = {"node_modules", "dist", ".wrangler", ".git"}
-interesting: list[tuple[pathlib.Path, str]] = []
-for path in sorted(WORK.rglob("*")):
-    if not path.is_file() or any(part in excluded_parts for part in path.parts):
-        continue
-    if path.suffix.lower() not in {".js", ".mjs", ".ts"}:
-        continue
-    try:
-        if path.stat().st_size > 1_000_000:
-            continue
-        body = path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        continue
-    if any(marker in body for marker in source_markers):
-        interesting.append((path, body))
-
-if not interesting:
-    fail("Could not locate first-party Worker source containing OpenAI dispatch/error markers")
-
-print("CTW_STREAM_SOURCE_DIAGNOSTIC_BEGIN")
-printed_lines = 0
-for path, body in interesting[:3]:
-    lines = body.splitlines()
-    hits = [
-        i for i, line in enumerate(lines)
-        if any(marker in line for marker in source_markers)
-        or any(marker in line for marker in stream_markers)
-    ]
-    # Merge nearby source windows; cap output globally so CI logs remain bounded.
-    windows: list[tuple[int, int]] = []
-    for hit in hits:
-        start = max(0, hit - 24)
-        end = min(len(lines), hit + 36)
-        if windows and start <= windows[-1][1] + 8:
-            windows[-1] = (windows[-1][0], max(windows[-1][1], end))
-        else:
-            windows.append((start, end))
-    rel = path.relative_to(WORK).as_posix()
-    for start, end in windows[:3]:
-        if printed_lines >= 260:
-            break
-        allowed_end = min(end, start + (260 - printed_lines))
-        print(f"--- {rel}:{start + 1}-{allowed_end} ---")
-        for lineno in range(start, allowed_end):
-            print(f"{lineno + 1:04d}: {lines[lineno]}")
-            printed_lines += 1
-    if printed_lines >= 260:
-        break
-print(f"CTW_STREAM_SOURCE_DIAGNOSTIC_END lines={printed_lines} files={len(interesting)}")
+print("Bounded upstream-fetch classifier installed; raw messages remain unlogged.")
