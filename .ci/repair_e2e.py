@@ -209,49 +209,62 @@ if app.count(checkpoint_import) != 1:
 
 
 # ---------------------------------------------------------------------------
-# 4. Browser app repair: constrain every programmatic prompt assignment through
-# the textarea's native value setter. Hosted cross-engine evidence proved that
-# app startup can restore saved preferences before an end-of-module guard is
-# reached (for example across top-level-await initialization). Install this
-# guard immediately after the complete import block and checkpoint import, before
-# any original application startup statement can execute. The declared textarea
-# maxLength plus surrogate-pair boundary is then enforced on every later direct
-# programmatic value assignment, including saved-preference restoration.
+# 4. Browser app repair: normalize persisted prompt/keyword text at the one
+# known non-secret preference boundary before normal app startup reads it.
+# Hosted Chromium/Firefox/WebKit/Chrome/Edge evidence showed an element-level
+# value-setter guard was not on the actual restoration path. Normalize the
+# persisted record itself, fail soft on malformed/blocked storage, and also
+# clamp the already-present DOM values once so import-side effects are covered.
+# The clamp uses the declared textarea maxLength and never splits a trailing
+# UTF-16 high surrogate.
 # ---------------------------------------------------------------------------
 prompt_marker = "// CTW_RESTORED_PROMPT_BOUND"
+preference_key = "cosmic-transcriber-web-preferences-v1"
 if prompt_marker in app:
     fail("Restored-prompt bound marker unexpectedly already present")
+if read(E2E_SPEC).count(preference_key) != 1:
+    fail("Malformed-preferences E2E storage key drifted; refusing to install a mismatched persistence repair")
 prompt_repair = r'''// CTW_RESTORED_PROMPT_BOUND
 {
+  const ctwPreferencesKey = "cosmic-transcriber-web-preferences-v1";
+  const ctwClampPreferenceText = (element, value, fallbackMax) => {
+    const raw = typeof value === "string" ? value : "";
+    const max = Number.isInteger(element?.maxLength) && element.maxLength > 0 ? element.maxLength : fallbackMax;
+    let bounded = raw.length > max ? raw.slice(0, max) : raw;
+    if (bounded.length && raw.length > bounded.length) {
+      const last = bounded.charCodeAt(bounded.length - 1);
+      if (last >= 0xD800 && last <= 0xDBFF) bounded = bounded.slice(0, -1);
+    }
+    return bounded;
+  };
   const ctwPromptInput = document.getElementById("promptInput");
-  if (ctwPromptInput) {
-    let ctwOwner = ctwPromptInput;
-    let ctwValueDescriptor = null;
-    while (ctwOwner && !ctwValueDescriptor) {
-      ctwValueDescriptor = Object.getOwnPropertyDescriptor(ctwOwner, "value") || null;
-      ctwOwner = Object.getPrototypeOf(ctwOwner);
-    }
-    if (ctwValueDescriptor?.get && ctwValueDescriptor?.set) {
-      const ctwGet = ctwValueDescriptor.get;
-      const ctwSet = ctwValueDescriptor.set;
-      Object.defineProperty(ctwPromptInput, "value", {
-        configurable: true,
-        enumerable: ctwValueDescriptor.enumerable ?? true,
-        get() { return ctwGet.call(this); },
-        set(value) {
-          const raw = String(value ?? "");
-          const max = Number.isInteger(this.maxLength) && this.maxLength > 0 ? this.maxLength : 12000;
-          let bounded = raw.length > max ? raw.slice(0, max) : raw;
-          if (bounded.length && raw.length > bounded.length) {
-            const last = bounded.charCodeAt(bounded.length - 1);
-            if (last >= 0xD800 && last <= 0xDBFF) bounded = bounded.slice(0, -1);
+  const ctwKeywordsInput = document.getElementById("keywordsInput");
+  try {
+    const ctwSavedRaw = localStorage.getItem(ctwPreferencesKey);
+    if (ctwSavedRaw !== null) {
+      const ctwParsed = JSON.parse(ctwSavedRaw);
+      if (ctwParsed && typeof ctwParsed === "object" && !Array.isArray(ctwParsed)) {
+        let ctwChanged = false;
+        if (typeof ctwParsed.prompt === "string") {
+          const ctwPromptBounded = ctwClampPreferenceText(ctwPromptInput, ctwParsed.prompt, 12000);
+          if (ctwPromptBounded !== ctwParsed.prompt) {
+            ctwParsed.prompt = ctwPromptBounded;
+            ctwChanged = true;
           }
-          ctwSet.call(this, bounded);
         }
-      });
-      ctwPromptInput.value = ctwPromptInput.value;
+        if (typeof ctwParsed.keywords === "string") {
+          const ctwKeywordsBounded = ctwClampPreferenceText(ctwKeywordsInput, ctwParsed.keywords, 8000);
+          if (ctwKeywordsBounded !== ctwParsed.keywords) {
+            ctwParsed.keywords = ctwKeywordsBounded;
+            ctwChanged = true;
+          }
+        }
+        if (ctwChanged) localStorage.setItem(ctwPreferencesKey, JSON.stringify(ctwParsed));
+      }
     }
-  }
+  } catch {}
+  if (ctwPromptInput) ctwPromptInput.value = ctwClampPreferenceText(ctwPromptInput, ctwPromptInput.value, 12000);
+  if (ctwKeywordsInput) ctwKeywordsInput.value = ctwClampPreferenceText(ctwKeywordsInput, ctwKeywordsInput.value, 8000);
 }'''
 startup_insert_at = insert_at + len(checkpoint_import) + 1
 app = app[:startup_insert_at] + prompt_repair + "\n" + app[startup_insert_at:]
@@ -259,17 +272,21 @@ prompt_prefix = checkpoint_import + "\n" + prompt_marker
 for invariant, expected in (
     (prompt_marker, 1),
     (prompt_prefix, 1),
+    (f'const ctwPreferencesKey = "{preference_key}";', 1),
+    ('localStorage.getItem(ctwPreferencesKey)', 1),
+    ('localStorage.setItem(ctwPreferencesKey, JSON.stringify(ctwParsed))', 1),
+    ('ctwParsed.prompt = ctwPromptBounded;', 1),
+    ('ctwParsed.keywords = ctwKeywordsBounded;', 1),
     ('document.getElementById("promptInput")', 1),
-    ('Object.defineProperty(ctwPromptInput, "value"', 1),
-    ("this.maxLength", 3),
-    ("ctwSet.call(this, bounded);", 1),
+    ('document.getElementById("keywordsInput")', 1),
+    ("12000", 2),
+    ("8000", 2),
     ("last >= 0xD800 && last <= 0xDBFF", 1),
-    ("ctwPromptInput.value = ctwPromptInput.value;", 1),
 ):
     if app.count(invariant) != expected:
         fail(f"Restored-prompt derived invariant drifted: {invariant} -> {app.count(invariant)} (expected {expected})")
 if app.index(prompt_marker) != app.index(checkpoint_import) + len(checkpoint_import) + 1:
-    fail("Restored-prompt guard is not immediately after imports/checkpoint binding and before original app startup")
+    fail("Restored-prompt persistence guard is not immediately after imports/checkpoint binding and before original app startup")
 write(APP, app)
 
 
@@ -341,9 +358,11 @@ checks = [
     (
         prompt_label,
         's("public/js/app.js").includes("// CTW_RESTORED_PROMPT_BOUND")'
-        + ' && s("public/js/app.js").includes("Object.defineProperty(ctwPromptInput, \\\"value\\\"")'
-        + ' && s("public/js/app.js").includes("this.maxLength")'
-        + ' && s("public/js/app.js").includes("ctwSet.call(this, bounded);")'
+        + f' && s("public/js/app.js").includes({json.dumps(f"const ctwPreferencesKey = \"{preference_key}\";")})'
+        + ' && s("public/js/app.js").includes("localStorage.getItem(ctwPreferencesKey)")'
+        + ' && s("public/js/app.js").includes("localStorage.setItem(ctwPreferencesKey, JSON.stringify(ctwParsed))")'
+        + ' && s("public/js/app.js").includes("ctwParsed.prompt = ctwPromptBounded;")'
+        + ' && s("public/js/app.js").includes("ctwParsed.keywords = ctwKeywordsBounded;")'
         + ' && s("public/js/app.js").includes("last >= 0xD800 && last <= 0xDBFF")'
         + f' && s("public/js/app.js").indexOf({json.dumps(prompt_marker)})===s("public/js/app.js").indexOf({json.dumps(checkpoint_import)})+{prompt_marker_offset}',
     ),
@@ -393,7 +412,7 @@ mutation_specs = [
     ("downgrade E2E browser origin to HTTP -> E2E preserves Secure BYOK cookie over ephemeral localhost HTTPS", "playwright.config.js", new_origin, old_origin),
     ("remove E2E TLS server -> E2E preserves Secure BYOK cookie over ephemeral localhost HTTPS", "tests/e2e/mock-server.mjs", "https.createServer(tlsOptions,async(req,res)=>{", "https.createServer({},async(req,res)=>{"),
     ("remove checkpoint result reuse import -> browser queue preparation binds checkpoint result reuse helper", "public/js/app.js", checkpoint_import, ""),
-    ("bypass restored prompt bound -> restored prompt respects textarea maxLength with surrogate-safe truncation", "public/js/app.js", "ctwSet.call(this, bounded);", "ctwSet.call(this, raw);"),
+    ("bypass restored prompt bound -> restored prompt respects textarea maxLength with surrogate-safe truncation", "public/js/app.js", "ctwParsed.prompt = ctwPromptBounded;", "ctwParsed.prompt = ctwParsed.prompt;"),
     ("assert natural sort before preparation -> E2E natural sort waits for prepared queue state", "tests/e2e/app.spec.js", ready_line.strip(), "void 0;"),
     ("restore CI E2E retries -> Playwright CI fails fast without retry masking and bounds browser actions", "playwright.config.js", "retries:process.env.CI?0:1", "retries:1"),
 ]
@@ -422,6 +441,6 @@ print("Playwright E2E endpoint repair PASS: random port/token are generated once
 print("E2E HTTPS repair PASS: ephemeral localhost TLS preserves production Secure __Host cookie semantics across browsers; Playwright accepts only the test certificate error.")
 print("Playwright CI fail-fast repair PASS: no CI retries; browser actions/navigation have bounded waits while test assertions retain explicit long-operation timeouts.")
 print(f"Browser checkpoint reuse binding PASS: checkpointResultReusable imported from {rel}.")
-print("Restored prompt bound PASS: prompt setter guard is installed before original app startup and clamps every programmatic assignment to maxLength without splitting a trailing high surrogate.")
+print("Restored prompt bound PASS: saved prompt/keyword preferences are normalized at the persistence boundary before original app startup, with surrogate-safe maxLength truncation and fail-soft storage handling.")
 print("Natural-sort E2E synchronization PASS: ordering is asserted only after both files reach Ready.")
 print("Browser/E2E static safeguards and deliberate mutations installed; existing fixed-port mutation preserved.")
