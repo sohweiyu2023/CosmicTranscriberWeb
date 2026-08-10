@@ -113,7 +113,8 @@ write(PLAYWRIGHT, config)
 # 2. E2E mock server: keep the production Secure __Host cookie semantics by
 # serving localhost over HTTPS. Generate an ephemeral one-day self-signed cert
 # at runtime using OpenSSL present on all reviewed GitHub-hosted runner images;
-# no key/cert is committed or uploaded.
+# no key/cert is committed or uploaded. Also fail closed unless the built app
+# served to Playwright contains the reviewed prompt-persistence repair marker.
 # ---------------------------------------------------------------------------
 mock = read(MOCK_SERVER)
 old_http_import = "import http from 'node:http';"
@@ -153,6 +154,12 @@ if mock.count(old_server) != 1:
     fail(f"Reviewed E2E mock server constructor drifted: {mock.count(old_server)}")
 mock = mock.replace(old_server, tls_block, 1)
 
+root_anchor = "const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..','dist','public');"
+build_probe = "\nconst ctwBuiltApp=await readFile(path.join(root,'js','app.js'),'utf8');\nif(!ctwBuiltApp.includes('// CTW_RESTORED_PROMPT_BOUND'))throw new Error('Built E2E app is missing the reviewed restored-prompt repair.');"
+if mock.count(root_anchor) != 1:
+    fail(f"Reviewed E2E static-root anchor drifted: {mock.count(root_anchor)}")
+mock = mock.replace(root_anchor, root_anchor + build_probe, 1)
+
 for invariant, expected in (
     ("import https from 'node:https';", 1),
     ("spawnSync('openssl',[", 1),
@@ -160,6 +167,8 @@ for invariant, expected in (
     (new_mock_origin, 1),
     ("https.createServer(tlsOptions,async(req,res)=>{", 1),
     ("HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600", 1),
+    ("const ctwBuiltApp=await readFile(path.join(root,'js','app.js'),'utf8');", 1),
+    ("Built E2E app is missing the reviewed restored-prompt repair.", 1),
 ):
     if mock.count(invariant) != expected:
         fail(f"Derived HTTPS E2E mock invariant drifted: {invariant} -> {mock.count(invariant)} (expected {expected})")
@@ -220,6 +229,7 @@ if app.count(checkpoint_import) != 1:
 # ---------------------------------------------------------------------------
 prompt_marker = "// CTW_RESTORED_PROMPT_BOUND"
 preference_key = "cosmic-transcriber-web-preferences-v1"
+preference_decl = f'const ctwPreferencesKey = "{preference_key}";'
 if prompt_marker in app:
     fail("Restored-prompt bound marker unexpectedly already present")
 if read(E2E_SPEC).count(preference_key) != 1:
@@ -272,15 +282,17 @@ prompt_prefix = checkpoint_import + "\n" + prompt_marker
 for invariant, expected in (
     (prompt_marker, 1),
     (prompt_prefix, 1),
-    (f'const ctwPreferencesKey = "{preference_key}";', 1),
+    (preference_decl, 1),
     ('localStorage.getItem(ctwPreferencesKey)', 1),
     ('localStorage.setItem(ctwPreferencesKey, JSON.stringify(ctwParsed))', 1),
     ('ctwParsed.prompt = ctwPromptBounded;', 1),
     ('ctwParsed.keywords = ctwKeywordsBounded;', 1),
     ('document.getElementById("promptInput")', 1),
     ('document.getElementById("keywordsInput")', 1),
-    ("12000", 2),
-    ("8000", 2),
+    ('ctwClampPreferenceText(ctwPromptInput, ctwParsed.prompt, 12000)', 1),
+    ('ctwClampPreferenceText(ctwKeywordsInput, ctwParsed.keywords, 8000)', 1),
+    ('ctwClampPreferenceText(ctwPromptInput, ctwPromptInput.value, 12000)', 1),
+    ('ctwClampPreferenceText(ctwKeywordsInput, ctwKeywordsInput.value, 8000)', 1),
     ("last >= 0xD800 && last <= 0xDBFF", 1),
 ):
     if app.count(invariant) != expected:
@@ -358,12 +370,13 @@ checks = [
     (
         prompt_label,
         's("public/js/app.js").includes("// CTW_RESTORED_PROMPT_BOUND")'
-        + f' && s("public/js/app.js").includes({json.dumps(f"const ctwPreferencesKey = \"{preference_key}\";")})'
+        + f' && s("public/js/app.js").includes({json.dumps(preference_decl)})'
         + ' && s("public/js/app.js").includes("localStorage.getItem(ctwPreferencesKey)")'
         + ' && s("public/js/app.js").includes("localStorage.setItem(ctwPreferencesKey, JSON.stringify(ctwParsed))")'
         + ' && s("public/js/app.js").includes("ctwParsed.prompt = ctwPromptBounded;")'
         + ' && s("public/js/app.js").includes("ctwParsed.keywords = ctwKeywordsBounded;")'
         + ' && s("public/js/app.js").includes("last >= 0xD800 && last <= 0xDBFF")'
+        + ' && s("tests/e2e/mock-server.mjs").includes("Built E2E app is missing the reviewed restored-prompt repair.")'
         + f' && s("public/js/app.js").indexOf({json.dumps(prompt_marker)})===s("public/js/app.js").indexOf({json.dumps(checkpoint_import)})+{prompt_marker_offset}',
     ),
     (
@@ -438,7 +451,7 @@ for path in (APP, E2E_SPEC, MOCK_SERVER, PLAYWRIGHT):
         fail(f"Diagnostic-only marker survived browser repair: {path}")
 
 print("Playwright E2E endpoint repair PASS: random port/token are generated once and inherited by server/workers.")
-print("E2E HTTPS repair PASS: ephemeral localhost TLS preserves production Secure __Host cookie semantics across browsers; Playwright accepts only the test certificate error.")
+print("E2E HTTPS repair PASS: ephemeral localhost TLS preserves production Secure __Host cookie semantics across browsers; Playwright accepts only the test certificate error and verifies the built app contains the reviewed prompt repair.")
 print("Playwright CI fail-fast repair PASS: no CI retries; browser actions/navigation have bounded waits while test assertions retain explicit long-operation timeouts.")
 print(f"Browser checkpoint reuse binding PASS: checkpointResultReusable imported from {rel}.")
 print("Restored prompt bound PASS: saved prompt/keyword preferences are normalized at the persistence boundary before original app startup, with surrogate-safe maxLength truncation and fail-soft storage handling.")
