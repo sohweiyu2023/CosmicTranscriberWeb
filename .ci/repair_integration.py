@@ -74,10 +74,6 @@ if len(harness_listens) != 1:
 harness_match = harness_listens[0]
 harness_name = harness_match.group("name")
 harness_line_start = harness_match.start()
-harness_line_end = harness_match.end()
-if harness_line_end < len(text) and text[harness_line_end] == "\n":
-    harness_line_end += 1
-harness_statement = text[harness_line_start:harness_line_end]
 
 moved = False
 if line_start > harness_line_start:
@@ -93,15 +89,25 @@ if line_start > harness_line_start:
     moved = True
 
 # Re-derive concrete lifecycle fragments from the repaired text and prove order.
-policy_pos = re.search(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text)
+policy_match = re.search(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text)
 harness_match = re.search(r"(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$", text)
-if policy_pos is None or harness_match is None or policy_pos.start() > harness_match.start():
+if policy_match is None or harness_match is None or policy_match.start() > harness_match.start():
     fail("Integration harness must start MSW interception before Wrangler listen()")
 harness_name = harness_match.group(1)
 
+# Re-derive the exact repaired MSW statement for the adversarial mutation below.
+listen_start = text.rfind(".listen(", 0, policy_match.start())
+msw_line_start = text.rfind("\n", 0, listen_start) + 1
+msw_statement_end = text.find(";", policy_match.start()) + 1
+if msw_statement_end <= 0 or msw_statement_end - msw_line_start > 500:
+    fail("Could not bound repaired MSW listener statement")
+if msw_statement_end < len(text) and text[msw_statement_end] == "\n":
+    msw_statement_end += 1
+repaired_msw_statement = text[msw_line_start:msw_statement_end]
+
 # Make future outbound-interception failures diagnostically useful while keeping
-# the original strict hit-count assertions intact. No secret-bearing browser or
-# production value is logged; the CI uses synthetic test credentials.
+# the original strict hit-count assertions intact. No production credential is
+# logged; certification uses synthetic test credentials.
 if "CTW_INTEGRATION_OUTBOUND_DIAGNOSTIC" not in text:
     success_assertion = re.search(
         r"(?m)^(?P<indent>\s*)expect\(mockHits\s*,\s*['\"]OpenAI MSW mock must be reached exactly once['\"]\)\.toBe\(1\);\s*$",
@@ -155,45 +161,20 @@ if order_label not in audit:
     audit = audit[:line] + guard + audit[line:]
     write(AUDIT, audit)
 
-# Add an adversarial mutation that reverses the exact reviewed startup pair. The
-# new static invariant above must reject this mutation.
+# Add an adversarial mutation that removes the exact reviewed MSW startup
+# statement. The new static lifecycle invariant must reject that mutation. This
+# intentionally does not depend on the two listen statements being adjacent.
 mutation = read(MUTATION)
-mutation_label = "start Wrangler harness before outbound interception"
+mutation_label = "remove outbound interceptor startup before Wrangler harness"
 if mutation_label not in mutation:
     anchor = '["remove integration server listen"'
     idx = mutation.find(anchor)
     if idx < 0:
         fail("Could not locate integration lifecycle mutation anchor")
     line = mutation.rfind("\n", 0, idx) + 1
-
-    repaired = read(TEST)
-    policy = re.search(r"onUnhandledRequest\s*:\s*['\"]error['\"]", repaired)
-    harness = re.search(r"(?m)^\s*await\s+[A-Za-z_$][\w$]*\.listen\(\)\s*;\s*$", repaired)
-    if policy is None or harness is None:
-        fail("Could not derive repaired lifecycle statements for mutation")
-    msw_start = repaired.rfind("\n", 0, repaired.rfind(".listen(", 0, policy.start())) + 1
-    msw_end = repaired.find(";", policy.start()) + 1
-    if msw_end < len(repaired) and repaired[msw_end] == "\n":
-        msw_end += 1
-    h_start = harness.start()
-    h_end = harness.end()
-    if h_end < len(repaired) and repaired[h_end] == "\n":
-        h_end += 1
-    msw = repaired[msw_start:msw_end]
-    hstmt = repaired[h_start:h_end]
-    if msw_start > h_start:
-        fail("Repaired lifecycle order is unexpectedly reversed")
-    pattern = js_regex_escape(msw + hstmt)
-    replacement = hstmt + msw
-    # JSON-style escaping is sufficient for this JS double-quoted string.
-    replacement_js = (
-        replacement.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    )
+    pattern = js_regex_escape(repaired_msw_statement)
     case = (
-        f'  ["{mutation_label}", "tests/integration/worker.test.js", /{pattern}/, "{replacement_js}"],\n'
+        f'  ["{mutation_label}", "tests/integration/worker.test.js", /{pattern}/, ""],\n'
     )
     mutation = mutation[:line] + case + mutation[line:]
     write(MUTATION, mutation)
