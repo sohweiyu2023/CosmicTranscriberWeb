@@ -138,8 +138,26 @@ jobs:
         run: npm run test:integration
       - working-directory: work
         run: npm run browsers:install:ci
-      - working-directory: work
+      - name: Run core browser E2E
+        id: core-e2e
+        working-directory: work
         run: npm run test:e2e:core
+      - name: Upload Linux browser E2E failure evidence
+        if: ${{ failure() && steps.core-e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-failure-linux
+          path: |
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/tests/e2e
+            work/playwright*.config.*
+            work/package.json
+            work/scripts/*e2e*
+            work/scripts/*browser*
+          if-no-files-found: warn
+          retention-days: 3
       - working-directory: work
         run: npm run build:inspect
 
@@ -197,8 +215,26 @@ jobs:
         run: npm run test:integration
       - working-directory: work
         run: npm run browsers:install:webkit
-      - working-directory: work
+      - name: Run WebKit E2E
+        id: webkit-e2e
+        working-directory: work
         run: npm run test:e2e:webkit
+      - name: Upload macOS WebKit E2E failure evidence
+        if: ${{ failure() && steps.webkit-e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-failure-macos-webkit
+          path: |
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/tests/e2e
+            work/playwright*.config.*
+            work/package.json
+            work/scripts/*e2e*
+            work/scripts/*browser*
+          if-no-files-found: warn
+          retention-days: 3
       - name: Enable SafariDriver
         run: sudo /usr/bin/safaridriver --enable
       - name: Real Safari WebDriver smoke
@@ -270,8 +306,26 @@ jobs:
         run: npm run test:integration
       - working-directory: work
         run: npm run browsers:install:branded
-      - working-directory: work
+      - name: Run branded Chrome/Edge E2E
+        id: branded-e2e
+        working-directory: work
         run: npm run test:e2e:branded
+      - name: Upload Windows branded E2E failure evidence
+        if: ${{ failure() && steps.branded-e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-failure-windows-branded
+          path: |
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/tests/e2e
+            work/playwright*.config.*
+            work/package.json
+            work/scripts/*e2e*
+            work/scripts/*browser*
+          if-no-files-found: warn
+          retention-days: 3
       - working-directory: work
         run: npm run build:inspect
       - name: Record reviewed lock hash
