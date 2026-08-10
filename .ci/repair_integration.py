@@ -18,11 +18,11 @@ def fail(message: str) -> None:
 
 def read(path: pathlib.Path) -> str:
     if not path.is_file():
-        fail(f"Redirect repair required file missing: {path}")
+        fail(f"Certification repair required file missing: {path}")
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        fail(f"Redirect repair expected UTF-8 file: {path}")
+        fail(f"Certification repair expected UTF-8 file: {path}")
         raise
 
 
@@ -63,6 +63,32 @@ for assertion in (
 ):
     if integration.count(assertion) != 1:
         fail(f"Integration assertion missing or duplicated: {assertion}")
+
+# The successful outbound POST now reaches MSW. Hosted evidence shows the only
+# remaining 8/9 failure is Response.formData() rejecting the synthetic Response
+# because its own headers omit the intercepted multipart Content-Type. Keep the
+# streamed clone and propagate only that Content-Type into the test-only parser.
+multipart_parser_re = re.compile(
+    r"new\s+Response\(\s*request\.clone\(\)\.body\s*\)\.formData\(\)"
+)
+multipart_hits = list(multipart_parser_re.finditer(integration))
+if len(multipart_hits) != 1:
+    fail(f"Expected exactly one streamed multipart synthetic Response parser; found {len(multipart_hits)}")
+multipart_parser = (
+    "new Response(request.clone().body,{headers:{'Content-Type':seenContentType}}).formData()"
+)
+integration = multipart_parser_re.sub(multipart_parser, integration, count=1)
+if integration.count(multipart_parser) != 1:
+    fail("Derived integration multipart parser Content-Type propagation invariant failed")
+for pattern, label in (
+    (r"seenContentType\s*=\s*request\.headers\.get\(['\"]content-type['\"]\)\s*\|\|\s*['\"]['\"]", "captured outbound Content-Type"),
+    (r"expect\(handlerError\)\.toBeNull\(\)", "handler error assertion"),
+    (r"expect\(seenModel\)\.toBe\(['\"]gpt-transcribe['\"]\)", "model assertion"),
+    (r"expect\(seenFileSize\)\.toBe\(4\)", "file-size assertion"),
+):
+    if len(re.findall(pattern, integration)) != 1:
+        fail(f"Integration multipart proof drifted: {label}")
+write(INTEGRATION, integration)
 
 
 # Current workerd rejects redirect="error". Preserve the no-redirect policy by
@@ -134,8 +160,8 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
 
 
 # Preserve the existing redirect safeguard's complete array entry. Migrate only
-# its exact "error" mode token, then add a separate guard check at a stable
-# already-verified top-level safeguard anchor.
+# its exact "error" mode token, then add explicit redirect and multipart checks
+# at a stable already-verified top-level safeguard anchor.
 audit = read(AUDIT)
 entry_start, entry_end, entry = top_level_entry(audit, "redirect errors")
 mode_tokens = list(re.finditer(r'(?P<q>["\'])error(?P=q)', entry))
@@ -155,12 +181,23 @@ guard_check = (
     + ' && s("src/openai.js").includes(\'throw new Error("Unexpected OpenAI redirect blocked after dispatch.");\')'
     + ' && !s("src/openai.js").includes(\'redirect: "error"\')]\n'
 )
-audit = audit.replace(audit_anchor, guard_check + audit_anchor, 1)
+multipart_check = (
+    '    ,["integration multipart parser carries intercepted Content-Type", () => '
+    + 's("tests/integration/worker.test.js").includes('
+    + json.dumps(multipart_parser)
+    + ')'
+    + ' && /seenContentType\\s*=\\s*request\\.headers\\.get\\([\'"]content-type[\'"]\\)/'
+    + '.test(s("tests/integration/worker.test.js"))'
+    + ' && /expect\\(handlerError\\)\\.toBeNull\\(\\)/'
+    + '.test(s("tests/integration/worker.test.js"))]\n'
+)
+audit = audit.replace(audit_anchor, guard_check + multipart_check + audit_anchor, 1)
 write(AUDIT, audit)
 
 
-# Migrate the existing follow-redirect mutation payload, then add a deliberate
-# regression that removes the explicit 3xx rejection.
+# Migrate the existing follow-redirect mutation payload, then add deliberate
+# regressions for removing the explicit 3xx rejection and for dropping the
+# multipart parser's required Content-Type propagation.
 mutations = read(MUTATIONS)
 target_forms = [
     ('redirect: "error"', 'redirect: "manual"'),
@@ -176,15 +213,47 @@ if total_hits != 1:
 for old, new, count in hits:
     if count:
         mutations = mutations.replace(old, new, 1)
+
+# If the original streamed-body mutation targets the entire old parser call,
+# migrate that target to the corrected parser. If it targets a broader fragment
+# such as request.clone().body, no migration is necessary and it remains valid.
+parser_mutation_forms = [
+    (
+        "new Response(request.clone().body).formData()",
+        multipart_parser,
+    ),
+    (
+        r"new Response\(request\.clone\(\)\.body\)\.formData\(\)",
+        r"new Response\(request\.clone\(\)\.body,\{headers:\{'Content-Type':seenContentType\}\}\)\.formData\(\)",
+    ),
+]
+parser_payload_hits = 0
+for old, new in parser_mutation_forms:
+    count = mutations.count(old)
+    if count > 1:
+        fail(f"Streamed multipart mutation payload drifted: {old!r} count={count}")
+    if count == 1:
+        mutations = mutations.replace(old, new, 1)
+        parser_payload_hits += 1
+if parser_payload_hits > 1:
+    fail("Streamed multipart mutation matched both literal and regex payload forms")
+
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 if mutations.count(mutation_anchor) != 1:
     fail(f"Stable mutation insertion anchor drifted: {mutations.count(mutation_anchor)}")
 response_var_re = re.escape(response_var)
-new_mutation = (
-    '  ["remove explicit redirect status rejection -> redirect errors", "src/openai.js", '
-    rf'/if \({response_var_re}\.status >= 300 && {response_var_re}\.status <= 399\) \{{\n\s*throw new Error\("Unexpected OpenAI redirect blocked after dispatch\."\);\n\s*\}}/, ""],'
-)
-mutations = mutations.replace(mutation_anchor, new_mutation + "\n" + mutation_anchor, 1)
+new_mutations = "\n".join([
+    (
+        '  ["remove explicit redirect status rejection -> redirect errors", "src/openai.js", '
+        + rf'/if \({response_var_re}\.status >= 300 && {response_var_re}\.status <= 399\) \{{\n\s*throw new Error\("Unexpected OpenAI redirect blocked after dispatch\."\);\n\s*\}}/, ""],'
+    ),
+    (
+        '  ["remove multipart parser Content-Type propagation -> integration multipart parser carries intercepted Content-Type", '
+        '"tests/integration/worker.test.js", '
+        r'/,\{headers:\{\'Content-Type\':seenContentType\}\}/, ""],'
+    ),
+])
+mutations = mutations.replace(mutation_anchor, new_mutations + "\n" + mutation_anchor, 1)
 write(MUTATIONS, mutations)
 
 
@@ -194,19 +263,29 @@ if final_audit.count('"redirect errors"') != 1:
     fail('Existing "redirect errors" safeguard count drifted')
 if final_audit.count('"redirect manual mode rejects every 3xx before body parsing"') != 1:
     fail("Explicit redirect 3xx safeguard missing or duplicated")
+if final_audit.count('"integration multipart parser carries intercepted Content-Type"') != 1:
+    fail("Multipart parser Content-Type safeguard missing or duplicated")
 if final_mutations.count("remove explicit redirect status rejection -> redirect errors") != 1:
     fail("Explicit redirect-guard removal mutation missing or duplicated")
+if final_mutations.count("remove multipart parser Content-Type propagation -> integration multipart parser carries intercepted Content-Type") != 1:
+    fail("Multipart parser Content-Type mutation missing or duplicated")
 if any(old in final_mutations for old, _ in target_forms):
     fail("Old redirect-error mutation payload target survived migration")
 
 
 print(f"Integration harness verification PASS: harness={wrangler_listens[0].group(1)}; MSW precedes Wrangler.")
+print("Integration streamed multipart parser repair PASS: cloned body carries intercepted Content-Type into test-only Response.formData().")
 print(
     f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses '
     'redirect="manual" + immediate all-3xx fail-closed rejection.'
 )
 print("Redirect static safeguards preserve the original entry and add an explicit all-3xx guard check.")
+print("Multipart parser safeguard + Content-Type-removal mutation PASS.")
 print("Payload-migrated follow mutation + explicit 3xx-guard removal mutation PASS.")
+if parser_payload_hits:
+    print("Existing streamed-body mutation payload migrated to corrected multipart parser.")
+else:
+    print("Existing streamed-body mutation uses a broader parser fragment; no payload migration required.")
 if test_changes:
     print("Redirect-mode test migrations: " + ", ".join(test_changes))
 else:
