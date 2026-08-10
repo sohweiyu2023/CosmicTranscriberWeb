@@ -45,6 +45,58 @@ def top_level_entry(text: str, label: str) -> tuple[int, int, str]:
     return hit.start(), end, text[hit.start():end]
 
 
+def js_regex_escape(text: str) -> str:
+    # Escape a concrete reviewed JavaScript fragment for use in a JS regex literal.
+    out: list[str] = []
+    for ch in text:
+        if ch == "\n":
+            out.append(r"\n")
+        elif ch == "\r":
+            out.append(r"\r")
+        elif ch in r"\/^$.*+?()[]{}|":
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def top_level_comma_count(text: str) -> int:
+    # Count commas that separate constructor arguments, ignoring nested JS
+    # delimiters and quoted strings. The reviewed parser has one body argument;
+    # fail closed rather than accidentally adding a third argument if it drifts.
+    depths = {"(": 0, "[": 0, "{": 0}
+    pairs = {")": "(", "]": "[", "}": "{"}
+    quote: str | None = None
+    escaped = False
+    commas = 0
+    for ch in text:
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"', "`"):
+            quote = ch
+            continue
+        if ch in depths:
+            depths[ch] += 1
+            continue
+        if ch in pairs:
+            opener = pairs[ch]
+            if depths[opener] <= 0:
+                fail("Multipart parser constructor argument delimiters are unbalanced")
+            depths[opener] -= 1
+            continue
+        if ch == "," and all(v == 0 for v in depths.values()):
+            commas += 1
+    if quote is not None or any(v != 0 for v in depths.values()):
+        fail("Multipart parser constructor arguments are not structurally balanced")
+    return commas
+
+
 # Preserve the reviewed whole-Worker integration contract.
 integration = read(INTEGRATION)
 policies = list(re.finditer(r'onUnhandledRequest\s*:\s*["\']error["\']', integration))
@@ -65,19 +117,53 @@ for assertion in (
         fail(f"Integration assertion missing or duplicated: {assertion}")
 
 # The successful outbound POST now reaches MSW. Hosted evidence shows the only
-# remaining 8/9 failure is Response.formData() rejecting the synthetic Response
-# because its own headers omit the intercepted multipart Content-Type. Keep the
-# streamed clone and propagate only that Content-Type into the test-only parser.
+# remaining 8/9 failure is Response.formData() rejecting a test-only synthetic
+# Response because that Response does not carry the intercepted multipart
+# Content-Type/boundary. Anchor on the unique BYOK ownership test, then locate
+# exactly one new Response(...).formData() structurally inside that bounded test
+# instead of assuming one exact body spelling (body stream vs arrayBuffer etc.).
+target_title = "constructs upstream Authorization from BYOK and ignores browser Authorization"
+title_hits = [m.start() for m in re.finditer(re.escape(target_title), integration)]
+if len(title_hits) != 1:
+    fail(f"BYOK outbound integration test title count drifted: {len(title_hits)}")
+test_start = integration.rfind("it(", 0, title_hits[0])
+if test_start < 0:
+    fail("Could not locate BYOK outbound integration test start")
+next_test = re.search(r"(?m)^\s*it\(", integration[title_hits[0] + len(target_title):])
+test_end = (
+    title_hits[0] + len(target_title) + next_test.start()
+    if next_test
+    else len(integration)
+)
+test_block = integration[test_start:test_end]
+
 multipart_parser_re = re.compile(
-    r"new\s+Response\(\s*request\.clone\(\)\.body\s*\)\.formData\(\)"
+    r"new\s+Response\(\s*(?P<args>[\s\S]{1,1200}?)\s*\)\s*\.formData\(\)"
 )
-multipart_hits = list(multipart_parser_re.finditer(integration))
+multipart_hits = list(multipart_parser_re.finditer(test_block))
 if len(multipart_hits) != 1:
-    fail(f"Expected exactly one streamed multipart synthetic Response parser; found {len(multipart_hits)}")
+    fail(
+        "Expected exactly one streamed multipart synthetic Response parser "
+        f"inside BYOK outbound test; found {len(multipart_hits)}"
+    )
+multipart_hit = multipart_hits[0]
+original_parser = multipart_hit.group(0)
+original_args = multipart_hit.group("args").strip()
+if not original_args:
+    fail("Multipart parser synthetic Response unexpectedly has no body argument")
+if top_level_comma_count(original_args) != 0:
+    fail("Multipart parser synthetic Response no longer has exactly one constructor argument")
+if re.search(r"\bheaders\s*:", original_args) or "seenContentType" in original_args:
+    fail("Reviewed multipart parser unexpectedly already carries response headers")
 multipart_parser = (
-    "new Response(request.clone().body,{headers:{'Content-Type':seenContentType}}).formData()"
+    f"new Response({original_args},{{headers:{{'Content-Type':seenContentType}}}}).formData()"
 )
-integration = multipart_parser_re.sub(multipart_parser, integration, count=1)
+repaired_test_block = (
+    test_block[:multipart_hit.start()]
+    + multipart_parser
+    + test_block[multipart_hit.end():]
+)
+integration = integration[:test_start] + repaired_test_block + integration[test_end:]
 if integration.count(multipart_parser) != 1:
     fail("Derived integration multipart parser Content-Type propagation invariant failed")
 for pattern, label in (
@@ -160,8 +246,9 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
 
 
 # Preserve the existing redirect safeguard's complete array entry. Migrate only
-# its exact "error" mode token, then add explicit redirect and multipart checks
-# at a stable already-verified top-level safeguard anchor.
+# its exact "error" mode token. Also preserve the existing streamed-body
+# safeguard if it happened to encode the exact old parser call, then add
+# explicit redirect and Content-Type checks at a stable top-level anchor.
 audit = read(AUDIT)
 entry_start, entry_end, entry = top_level_entry(audit, "redirect errors")
 mode_tokens = list(re.finditer(r'(?P<q>["\'])error(?P=q)', entry))
@@ -170,6 +257,21 @@ if len(mode_tokens) != 1:
 m = mode_tokens[0]
 entry = entry[:m.start()] + m.group("q") + "manual" + m.group("q") + entry[m.end():]
 audit = audit[:entry_start] + entry + audit[entry_end:]
+
+stream_label = "integration consumes streamed multipart body without masking handler failures"
+stream_start, stream_end, stream_entry = top_level_entry(audit, stream_label)
+old_literal_count = stream_entry.count(original_parser)
+old_regex = js_regex_escape(original_parser)
+new_regex = js_regex_escape(multipart_parser)
+old_regex_count = stream_entry.count(old_regex)
+if old_literal_count + old_regex_count > 1:
+    fail("Existing streamed-body safeguard ambiguously contains the old parser more than once")
+if old_literal_count == 1:
+    stream_entry = stream_entry.replace(original_parser, multipart_parser, 1)
+elif old_regex_count == 1:
+    stream_entry = stream_entry.replace(old_regex, new_regex, 1)
+audit = audit[:stream_start] + stream_entry + audit[stream_end:]
+
 audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
 if audit.count(audit_anchor) != 1:
     fail(f"Stable audit insertion anchor drifted: {audit.count(audit_anchor)}")
@@ -183,10 +285,10 @@ guard_check = (
 )
 multipart_check = (
     '    ,["integration multipart parser carries intercepted Content-Type", () => '
-    + 's("tests/integration/worker.test.js").includes('
-    + json.dumps(multipart_parser)
-    + ')'
-    + ' && /seenContentType\\s*=\\s*request\\.headers\\.get\\([\'"]content-type[\'"]\\)/'
+    + '/new\\s+Response\\([\\s\\S]{1,1200}?,\\{headers:\\{[\\\'"]Content-Type[\\\'"]'
+    + ':seenContentType\\}\\}\\)\\s*\\.formData\\(\\)/'
+    + '.test(s("tests/integration/worker.test.js"))'
+    + ' && /seenContentType\\s*=\\s*request\\.headers\\.get\\([\\\'"]content-type[\\\'"]\\)/'
     + '.test(s("tests/integration/worker.test.js"))'
     + ' && /expect\\(handlerError\\)\\.toBeNull\\(\\)/'
     + '.test(s("tests/integration/worker.test.js"))]\n'
@@ -195,9 +297,11 @@ audit = audit.replace(audit_anchor, guard_check + multipart_check + audit_anchor
 write(AUDIT, audit)
 
 
-# Migrate the existing follow-redirect mutation payload, then add deliberate
-# regressions for removing the explicit 3xx rejection and for dropping the
-# multipart parser's required Content-Type propagation.
+# Migrate the existing follow-redirect mutation payload. If the pre-existing
+# streamed-body mutation encoded the exact old parser call, migrate that target
+# dynamically too; broader body-consumption mutations remain valid unchanged.
+# Then add deliberate regressions for removing the all-3xx rejection and the
+# multipart parser's Content-Type propagation.
 mutations = read(MUTATIONS)
 target_forms = [
     ('redirect: "error"', 'redirect: "manual"'),
@@ -214,29 +318,17 @@ for old, new, count in hits:
     if count:
         mutations = mutations.replace(old, new, 1)
 
-# If the original streamed-body mutation targets the entire old parser call,
-# migrate that target to the corrected parser. If it targets a broader fragment
-# such as request.clone().body, no migration is necessary and it remains valid.
-parser_mutation_forms = [
-    (
-        "new Response(request.clone().body).formData()",
-        multipart_parser,
-    ),
-    (
-        r"new Response\(request\.clone\(\)\.body\)\.formData\(\)",
-        r"new Response\(request\.clone\(\)\.body,\{headers:\{'Content-Type':seenContentType\}\}\)\.formData\(\)",
-    ),
-]
+parser_literal_count = mutations.count(original_parser)
+parser_regex_count = mutations.count(old_regex)
+if parser_literal_count + parser_regex_count > 1:
+    fail("Existing streamed multipart mutation ambiguously contains the old parser more than once")
 parser_payload_hits = 0
-for old, new in parser_mutation_forms:
-    count = mutations.count(old)
-    if count > 1:
-        fail(f"Streamed multipart mutation payload drifted: {old!r} count={count}")
-    if count == 1:
-        mutations = mutations.replace(old, new, 1)
-        parser_payload_hits += 1
-if parser_payload_hits > 1:
-    fail("Streamed multipart mutation matched both literal and regex payload forms")
+if parser_literal_count == 1:
+    mutations = mutations.replace(original_parser, multipart_parser, 1)
+    parser_payload_hits = 1
+elif parser_regex_count == 1:
+    mutations = mutations.replace(old_regex, new_regex, 1)
+    parser_payload_hits = 1
 
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 if mutations.count(mutation_anchor) != 1:
@@ -250,7 +342,7 @@ new_mutations = "\n".join([
     (
         '  ["remove multipart parser Content-Type propagation -> integration multipart parser carries intercepted Content-Type", '
         '"tests/integration/worker.test.js", '
-        r'/,\{headers:\{\'Content-Type\':seenContentType\}\}/, ""],'
+        r'/,\{headers:\{[\'"]Content-Type[\'"]:seenContentType\}\}/, ""],'
     ),
 ])
 mutations = mutations.replace(mutation_anchor, new_mutations + "\n" + mutation_anchor, 1)
@@ -274,7 +366,10 @@ if any(old in final_mutations for old, _ in target_forms):
 
 
 print(f"Integration harness verification PASS: harness={wrangler_listens[0].group(1)}; MSW precedes Wrangler.")
-print("Integration streamed multipart parser repair PASS: cloned body carries intercepted Content-Type into test-only Response.formData().")
+print(
+    "Integration streamed multipart parser repair PASS: the original single-body "
+    "synthetic Response now carries intercepted Content-Type into test-only Response.formData()."
+)
 print(
     f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses '
     'redirect="manual" + immediate all-3xx fail-closed rejection.'
