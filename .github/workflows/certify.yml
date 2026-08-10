@@ -14,10 +14,24 @@ jobs:
     name: Resolve one reviewed dependency graph
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Verify certification workflow action pins
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          p = pathlib.Path('.github/workflows/certify.yml')
+          text = p.read_text(encoding='utf-8')
+          refs = re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)', text, flags=re.M)
+          bad = [r for r in refs if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}', r)]
+          if bad:
+              print('Non-immutable GitHub Action refs:', *bad, sep='\n  - ')
+              sys.exit(1)
+          print(f'Certification workflow action SHA-pin gate PASS ({len(refs)} refs).')
+          PY
       - name: Materialize exact reviewed source snapshot
         run: python .ci/materialize.py
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24.19.0'
           package-manager-cache: false
@@ -51,7 +65,7 @@ jobs:
         working-directory: work
         run: npm run validate
       - name: Upload exact reviewed lock and fixtures
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: reviewed-release-inputs
           path: |
@@ -65,13 +79,13 @@ jobs:
     needs: resolve-lock
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - run: python .ci/materialize.py
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: reviewed-release-inputs
           path: reviewed
@@ -80,8 +94,14 @@ jobs:
           cp reviewed/package-lock.json work/package-lock.json
           mkdir -p work/tests/fixtures
           cp reviewed/tests/fixtures/*.mp3 work/tests/fixtures/
-      - working-directory: work
+      - name: Activate reviewed npm
+        working-directory: work
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
       - working-directory: work
         run: npm ci
       - working-directory: work
@@ -106,13 +126,13 @@ jobs:
     needs: resolve-lock
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - run: python3 .ci/materialize.py
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: reviewed-release-inputs
           path: reviewed
@@ -121,8 +141,14 @@ jobs:
           cp reviewed/package-lock.json work/package-lock.json
           mkdir -p work/tests/fixtures
           cp reviewed/tests/fixtures/*.mp3 work/tests/fixtures/
-      - working-directory: work
+      - name: Activate reviewed npm
+        working-directory: work
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
       - working-directory: work
         run: npm ci
       - working-directory: work
@@ -150,15 +176,15 @@ jobs:
     needs: resolve-lock
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Materialize exact reviewed source snapshot
         shell: pwsh
         run: python .ci/materialize.py
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: reviewed-release-inputs
           path: reviewed
@@ -172,6 +198,12 @@ jobs:
         shell: pwsh
         working-directory: work
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact setup-node Node/npm before Windows gates
+        shell: pwsh
+        working-directory: work
+        run: |
+          if ((node --version).Trim() -ne 'v24.19.0') { throw "Expected Node v24.19.0; got $(node --version)" }
+          if ((npm --version).Trim() -ne '12.0.2') { throw "Expected npm 12.0.2; got $(npm --version)" }
       - name: Execute private Windows toolchain regression/smoke test
         shell: pwsh
         working-directory: work
@@ -220,7 +252,7 @@ jobs:
           if (-not (Test-Path $zip)) { throw 'Certified release ZIP missing.' }
           Write-Output ('path=' + $zip.Path) >> $env:GITHUB_OUTPUT
       - name: Upload certified release candidate
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: CosmicTranscriberWeb-1.0.12-certified
           path: ${{ steps.certified.outputs.path }}
@@ -232,7 +264,7 @@ jobs:
     needs: [linux-full, macos-safari, windows-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: CosmicTranscriberWeb-1.0.12-certified
           path: certified
