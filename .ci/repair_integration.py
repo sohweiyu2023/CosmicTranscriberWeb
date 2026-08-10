@@ -111,6 +111,18 @@ if text.count("onUnhandledRequest:'error'") + text.count('onUnhandledRequest:"er
     if not re.search(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text):
         fail("MSW fail-closed unhandled-request policy disappeared")
 
+# This commit is diagnostic-only. Even if the two target integration assertions
+# unexpectedly turn green, a sentinel test prevents browser/release gates from
+# certifying a tree containing temporary transport diagnostics.
+diagnostic_sentinel = (
+    "\n\ntest('CI diagnostic sentinel prevents release certification', () => {\n"
+    "  throw new Error('CTW_DIAGNOSTIC_ONLY');\n"
+    "});\n"
+)
+if "CTW_DIAGNOSTIC_ONLY" in text:
+    fail("Diagnostic sentinel unexpectedly already present in reviewed integration test")
+text += diagnostic_sentinel
+
 write(TEST, text)
 print(
     "Integration harness verification PASS: existing MSW interception already "
@@ -118,59 +130,104 @@ print(
 )
 print("Strict outbound assertions preserved; failure diagnostics installed.")
 
-# The Cloudflare test harness proxies Worker subrequests through Node fetch.
-# Node requires duplex='half' for a ReadableStream request body. Preserve the
-# production streaming body and all existing policy, while making that single
-# outbound streaming fetch valid on the harness bridge. This is deterministic
-# and fail-closed so source drift cannot silently patch the wrong request.
+# The prior duplex='half' experiment was intentionally removed: hosted Linux,
+# macOS, and Windows evidence showed no behavioral change. Keep the reviewed
+# request semantics intact and expose only non-secret categorical information
+# about the exception swallowed by the production billing-safe error wrapper.
 openai_text = read(OPENAI_SOURCE)
-duplex_matches = list(
-    re.finditer(r"(?m)^(?P<indent>\s*)duplex\s*:\s*['\"]half['\"]\s*,?\s*$", openai_text)
-)
-if not duplex_matches:
-    anchor = re.compile(
-        r'(?m)^(?P<indent>\s*)body:\s*stream,\s*\n(?P=indent)redirect:\s*"error",\s*$'
-    )
-    anchors = list(anchor.finditer(openai_text))
-    if len(anchors) != 1:
-        fail(
-            "Expected exactly one streamed OpenAI fetch body immediately before "
-            f'redirect:error; found {len(anchors)}'
-        )
-    match = anchors[0]
-    indent = match.group("indent")
-    replacement = (
-        f"{indent}body: stream,\n"
-        f'{indent}duplex: "half",\n'
-        f'{indent}redirect: "error",'
-    )
-    openai_text = openai_text[: match.start()] + replacement + openai_text[match.end() :]
-else:
-    if len(duplex_matches) != 1:
-        fail(f"Expected exactly one duplex:half streaming fetch option; found {len(duplex_matches)}")
+if re.search(r"(?m)^\s*duplex\s*:", openai_text):
+    fail("Reviewed OpenAI source unexpectedly contains a duplex option")
 
-sequence = re.compile(
-    r'(?m)^(?P<indent>\s*)body:\s*stream,\s*\n'
-    r'(?P=indent)duplex\s*:\s*["\']half["\']\s*,\s*\n'
-    r'(?P=indent)redirect\s*:\s*"error",\s*$'
+catch_anchor = (
+    '  } catch (error) {\n'
+    '    if (error instanceof ApiError) throw error;\n'
+    '    const reason = String(error?.message || error || "");\n'
 )
-sequences = list(sequence.finditer(openai_text))
-if len(sequences) != 1:
+catch_matches = [m.start() for m in re.finditer(re.escape(catch_anchor), openai_text)]
+if len(catch_matches) != 1:
     fail(
-        "Streaming OpenAI fetch compatibility invariant failed: expected exactly "
-        f"one body:stream -> duplex:half -> redirect:error sequence; found {len(sequences)}"
+        "Expected exactly one outbound-fetch billing-safe catch anchor; "
+        f"found {len(catch_matches)}"
     )
-if len(list(re.finditer(r"(?m)^\s*duplex\s*:", openai_text))) != 1:
-    fail("Unexpected additional duplex option found in first-party OpenAI source")
+
+transport_diagnostic = (
+    '  } catch (error) {\n'
+    '    if (error instanceof ApiError) throw error;\n'
+    '    const reason = String(error?.message || error || "");\n'
+    '    const causeReason = String(error?.cause?.message || error?.cause || "");\n'
+    '    console.error("CTW_UPSTREAM_FETCH_EXCEPTION", {\n'
+    '      name: String(error?.name || "").slice(0, 80),\n'
+    '      code: String(error?.code || "").slice(0, 80),\n'
+    '      causeName: String(error?.cause?.name || "").slice(0, 80),\n'
+    '      causeCode: String(error?.cause?.code || "").slice(0, 80),\n'
+    '      errorKeys: Object.keys(error || {}).slice(0, 20),\n'
+    '      causeKeys: Object.keys(error?.cause || {}).slice(0, 20),\n'
+    '      flags: {\n'
+    '        typeError: error?.name === "TypeError",\n'
+    '        duplex: /duplex/i.test(reason) || /duplex/i.test(causeReason),\n'
+    '        stream: /stream/i.test(reason) || /stream/i.test(causeReason),\n'
+    '        locked: /locked/i.test(reason) || /locked/i.test(causeReason),\n'
+    '        body: /body/i.test(reason) || /body/i.test(causeReason),\n'
+    '        unsupported: /unsupported|not supported/i.test(reason) || /unsupported|not supported/i.test(causeReason),\n'
+    '        invalid: /invalid/i.test(reason) || /invalid/i.test(causeReason),\n'
+    '        fetch: /fetch/i.test(reason) || /fetch/i.test(causeReason),\n'
+    '        network: /network/i.test(reason) || /network/i.test(causeReason),\n'
+    '        proxy: /proxy/i.test(reason) || /proxy/i.test(causeReason),\n'
+    '        request: /request/i.test(reason) || /request/i.test(causeReason),\n'
+    '        contentLength: /content[- ]?length/i.test(reason) || /content[- ]?length/i.test(causeReason),\n'
+    '        abort: /abort/i.test(reason) || /abort/i.test(causeReason)\n'
+    '      }\n'
+    '    });\n'
+)
+openai_text = openai_text.replace(catch_anchor, transport_diagnostic, 1)
+if openai_text.count("CTW_UPSTREAM_FETCH_EXCEPTION") != 1:
+    fail("Expected exactly one bounded upstream-fetch exception diagnostic")
+if 'message: String(error?.message' in openai_text or 'causeMessage:' in openai_text:
+    fail("Diagnostic must not log arbitrary transport exception message text")
 
 write(OPENAI_SOURCE, openai_text)
-print("Streaming fetch Node-harness compatibility repair PASS: duplex=half.")
+print("Bounded upstream-fetch exception diagnostic installed; raw messages remain unlogged.")
 
-# Hosted evidence now proves the remaining failure is inside the Worker streaming
-# dispatch boundary: /api/transcribe enters post-dispatch ambiguity in 0-5 ms and
-# the Node-side MSW mock never observes the request. Print only bounded excerpts
-# from first-party source containing the dispatch/error markers so the next run
-# exposes the exact stream hand-off without dumping dependencies or build output.
+# Print the integration dispatch path explicitly. Cloudflare's documented MSW
+# example uses the direct Worker handle; this bounded excerpt lets hosted logs
+# prove which handle/path this reviewed suite actually invokes.
+print("CTW_INTEGRATION_PATH_DIAGNOSTIC_BEGIN")
+test_lines = text.splitlines()
+path_hits = [
+    i for i, line in enumerate(test_lines)
+    if any(marker in line for marker in (
+        "createTestHarness",
+        "getWorker(",
+        ".getWorker<",
+        ".fetch(",
+        "mockHits",
+        "redirectMockHits",
+        "setupServer",
+    ))
+]
+path_windows: list[tuple[int, int]] = []
+for hit in path_hits:
+    start = max(0, hit - 5)
+    end = min(len(test_lines), hit + 9)
+    if path_windows and start <= path_windows[-1][1] + 2:
+        path_windows[-1] = (path_windows[-1][0], max(path_windows[-1][1], end))
+    else:
+        path_windows.append((start, end))
+path_printed = 0
+for start, end in path_windows:
+    if path_printed >= 180:
+        break
+    allowed_end = min(end, start + (180 - path_printed))
+    print(f"--- tests/integration/worker.test.js:{start + 1}-{allowed_end} ---")
+    for lineno in range(start, allowed_end):
+        print(f"{lineno + 1:04d}: {test_lines[lineno]}")
+        path_printed += 1
+print(f"CTW_INTEGRATION_PATH_DIAGNOSTIC_END lines={path_printed}")
+
+# Hosted evidence proves the remaining failure is inside the Worker streaming
+# dispatch boundary: /api/transcribe enters post-dispatch ambiguity in a few ms
+# and the Node-side MSW mock never observes the request. Print only bounded
+# excerpts from first-party source containing the dispatch/error markers.
 source_markers = (
     "upstream_ambiguous",
     "api.openai.com/v1/audio/transcriptions",
@@ -182,7 +239,7 @@ stream_markers = (
     "ReadableStream",
     "TransformStream",
     "fetch(",
-    'duplex: "half"',
+    "CTW_UPSTREAM_FETCH_EXCEPTION",
 )
 excluded_parts = {"node_modules", "dist", ".wrangler", ".git"}
 interesting: list[tuple[pathlib.Path, str]] = []
