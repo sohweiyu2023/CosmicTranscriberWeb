@@ -30,65 +30,14 @@ def write(path: pathlib.Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="")
 
 
-def matching_paren(text: str, open_index: int) -> int:
-    depth = 0
-    state = "normal"
-    i = open_index
-    while i < len(text):
-        ch = text[i]
-        nxt = text[i + 1] if i + 1 < len(text) else ""
-        if state in {"single", "double", "template"}:
-            quote = {"single": "'", "double": '"', "template": "`"}[state]
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == quote:
-                state = "normal"
-            i += 1
-            continue
-        if state == "line-comment":
-            if ch == "\n":
-                state = "normal"
-            i += 1
-            continue
-        if state == "block-comment":
-            if ch == "*" and nxt == "/":
-                state = "normal"
-                i += 2
-                continue
-            i += 1
-            continue
-        if ch == "'":
-            state = "single"
-        elif ch == '"':
-            state = "double"
-        elif ch == "`":
-            state = "template"
-        elif ch == "/" and nxt == "/":
-            state = "line-comment"
-            i += 1
-        elif ch == "/" and nxt == "*":
-            state = "block-comment"
-            i += 1
-        elif ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-            if depth == 0:
-                return i
-        i += 1
-    fail("Could not find end of outbound OpenAI fetch implementation call")
-    raise AssertionError("unreachable")
-
-
-# Preserve the reviewed integration harness and strict outbound assertions.
+# Preserve the reviewed whole-Worker integration contract.
 integration = read(INTEGRATION)
-policies = list(re.finditer(r"onUnhandledRequest\s*:\s*['\"]error['\"]", integration))
-listens = list(re.finditer(r"(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$", integration))
-if len(policies) != 1 or len(listens) != 1:
-    fail(f"Integration harness policy/listen drift: policies={len(policies)} listens={len(listens)}")
+policies = list(re.finditer(r'onUnhandledRequest\s*:\s*["\']error["\']', integration))
+wrangler_listens = list(re.finditer(r'(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$', integration))
+if len(policies) != 1 or len(wrangler_listens) != 1:
+    fail(f"Integration harness policy/listen drift: policies={len(policies)} listens={len(wrangler_listens)}")
 msw_listen = integration.rfind(".listen(", 0, policies[0].start())
-if msw_listen < 0 or integration.rfind("\n", 0, msw_listen) + 1 > listens[0].start():
+if msw_listen < 0 or integration.rfind("\n", 0, msw_listen) + 1 > wrangler_listens[0].start():
     fail("Integration harness must start MSW before Wrangler listen()")
 for marker in ("CTW_DIAGNOSTIC_ONLY", "CTW_UPSTREAM_FETCH_EXCEPTION"):
     if marker in integration:
@@ -101,51 +50,55 @@ for assertion in (
         fail(f"Integration assertion missing or duplicated: {assertion}")
 
 
-# Hosted evidence from the exact pinned snapshot shows the production call is:
-# response = await fetchImpl(OPENAI_TRANSCRIPT_URL, { ... redirect: "error" ... });
-# Current workerd rejects redirect="error". Use manual handling, then reject all
-# 3xx immediately before any upstream body is consumed or trusted.
+# Hosted evidence from the exact pinned 1.0.12 snapshot shows:
+#   response = await fetchImpl(OPENAI_TRANSCRIPT_URL, { ... redirect: "error" ... });
+# Current workerd rejects redirect="error". Preserve the no-redirect policy with
+# manual handling and an immediate all-3xx rejection before reading any body.
 source = read(OPENAI)
 if "CTW_WORKER_REDIRECT_FAIL_CLOSED" in source:
     fail("Reviewed source unexpectedly already contains redirect repair")
+
 redirect_re = re.compile(r'\bredirect\s*:\s*(?P<q>["\'])error(?P=q)')
 redirects = list(redirect_re.finditer(source))
 if len(redirects) != 1:
     fail(f'Expected exactly one redirect:"error" option; found {len(redirects)}')
 redirect = redirects[0]
-assignment_re = re.compile(
-    r"(?m)^(?P<indent>[ \t]*)(?P<var>[A-Za-z_$][\w$]*)\s*=\s*await\s+"
-    r"(?P<callee>[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*\("
-)
-assignments = list(assignment_re.finditer(source, 0, redirect.start()))
-if not assignments:
-    fail('Could not locate reviewed response = await fetchImpl(...) assignment before redirect:"error"')
-assignment = assignments[-1]
-if assignment.group("callee") != "fetchImpl":
-    fail(f"Reviewed outbound callee drifted: expected fetchImpl, got {assignment.group('callee')}")
-open_paren = source.find("(", assignment.start(), assignment.end())
-close_paren = matching_paren(source, open_paren)
-if not (open_paren < redirect.start() < close_paren):
-    fail('Reviewed fetchImpl call does not contain unique redirect:"error" option')
-cursor = close_paren + 1
-while cursor < len(source) and source[cursor] in " \t\r\n":
-    cursor += 1
-if cursor >= len(source) or source[cursor] != ";":
-    fail("Reviewed outbound fetchImpl call must terminate with a semicolon")
-statement_end = cursor + 1
-statement = source[assignment.start():statement_end]
-manual_statement, replaced = redirect_re.subn('redirect: "manual"', statement)
-if replaced != 1:
-    fail(f"Expected one redirect replacement in fetchImpl statement; got {replaced}")
-indent = assignment.group("indent")
+
+assignments = list(re.finditer(
+    r'(?m)^(?P<indent>[ \t]*)(?P<var>[A-Za-z_$][\w$]*)\s*=\s*await\s+fetchImpl\s*\(',
+    source[:redirect.start()],
+))
+if len(assignments) != 1:
+    fail(f"Expected exactly one reviewed response = await fetchImpl(...) assignment; found {len(assignments)}")
+assignment = assignments[0]
 response_var = assignment.group("var")
+indent = assignment.group("indent")
+
+# The first `});` line after the redirect option is the reviewed fetchImpl call
+# terminator. Require exactly the expected indentation relationship.
+terminator_re = re.compile(r'(?m)^(?P<indent>[ \t]*)\}\);\s*$')
+terminator = terminator_re.search(source, redirect.end())
+if terminator is None:
+    fail("Could not locate reviewed fetchImpl call terminator after redirect option")
+if terminator.group("indent") != indent:
+    fail("Reviewed fetchImpl terminator indentation drifted")
+
+source, changed = redirect_re.subn('redirect: "manual"', source, count=1)
+if changed != 1:
+    fail(f"Expected one redirect replacement; got {changed}")
+
+# Re-find terminator after equal-length replacement.
+terminator = terminator_re.search(source, redirect.end())
+if terminator is None:
+    fail("Could not re-locate fetchImpl terminator after redirect replacement")
 guard = "\n".join([
     f"{indent}// CTW_WORKER_REDIRECT_FAIL_CLOSED",
     f"{indent}if ({response_var}.status >= 300 && {response_var}.status <= 399) {{",
     f'{indent}  throw new Error("Unexpected OpenAI redirect blocked after dispatch.");',
     f"{indent}}}",
 ])
-source = source[:assignment.start()] + manual_statement + "\n" + guard + source[statement_end:]
+insert_at = terminator.end()
+source = source[:insert_at] + "\n" + guard + source[insert_at:]
 if source.count('redirect: "manual"') != 1 or redirect_re.search(source):
     fail("Derived source redirect mode invariant failed")
 if source.count("CTW_WORKER_REDIRECT_FAIL_CLOSED") != 1:
@@ -158,7 +111,7 @@ def manual_value(match: re.Match[str]) -> str:
     return match.group(1) + match.group(2) + "manual" + match.group(2)
 
 
-patterns = [
+test_patterns = [
     re.compile(r'(\bredirect\s*:\s*)(["\'])error\2'),
     re.compile(r'(\.redirect\s*,\s*)(["\'])error\2'),
     re.compile(r'(\.redirect\s*===?\s*)(["\'])error\2'),
@@ -170,14 +123,14 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
         continue
     before = read(path)
     after = before
-    for pattern in patterns:
+    for pattern in test_patterns:
         after = pattern.sub(manual_value, after)
     if after != before:
         write(path, after)
         test_changes.append(path.relative_to(WORK).as_posix())
 
 
-# Strengthen the existing static redirect safeguard.
+# Strengthen the source's existing static redirect safeguard.
 audit = read(AUDIT)
 audit_re = re.compile(r'(?m)^(?P<prefix>[ \t]*,?[ \t]*)\["redirect errors".*$')
 audit_hits = list(audit_re.finditer(audit))
@@ -195,51 +148,53 @@ audit = audit[:hit.start()] + audit_replacement + audit[hit.end():]
 write(AUDIT, audit)
 
 
-# Migrate the existing follow-redirect mutation by unique semantic label, not
-# by quote/indent formatting, then add a mutation that removes the explicit
-# all-3xx rejection. Both must be caught by the strengthened static safeguard.
+# Migrate the existing follow-redirect mutation by its payload rather than its
+# display label. Earlier validation proved the mutation exists, but its label is
+# generated/non-literal in the source. Exactly one redirect-error target must be
+# changed to manual; the insecure replacement remains "follow".
 mutations = read(MUTATIONS)
-label = "follow redirects -> redirect errors"
-if mutations.count(label) != 1:
-    fail(f"Redirect mutation label count drifted: {mutations.count(label)}")
-label_at = mutations.index(label)
-line_start = mutations.rfind("\n", 0, label_at) + 1
-line_end = mutations.find("\n", label_at)
-if line_end < 0:
-    line_end = len(mutations)
-line = mutations[line_start:line_end]
-if "src/openai.js" not in line or "redirect" not in line:
-    fail("Existing follow-redirect mutation entry shape drifted")
-old_target_forms = ('redirect: "error"', "redirect: 'error'")
-matched_forms = [form for form in old_target_forms if form in line]
-if len(matched_forms) != 1:
-    fail(f"Existing follow-redirect mutation target drifted: matched forms={matched_forms}")
-line = line.replace(matched_forms[0], matched_forms[0].replace("error", "manual"), 1)
-if not line.rstrip().endswith(","):
-    fail("Existing follow-redirect mutation entry must remain a comma-terminated array item")
-indent_match = re.match(r"[ \t]*", line)
-mi = indent_match.group(0) if indent_match else "  "
+target_forms = [
+    ('redirect: "error"', 'redirect: "manual"'),
+    ("redirect: 'error'", "redirect: 'manual'"),
+    (r'redirect:\s*"error"', r'redirect:\s*"manual"'),
+    (r"redirect:\s*'error'", r"redirect:\s*'manual'"),
+]
+hits = [(old, new, mutations.count(old)) for old, new in target_forms if mutations.count(old)]
+total_hits = sum(count for _, _, count in hits)
+if total_hits != 1:
+    detail = ", ".join(f"{old}={count}" for old, _, count in hits) or "none"
+    fail(f"Expected exactly one follow-redirect mutation payload target; found {total_hits} ({detail})")
+for old, new, count in hits:
+    if count:
+        mutations = mutations.replace(old, new, 1)
+
+# Add a second deliberate regression for removing the explicit all-3xx guard.
+# This anchor is already required by materialize.py and therefore verified in
+# the same derived mutation suite before this repair runs.
+anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
+if mutations.count(anchor) != 1:
+    fail(f"Stable mutation insertion anchor drifted: {mutations.count(anchor)}")
 response_var_re = re.escape(response_var)
 new_mutation = (
-    f'{mi}["remove explicit redirect status rejection -> redirect errors", "src/openai.js", '
+    '  ["remove explicit redirect status rejection -> redirect errors", "src/openai.js", '
     rf'/if \({response_var_re}\.status >= 300 && {response_var_re}\.status <= 399\) \{{\n\s*throw new Error\("Unexpected OpenAI redirect blocked after dispatch\."\);\n\s*\}}/, ""],'
 )
-mutations = mutations[:line_start] + line + "\n" + new_mutation + mutations[line_end:]
+mutations = mutations.replace(anchor, new_mutation + "\n" + anchor, 1)
 write(MUTATIONS, mutations)
 
 if read(AUDIT).count('"redirect errors"') != 1:
-    fail('Final static redirect safeguard count drifted')
-if read(MUTATIONS).count(label) != 1:
-    fail("Final follow-redirect mutation label drifted")
+    fail("Final static redirect safeguard count drifted")
 if read(MUTATIONS).count("remove explicit redirect status rejection -> redirect errors") != 1:
     fail("Explicit redirect-guard removal mutation missing or duplicated")
+if any(old in read(MUTATIONS) for old, _ in target_forms):
+    fail("Old redirect-error mutation payload target survived migration")
 
-print(f"Integration harness verification PASS: harness={listens[0].group(1)}; MSW precedes Wrangler.")
+print(f"Integration harness verification PASS: harness={wrangler_listens[0].group(1)}; MSW precedes Wrangler.")
 print(
     f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses '
     'redirect="manual" + immediate all-3xx fail-closed rejection.'
 )
-print("Static redirect safeguard + migrated follow mutation + explicit 3xx-guard mutation PASS.")
+print("Static redirect safeguard + payload-migrated follow mutation + explicit 3xx-guard mutation PASS.")
 if test_changes:
     print("Redirect-mode test migrations: " + ", ".join(test_changes))
 else:
