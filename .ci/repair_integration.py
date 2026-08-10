@@ -6,6 +6,7 @@ import re
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORK = ROOT / "work"
 TEST = WORK / "tests" / "integration" / "worker.test.js"
+OPENAI_SOURCE = WORK / "src" / "openai.js"
 
 
 def fail(message: str) -> None:
@@ -117,6 +118,54 @@ print(
 )
 print("Strict outbound assertions preserved; failure diagnostics installed.")
 
+# The Cloudflare test harness proxies Worker subrequests through Node fetch.
+# Node requires duplex='half' for a ReadableStream request body. Preserve the
+# production streaming body and all existing policy, while making that single
+# outbound streaming fetch valid on the harness bridge. This is deterministic
+# and fail-closed so source drift cannot silently patch the wrong request.
+openai_text = read(OPENAI_SOURCE)
+duplex_matches = list(
+    re.finditer(r"(?m)^(?P<indent>\s*)duplex\s*:\s*['\"]half['\"]\s*,?\s*$", openai_text)
+)
+if not duplex_matches:
+    anchor = re.compile(
+        r'(?m)^(?P<indent>\s*)body:\s*stream,\s*\n(?P=indent)redirect:\s*"error",\s*$'
+    )
+    anchors = list(anchor.finditer(openai_text))
+    if len(anchors) != 1:
+        fail(
+            "Expected exactly one streamed OpenAI fetch body immediately before "
+            f'redirect:error; found {len(anchors)}'
+        )
+    match = anchors[0]
+    indent = match.group("indent")
+    replacement = (
+        f"{indent}body: stream,\n"
+        f'{indent}duplex: "half",\n'
+        f'{indent}redirect: "error",'
+    )
+    openai_text = openai_text[: match.start()] + replacement + openai_text[match.end() :]
+else:
+    if len(duplex_matches) != 1:
+        fail(f"Expected exactly one duplex:half streaming fetch option; found {len(duplex_matches)}")
+
+sequence = re.compile(
+    r'(?m)^(?P<indent>\s*)body:\s*stream,\s*\n'
+    r'(?P=indent)duplex\s*:\s*["\']half["\']\s*,\s*\n'
+    r'(?P=indent)redirect\s*:\s*"error",\s*$'
+)
+sequences = list(sequence.finditer(openai_text))
+if len(sequences) != 1:
+    fail(
+        "Streaming OpenAI fetch compatibility invariant failed: expected exactly "
+        f"one body:stream -> duplex:half -> redirect:error sequence; found {len(sequences)}"
+    )
+if len(list(re.finditer(r"(?m)^\s*duplex\s*:", openai_text))) != 1:
+    fail("Unexpected additional duplex option found in first-party OpenAI source")
+
+write(OPENAI_SOURCE, openai_text)
+print("Streaming fetch Node-harness compatibility repair PASS: duplex=half.")
+
 # Hosted evidence now proves the remaining failure is inside the Worker streaming
 # dispatch boundary: /api/transcribe enters post-dispatch ambiguity in 0-5 ms and
 # the Node-side MSW mock never observes the request. Print only bounded excerpts
@@ -133,6 +182,7 @@ stream_markers = (
     "ReadableStream",
     "TransformStream",
     "fetch(",
+    'duplex: "half"',
 )
 excluded_parts = {"node_modules", "dist", ".wrangler", ".git"}
 interesting: list[tuple[pathlib.Path, str]] = []
