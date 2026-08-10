@@ -1,59 +1,70 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import pathlib
 import shutil
-import subprocess
-import zipfile
+import tarfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PARTS = sorted((ROOT / ".ci").glob("source.part*"))
-EXPECTED_ARCHIVE_SHA256 = "995bd4d1f4e2933eb96d2fa96fe19bb708aa9109a1650d48adcc46f52fa7bd08"
+ARCHIVE = ROOT / 'ctw112_ci_source.tar.xz'
+WORK = ROOT / 'work'
+EXPECTED_SIZE = 139944
+EXPECTED_SHA256 = '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb'
 
-if not PARTS:
-    raise SystemExit("No CI source archive parts found")
+if not ARCHIVE.is_file():
+    raise SystemExit(f'Missing reviewed CI source snapshot: {ARCHIVE}')
+raw = ARCHIVE.read_bytes()
+actual_sha = hashlib.sha256(raw).hexdigest()
+if len(raw) != EXPECTED_SIZE:
+    raise SystemExit(f'CI source snapshot size mismatch: expected {EXPECTED_SIZE}, got {len(raw)}')
+if actual_sha != EXPECTED_SHA256:
+    raise SystemExit(f'CI source snapshot SHA-256 mismatch: expected {EXPECTED_SHA256}, got {actual_sha}')
 
-part_texts = [part.read_text(encoding="utf-8").strip() for part in PARTS]
-encoded = "".join(part_texts)
-archive = base64.b64decode(encoded, validate=True)
-actual = hashlib.sha256(archive).hexdigest()
-print("CI source transport diagnostics:")
-for part, text in zip(PARTS, part_texts):
-    print(f"  {part.name}: chars={len(text)} sha256={hashlib.sha256(text.encode()).hexdigest()}")
-print(f"  combined-base64-chars={len(encoded)}")
-print(f"  decoded-bytes={len(archive)}")
-print(f"  first16={archive[:16].hex()}")
-print(f"  last22={archive[-22:].hex() if len(archive) >= 22 else archive.hex()}")
-print(f"  decoded-sha256={actual}")
-if actual != EXPECTED_ARCHIVE_SHA256:
-    raise SystemExit(f"CI source archive SHA-256 mismatch: expected {EXPECTED_ARCHIVE_SHA256}, got {actual}")
+if WORK.exists():
+    shutil.rmtree(WORK)
+WORK.mkdir(parents=True)
+work_resolved = WORK.resolve()
 
-archive_path = ROOT / ".ci" / "source.zip"
-work = ROOT / "work"
-archive_path.write_bytes(archive)
-if work.exists():
-    shutil.rmtree(work)
-work.mkdir()
+with tarfile.open(ARCHIVE, mode='r:xz') as tf:
+    members = tf.getmembers()
+    if not members:
+        raise SystemExit('CI source snapshot is empty')
+    for member in members:
+        name = member.name.replace('\\', '/')
+        if name in ('', '.'):
+            continue
+        rel = pathlib.PurePosixPath(name)
+        if rel.is_absolute() or '..' in rel.parts:
+            raise SystemExit(f'Unsafe path in CI source snapshot: {member.name}')
+        if not (member.isdir() or member.isfile()):
+            raise SystemExit(f'Unsupported non-regular archive entry: {member.name}')
+        clean_parts = [p for p in rel.parts if p not in ('', '.')]
+        dest = WORK.joinpath(*clean_parts)
+        resolved = dest.resolve()
+        if resolved != work_resolved and work_resolved not in resolved.parents:
+            raise SystemExit(f'Archive entry escapes work directory: {member.name}')
+        if member.isdir():
+            dest.mkdir(parents=True, exist_ok=True)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        src = tf.extractfile(member)
+        if src is None:
+            raise SystemExit(f'Could not read regular archive entry: {member.name}')
+        with src, dest.open('wb') as out:
+            shutil.copyfileobj(src, out)
 
-if not zipfile.is_zipfile(archive_path):
-    raise SystemExit("CI source transport is not a complete ZIP archive")
-with zipfile.ZipFile(archive_path) as zf:
-    bad = zf.testzip()
-    if bad is not None:
-        raise SystemExit(f"CI source ZIP CRC failure: {bad}")
-    zf.extractall(work)
+required = [
+    WORK / 'package.json',
+    WORK / 'RELEASE_MANIFEST.json',
+    WORK / 'WINDOWS-TOOLCHAIN.ps1',
+    WORK / 'WINDOWS-TOOLCHAIN-SELFTEST.ps1',
+    WORK / 'RELEASE-WINDOWS.ps1',
+    WORK / '.github' / 'workflows' / 'ci.yml',
+]
+missing = [str(p.relative_to(ROOT)) for p in required if not p.is_file()]
+if missing:
+    raise SystemExit('Materialized source is missing required files: ' + ', '.join(missing))
 
-subprocess.run(
-    ["git", "apply", "--check", "--directory=work", ".ci/latest.patch"],
-    cwd=ROOT,
-    check=True,
-)
-subprocess.run(
-    ["git", "apply", "--directory=work", ".ci/latest.patch"],
-    cwd=ROOT,
-    check=True,
-)
-
-print(f"Materialized audited Cosmic Transcriber Web source in {work}")
-print(f"Base archive SHA-256: {actual}")
+print(f'Materialized reviewed Cosmic Transcriber Web source in {WORK}')
+print(f'CI source snapshot bytes: {len(raw)}')
+print(f'CI source snapshot SHA-256: {actual_sha}')
