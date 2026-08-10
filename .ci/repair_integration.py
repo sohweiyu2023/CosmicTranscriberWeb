@@ -115,7 +115,7 @@ if text.count("onUnhandledRequest:'error'") + text.count('onUnhandledRequest:"er
 # unexpectedly turn green, a sentinel test prevents browser/release gates from
 # certifying a tree containing temporary transport diagnostics.
 diagnostic_sentinel = (
-    "\n\ntest('CI diagnostic sentinel prevents release certification', () => {\n"
+    "\n\nit('CI diagnostic sentinel prevents release certification', () => {\n"
     "  throw new Error('CTW_DIAGNOSTIC_ONLY');\n"
     "});\n"
 )
