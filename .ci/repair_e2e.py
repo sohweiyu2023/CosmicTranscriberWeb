@@ -280,15 +280,11 @@ startup_insert_at = insert_at + len(checkpoint_import) + 1
 app = app[:startup_insert_at] + prompt_repair + "\n" + app[startup_insert_at:]
 prompt_prefix = checkpoint_import + "\n" + prompt_marker
 for invariant, expected in (
-    (prompt_marker, 1),
-    (prompt_prefix, 1),
-    (preference_decl, 1),
+    (prompt_marker, 1),(prompt_prefix, 1),(preference_decl, 1),
     ('localStorage.getItem(ctwPreferencesKey)', 1),
     ('localStorage.setItem(ctwPreferencesKey, JSON.stringify(ctwParsed))', 1),
-    ('ctwParsed.prompt = ctwPromptBounded;', 1),
-    ('ctwParsed.keywords = ctwKeywordsBounded;', 1),
-    ('document.getElementById("promptInput")', 1),
-    ('document.getElementById("keywordsInput")', 1),
+    ('ctwParsed.prompt = ctwPromptBounded;', 1),('ctwParsed.keywords = ctwKeywordsBounded;', 1),
+    ('document.getElementById("promptInput")', 1),('document.getElementById("keywordsInput")', 1),
     ('ctwClampPreferenceText(ctwPromptInput, ctwParsed.prompt, 12000)', 1),
     ('ctwClampPreferenceText(ctwKeywordsInput, ctwParsed.keywords, 8000)', 1),
     ('ctwClampPreferenceText(ctwPromptInput, ctwPromptInput.value, 12000)', 1),
@@ -306,6 +302,20 @@ write(APP, app)
 # 5. E2E correctness: natural-sort assertion waits for async file preparation.
 # ---------------------------------------------------------------------------
 spec = read(E2E_SPEC)
+old_prompt_assertion = "  await expect(page.locator('#promptInput')).toHaveJSProperty('value',expect.stringMatching(/^.{0,12000}$/s));"
+prompt_assertion_block = "\n".join([
+    "  const restoredPrompt=await page.locator('#promptInput').inputValue();",
+    "  const restoredKeywords=await page.locator('#keywordsInput').inputValue();",
+    "  expect(restoredPrompt.length).toBe(12000);",
+    "  expect(restoredKeywords.length).toBe(8000);",
+    "  expect(/[\\uD800-\\uDBFF]$/.test(restoredPrompt)).toBe(false);",
+    "  expect(/[\\uD800-\\uDBFF]$/.test(restoredKeywords)).toBe(false);",
+])
+if spec.count(old_prompt_assertion) != 1:
+    fail(f"Malformed-preferences prompt assertion drifted: {spec.count(old_prompt_assertion)}")
+spec = spec.replace(old_prompt_assertion, prompt_assertion_block, 1)
+if old_prompt_assertion in spec or spec.count(prompt_assertion_block) != 1:
+    fail("Direct restored-preference length assertion was not installed exactly once")
 queue_anchor = "  await expect(page.locator('#queueList li')).toHaveCount(2,{timeout:30000});\n  const names=await page.locator('#queueList li strong').allTextContents();"
 ready_line = "  await expect(page.locator('#queueList .mini-state')).toHaveText(['Ready','Ready'],{timeout:30000});"
 if spec.count(queue_anchor) != 1:
@@ -331,8 +341,9 @@ https_label = "E2E preserves Secure BYOK cookie over ephemeral localhost HTTPS"
 checkpoint_label = "browser queue preparation binds checkpoint result reuse helper"
 prompt_label = "restored prompt respects textarea maxLength with surrogate-safe truncation"
 sort_label = "E2E natural sort waits for prepared queue state"
+prompt_assertion_label = "E2E directly verifies restored prompt and keyword bounds"
 failfast_label = "Playwright CI fails fast without retry masking and bounds browser actions"
-labels = (shared_label, https_label, checkpoint_label, prompt_label, sort_label, failfast_label)
+labels = (shared_label, https_label, checkpoint_label, prompt_label, prompt_assertion_label, sort_label, failfast_label)
 for label in labels:
     if label in audit:
         fail(f"Browser/E2E safeguard unexpectedly already present: {label}")
@@ -378,6 +389,14 @@ checks = [
         + ' && s("public/js/app.js").includes("last >= 0xD800 && last <= 0xDBFF")'
         + ' && s("tests/e2e/mock-server.mjs").includes("Built E2E app is missing the reviewed restored-prompt repair.")'
         + f' && s("public/js/app.js").indexOf({json.dumps(prompt_marker)})===s("public/js/app.js").indexOf({json.dumps(checkpoint_import)})+{prompt_marker_offset}',
+    ),
+    (
+        prompt_assertion_label,
+        's("tests/e2e/app.spec.js").includes("const restoredPrompt=await page.locator(\'#promptInput\').inputValue();")'
+        + ' && s("tests/e2e/app.spec.js").includes("const restoredKeywords=await page.locator(\'#keywordsInput\').inputValue();")'
+        + ' && s("tests/e2e/app.spec.js").includes("expect(restoredPrompt.length).toBe(12000);")'
+        + ' && s("tests/e2e/app.spec.js").includes("expect(restoredKeywords.length).toBe(8000);")'
+        + ' && !s("tests/e2e/app.spec.js").includes("toHaveJSProperty(\'value\',expect.stringMatching")',
     ),
     (
         sort_label,
@@ -426,6 +445,7 @@ mutation_specs = [
     ("remove E2E TLS server -> E2E preserves Secure BYOK cookie over ephemeral localhost HTTPS", "tests/e2e/mock-server.mjs", "https.createServer(tlsOptions,async(req,res)=>{", "https.createServer({},async(req,res)=>{"),
     ("remove checkpoint result reuse import -> browser queue preparation binds checkpoint result reuse helper", "public/js/app.js", checkpoint_import, ""),
     ("bypass restored prompt bound -> restored prompt respects textarea maxLength with surrogate-safe truncation", "public/js/app.js", "ctwParsed.prompt = ctwPromptBounded;", "ctwParsed.prompt = ctwParsed.prompt;"),
+    ("weaken direct restored prompt length proof -> E2E directly verifies restored prompt and keyword bounds", "tests/e2e/app.spec.js", "expect(restoredPrompt.length).toBe(12000);", "expect(restoredPrompt.length).toBeGreaterThanOrEqual(0);"),
     ("assert natural sort before preparation -> E2E natural sort waits for prepared queue state", "tests/e2e/app.spec.js", ready_line.strip(), "void 0;"),
     ("restore CI E2E retries -> Playwright CI fails fast without retry masking and bounds browser actions", "playwright.config.js", "retries:process.env.CI?0:1", "retries:1"),
 ]
@@ -455,5 +475,6 @@ print("E2E HTTPS repair PASS: ephemeral localhost TLS preserves production Secur
 print("Playwright CI fail-fast repair PASS: no CI retries; browser actions/navigation have bounded waits while test assertions retain explicit long-operation timeouts.")
 print(f"Browser checkpoint reuse binding PASS: checkpointResultReusable imported from {rel}.")
 print("Restored prompt bound PASS: saved prompt/keyword preferences are normalized at the persistence boundary before original app startup, with surrogate-safe maxLength truncation and fail-soft storage handling.")
+print("Restored preference E2E assertion PASS: browser values are checked directly for exact 12000/8000 bounds instead of the rejected asymmetric JS-property matcher.")
 print("Natural-sort E2E synchronization PASS: ordering is asserted only after both files reach Ready.")
 print("Browser/E2E static safeguards and deliberate mutations installed; existing fixed-port mutation preserved.")
