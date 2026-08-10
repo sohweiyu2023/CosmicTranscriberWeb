@@ -3,6 +3,7 @@ name: Cosmic Transcriber Web 1.0.12 Certification
 on:
   push:
     branches: ['ci/**']
+  pull_request:
   workflow_dispatch:
 
 permissions:
