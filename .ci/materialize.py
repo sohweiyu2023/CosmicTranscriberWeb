@@ -160,7 +160,11 @@ print(f'CI source snapshot bytes: {len(raw)}')
 print(f'CI source snapshot SHA-256: {actual_sha}')
 print(f'Inner CI immutable action pin gate PASS ({len(action_refs)} refs).')
 for old, new in ACTION_MIGRATIONS.items():
-    print(f'  migrated {old} -> {new}: {counts[old]} plain + {escaped_counts[old.replace("/", r"\/").replace(".", r"\.")]} escaped occurrence(s)')
+    escaped_old = old.replace('/', r'\/').replace('.', r'\.')
+    print(
+        f'  migrated {old} -> {new}: {counts[old]} plain + '
+        f'{escaped_counts[escaped_old]} escaped occurrence(s)'
+    )
 print(f'CI action migration touched {len(changed)} UTF-8 file(s):')
 for rel in changed:
     print(f'  migrated: {rel}')
