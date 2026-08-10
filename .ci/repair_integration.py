@@ -64,9 +64,9 @@ if msw_line_start > harness_match.start():
     fail("Integration harness must start MSW interception before Wrangler listen()")
 
 # Keep the two outbound-interception assertions strict, but make any remaining
-# failure useful: Wrangler's documented server.debug() prints the harness
-# timeline/runtime logs, and the synthetic test response status/body tells us
-# whether the request was rejected before reaching Node/MSW.
+# failure useful: Wrangler's server.debug() prints the harness timeline/runtime
+# logs, and the synthetic test response status/body tells us whether the request
+# was rejected before reaching Node/MSW.
 if "CTW_INTEGRATION_OUTBOUND_DIAGNOSTIC" not in text:
     success_assertion = re.search(
         r"(?m)^(?P<indent>\s*)expect\(mockHits\s*,\s*['\"]OpenAI MSW mock must be reached exactly once['\"]\)\.toBe\(1\);\s*$",
@@ -107,8 +107,6 @@ if text.count("OpenAI MSW mock must be reached exactly once") != 1:
 if text.count("redirect MSW mock must be reached exactly once") != 1:
     fail("Redirect outbound MSW hit-count assertion was altered unexpectedly")
 if text.count("onUnhandledRequest:'error'") + text.count('onUnhandledRequest:"error"') < 1:
-    # The exact spacing/quote style can vary, but the semantic regex above has
-    # already proved the policy exists. This branch is only a defensive check.
     if not re.search(r"onUnhandledRequest\s*:\s*['\"]error['\"]", text):
         fail("MSW fail-closed unhandled-request policy disappeared")
 
@@ -118,3 +116,70 @@ print(
     f"precedes Wrangler listen; harness={harness_name}."
 )
 print("Strict outbound assertions preserved; failure diagnostics installed.")
+
+# Hosted evidence now proves the remaining failure is inside the Worker streaming
+# dispatch boundary: /api/transcribe enters post-dispatch ambiguity in 0-5 ms and
+# the Node-side MSW mock never observes the request. Print only bounded excerpts
+# from first-party source containing the dispatch/error markers so the next run
+# exposes the exact stream hand-off without dumping dependencies or build output.
+source_markers = (
+    "upstream_ambiguous",
+    "api.openai.com/v1/audio/transcriptions",
+)
+stream_markers = (
+    "request.body",
+    ".body",
+    "getReader(",
+    "ReadableStream",
+    "TransformStream",
+    "fetch(",
+)
+excluded_parts = {"node_modules", "dist", ".wrangler", ".git"}
+interesting: list[tuple[pathlib.Path, str]] = []
+for path in sorted(WORK.rglob("*")):
+    if not path.is_file() or any(part in excluded_parts for part in path.parts):
+        continue
+    if path.suffix.lower() not in {".js", ".mjs", ".ts"}:
+        continue
+    try:
+        if path.stat().st_size > 1_000_000:
+            continue
+        body = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        continue
+    if any(marker in body for marker in source_markers):
+        interesting.append((path, body))
+
+if not interesting:
+    fail("Could not locate first-party Worker source containing OpenAI dispatch/error markers")
+
+print("CTW_STREAM_SOURCE_DIAGNOSTIC_BEGIN")
+printed_lines = 0
+for path, body in interesting[:3]:
+    lines = body.splitlines()
+    hits = [
+        i for i, line in enumerate(lines)
+        if any(marker in line for marker in source_markers)
+        or any(marker in line for marker in stream_markers)
+    ]
+    # Merge nearby source windows; cap output globally so CI logs remain bounded.
+    windows: list[tuple[int, int]] = []
+    for hit in hits:
+        start = max(0, hit - 24)
+        end = min(len(lines), hit + 36)
+        if windows and start <= windows[-1][1] + 8:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], end))
+        else:
+            windows.append((start, end))
+    rel = path.relative_to(WORK).as_posix()
+    for start, end in windows[:3]:
+        if printed_lines >= 260:
+            break
+        allowed_end = min(end, start + (260 - printed_lines))
+        print(f"--- {rel}:{start + 1}-{allowed_end} ---")
+        for lineno in range(start, allowed_end):
+            print(f"{lineno + 1:04d}: {lines[lineno]}")
+            printed_lines += 1
+    if printed_lines >= 260:
+        break
+print(f"CTW_STREAM_SOURCE_DIAGNOSTIC_END lines={printed_lines} files={len(interesting)}")
