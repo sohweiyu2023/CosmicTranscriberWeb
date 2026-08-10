@@ -31,132 +31,111 @@ def write(path: pathlib.Path, text: str) -> None:
 
 
 def top_level_entry(text: str, label: str) -> tuple[int, int, str]:
-    pattern = re.compile(
-        rf'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["{re.escape(label)}"'
-    )
+    pattern = re.compile(rf'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["{re.escape(label)}"')
     hits = list(pattern.finditer(text))
     if len(hits) != 1:
         fail(f'Safeguard "{label}" entry count drifted: {len(hits)}')
     hit = hits[0]
     indent = hit.group("indent")
-    next_re = re.compile(rf'(?m)^{re.escape(indent)},?[ \t]*\["')
-    nxt = next_re.search(text, hit.end())
-    end = nxt.start() if nxt else len(text)
+    nxt = re.search(rf'(?m)^{re.escape(indent)},?[ \t]*\["', text[hit.end():])
+    end = hit.end() + nxt.start() if nxt else len(text)
     return hit.start(), end, text[hit.start():end]
 
 
-def js_regex_escape(text: str) -> str:
-    out: list[str] = []
-    for ch in text:
-        if ch == "\n":
-            out.append(r"\n")
-        elif ch == "\r":
-            out.append(r"\r")
-        elif ch in r"\/^$.*+?()[]{}|":
-            out.append("\\" + ch)
-        else:
-            out.append(ch)
-    return "".join(out)
-
-
-def migrate_fragment(text: str, old: str, new: str, label: str) -> tuple[str, int]:
-    forms = [
-        (old, new),
-        (js_regex_escape(old), js_regex_escape(new)),
-    ]
-    hits: list[tuple[str, str, int]] = []
-    for old_form, new_form in forms:
-        count = text.count(old_form)
-        if count:
-            hits.append((old_form, new_form, count))
-    total = sum(count for _, _, count in hits)
-    if total > 1:
-        detail = ", ".join(f"{old_form!r}={count}" for old_form, _, count in hits)
-        fail(f"{label} is ambiguous: {total} matches ({detail})")
-    if total == 1:
-        old_form, new_form, _ = hits[0]
-        return text.replace(old_form, new_form, 1), 1
-    return text, 0
-
-
-# Preserve the reviewed whole-Worker integration contract.
+# Preserve the reviewed whole-Worker integration contract. Current Wrangler's
+# createTestHarness forwards a Miniflare Request object as RequestInit to Node's
+# global fetch. Normalize only that foreign streamed-POST boundary in the test
+# process before handing it to MSW. Production Worker behavior is unchanged.
 integration = read(INTEGRATION)
 policies = list(re.finditer(r'onUnhandledRequest\s*:\s*["\']error["\']', integration))
 wrangler_listens = list(re.finditer(r'(?m)^\s*await\s+([A-Za-z_$][\w$]*)\.listen\(\)\s*;\s*$', integration))
 if len(policies) != 1 or len(wrangler_listens) != 1:
     fail(f"Integration harness policy/listen drift: policies={len(policies)} listens={len(wrangler_listens)}")
-msw_listen = integration.rfind(".listen(", 0, policies[0].start())
-if msw_listen < 0 or integration.rfind("\n", 0, msw_listen) + 1 > wrangler_listens[0].start():
+wrangler_listen = wrangler_listens[0]
+msw_listen_start = integration.rfind(".listen(", 0, policies[0].start())
+if msw_listen_start < 0 or integration.rfind("\n", 0, msw_listen_start) + 1 > wrangler_listen.start():
     fail("Integration harness must start MSW before Wrangler listen()")
-for marker in ("CTW_DIAGNOSTIC_ONLY", "CTW_UPSTREAM_FETCH_EXCEPTION"):
+for marker in ("CTW_DIAGNOSTIC_ONLY", "CTW_UPSTREAM_FETCH_EXCEPTION", "ctwInstallHarnessFetchAdapter"):
     if marker in integration:
-        fail(f"Temporary diagnostic marker unexpectedly present: {marker}")
+        fail(f"Temporary/legacy integration marker unexpectedly present: {marker}")
 for assertion in (
     "OpenAI MSW mock must be reached exactly once",
     "redirect MSW mock must be reached exactly once",
 ):
     if integration.count(assertion) != 1:
         fail(f"Integration assertion missing or duplicated: {assertion}")
+if len(re.findall(r'request\s*\.\s*clone\s*\(\s*\)\s*\.\s*formData\s*\(\s*\)', integration)) != 1:
+    fail("Reviewed direct streamed multipart parser drifted")
 
-# Hosted evidence from run 31385999481 exposed the exact remaining parser:
-#   const form=await request.clone().formData();
-# The Worker already reaches the MSW handler. Node's intercepted Request clone
-# does not present a usable multipart Content-Type to Request.formData(), so the
-# test-only parser reconstructs a Response from the cloned bytes and the
-# already-captured outbound Content-Type. Production Worker streaming, direct
-# Worker dispatch, MSW interception, and strict mock-hit assertions are unchanged.
-target_title = "constructs upstream Authorization from BYOK and ignores browser Authorization"
-title_hits = [m.start() for m in re.finditer(re.escape(target_title), integration)]
-if len(title_hits) != 1:
-    fail(f"BYOK outbound integration test title count drifted: {len(title_hits)}")
-test_start = integration.rfind("it(", 0, title_hits[0])
-if test_start < 0:
-    fail("Could not locate BYOK outbound integration test start")
-next_test = re.search(r"(?m)^\s*it\(", integration[title_hits[0] + len(target_title):])
-test_end = (
-    title_hits[0] + len(target_title) + next_test.start()
-    if next_test
-    else len(integration)
-)
-test_block = integration[test_start:test_end]
+adapter = r'''
+let ctwRestoreHarnessFetch=null;
+function ctwInstallHarnessRequestNormalizer(){
+  const mswFetch=globalThis.fetch;
+  globalThis.fetch=(input,init)=>{
+    const foreignRequest=Boolean(
+      init && typeof init==='object' && init.body!=null &&
+      init.constructor?.name==='Request' && !(init instanceof Request)
+    );
+    if(!foreignRequest)return mswFetch(input,init);
 
-parser_re = re.compile(
-    r"(?P<prefix>\b(?:const|let|var)\s+(?P<var>[A-Za-z_$][\w$]*)\s*=\s*await\s*)"
-    r"request\s*\.\s*clone\s*\(\s*\)\s*\.\s*formData\s*\(\s*\)"
-)
-parser_hits = list(parser_re.finditer(test_block))
-if len(parser_hits) != 1:
-    fail(
-        "Expected exactly one direct request.clone().formData() parser inside "
-        f"BYOK outbound test; found {len(parser_hits)}"
-    )
-parser_hit = parser_hits[0]
-parser_var = parser_hit.group("var")
-old_parser_expr = "request.clone().formData()"
-new_parser_expr = (
-    "new Response(await request.clone().arrayBuffer(),"
-    "{headers:{'Content-Type':seenContentType}}).formData()"
-)
-repaired_parser = parser_hit.group("prefix") + new_parser_expr
-repaired_test_block = (
-    test_block[:parser_hit.start()]
-    + repaired_parser
-    + test_block[parser_hit.end():]
-)
-integration = integration[:test_start] + repaired_test_block + integration[test_end:]
+    const headers=new Headers();
+    init.headers?.forEach?.((value,name)=>headers.append(name,value));
 
-if integration.count(new_parser_expr) != 1:
-    fail("Derived integration multipart parser Content-Type propagation invariant failed")
-if re.search(r"request\s*\.\s*clone\s*\(\s*\)\s*\.\s*formData\s*\(\s*\)", integration):
-    fail("Old direct Request.formData() parser survived repair")
-for pattern, label in (
-    (r"seenContentType\s*=\s*request\.headers\.get\(['\"]content-type['\"]\)\s*\|\|\s*['\"]['\"]", "captured outbound Content-Type"),
-    (r"expect\(handlerError\)\.toBeNull\(\)", "handler error assertion"),
-    (r"expect\(seenModel\)\.toBe\(['\"]gpt-transcribe['\"]\)", "model assertion"),
-    (r"expect\(seenFileSize\)\.toBe\(4\)", "file-size assertion"),
+    let signal=init.signal;
+    if(signal && typeof AbortSignal!=='undefined' && !(signal instanceof AbortSignal)){
+      const bridge=new AbortController();
+      if(signal.aborted)bridge.abort(signal.reason);
+      else signal.addEventListener?.('abort',()=>bridge.abort(signal.reason),{once:true});
+      signal=bridge.signal;
+    }
+
+    return mswFetch(input,{
+      method:init.method,
+      headers,
+      body:init.body,
+      redirect:init.redirect,
+      signal,
+      duplex:'half'
+    });
+  };
+  return ()=>{globalThis.fetch=mswFetch;};
+}
+'''.strip("\n") + "\n\n"
+
+before_all = re.search(r"(?m)^beforeAll\(async\(\)=>\{\s*$", integration)
+if before_all is None:
+    fail("Could not locate integration beforeAll()")
+integration = integration[:before_all.start()] + adapter + integration[before_all.start():]
+
+network_listen = re.search(
+    r"(?m)^(?P<indent>\s*)network\.listen\(\{onUnhandledRequest:['\"]error['\"]\}\);\s*$",
+    integration,
+)
+if network_listen is None:
+    fail("Could not locate exact MSW network.listen() startup")
+indent = network_listen.group("indent")
+startup = network_listen.group(0) + "\n" + f"{indent}ctwRestoreHarnessFetch=ctwInstallHarnessRequestNormalizer();"
+integration = integration[:network_listen.start()] + startup + integration[network_listen.end():]
+
+network_close = re.search(r"(?m)^(?P<indent>\s*)network\.close\(\);\s*$", integration)
+if network_close is None:
+    fail("Could not locate MSW network.close() cleanup")
+indent = network_close.group("indent")
+cleanup = (
+    f"{indent}ctwRestoreHarnessFetch?.();\n"
+    f"{indent}ctwRestoreHarnessFetch=null;\n"
+    + network_close.group(0)
+)
+integration = integration[:network_close.start()] + cleanup + integration[network_close.end():]
+
+for invariant, count in (
+    ("ctwRestoreHarnessFetch=ctwInstallHarnessRequestNormalizer()", 1),
+    ("ctwRestoreHarnessFetch?.()", 1),
+    ("init.headers?.forEach?.((value,name)=>headers.append(name,value))", 1),
+    ("duplex:'half'", 1),
 ):
-    if len(re.findall(pattern, integration)) != 1:
-        fail(f"Integration multipart proof drifted: {label}")
+    if integration.count(invariant) != count:
+        fail(f"Harness Request normalizer invariant drifted: {invariant}")
 write(INTEGRATION, integration)
 
 
@@ -189,13 +168,12 @@ if changed != 1:
 terminator = terminator_re.search(source, redirect.end())
 if terminator is None:
     fail("Could not re-locate fetchImpl terminator after redirect replacement")
-guard_lines = [
+guard = "\n".join([
     f"{indent}// CTW_WORKER_REDIRECT_FAIL_CLOSED",
     f"{indent}if ({response_var}.status >= 300 && {response_var}.status <= 399) {{",
     f'{indent}  throw new Error("Unexpected OpenAI redirect blocked after dispatch.");',
     f"{indent}}}",
-]
-guard = "\n".join(guard_lines)
+])
 source = source[:terminator.end()] + "\n" + guard + source[terminator.end():]
 if source.count('redirect: "manual"') != 1 or redirect_re.search(source):
     fail("Derived source redirect mode invariant failed")
@@ -228,8 +206,9 @@ for path in sorted(WORK.joinpath("tests").rglob("*")):
         test_changes.append(path.relative_to(WORK).as_posix())
 
 
-# Preserve the existing redirect safeguard and migrate any exact/escaped
-# Request.formData() parser fragment inside the streamed-body safeguard.
+# Preserve the existing redirect safeguard's complete entry, migrate only its
+# mode token, then add explicit checks for all-3xx rejection and the test-harness
+# foreign Request normalization that keeps MSW's multipart proof meaningful.
 audit = read(AUDIT)
 entry_start, entry_end, entry = top_level_entry(audit, "redirect errors")
 mode_tokens = list(re.finditer(r'(?P<q>["\'])error(?P=q)', entry))
@@ -238,13 +217,6 @@ if len(mode_tokens) != 1:
 m = mode_tokens[0]
 entry = entry[:m.start()] + m.group("q") + "manual" + m.group("q") + entry[m.end():]
 audit = audit[:entry_start] + entry + audit[entry_end:]
-
-stream_label = "integration consumes streamed multipart body without masking handler failures"
-stream_start, stream_end, stream_entry = top_level_entry(audit, stream_label)
-stream_entry, audit_parser_migrations = migrate_fragment(
-    stream_entry, old_parser_expr, new_parser_expr, "streamed-body safeguard parser"
-)
-audit = audit[:stream_start] + stream_entry + audit[stream_end:]
 
 audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
 if audit.count(audit_anchor) != 1:
@@ -257,21 +229,22 @@ guard_check = (
     + ' && s("src/openai.js").includes(\'throw new Error("Unexpected OpenAI redirect blocked after dispatch.");\')'
     + ' && !s("src/openai.js").includes(\'redirect: "error"\')]\n'
 )
-multipart_check = (
-    '    ,["integration multipart parser carries intercepted Content-Type", () => '
-    + f's("tests/integration/worker.test.js").includes({json.dumps(new_parser_expr)})'
-    + ' && /seenContentType\\s*=\\s*request\\.headers\\.get\\([\\\'"]content-type[\\\'"]\\)/'
-    + '.test(s("tests/integration/worker.test.js"))'
-    + ' && /expect\\(handlerError\\)\\.toBeNull\\(\\)/'
+bridge_check = (
+    '    ,["integration normalizes foreign harness Request before MSW", () => '
+    + 's("tests/integration/worker.test.js").includes("function ctwInstallHarnessRequestNormalizer()")'
+    + ' && s("tests/integration/worker.test.js").includes("init.headers?.forEach?.((value,name)=>headers.append(name,value))")'
+    + ' && s("tests/integration/worker.test.js").includes("duplex:\'half\'")'
+    + ' && s("tests/integration/worker.test.js").includes("ctwRestoreHarnessFetch=ctwInstallHarnessRequestNormalizer()")'
+    + ' && s("tests/integration/worker.test.js").includes("ctwRestoreHarnessFetch?.()")'
+    + ' && /request\\s*\\.\\s*clone\\s*\\(\\s*\\)\\s*\\.\\s*formData\\s*\\(\\s*\\)/'
     + '.test(s("tests/integration/worker.test.js"))]\n'
 )
-audit = audit.replace(audit_anchor, guard_check + multipart_check + audit_anchor, 1)
+audit = audit.replace(audit_anchor, guard_check + bridge_check + audit_anchor, 1)
 write(AUDIT, audit)
 
 
-# Migrate the existing follow-redirect mutation and any exact/escaped
-# Request.formData() target in the streamed-body mutation. Add explicit
-# regressions for the new redirect guard and multipart Content-Type propagation.
+# Migrate the existing follow-redirect mutation payload and add deliberate
+# regressions for both the explicit redirect guard and normalized header bridge.
 mutations = read(MUTATIONS)
 target_forms = [
     ('redirect: "error"', 'redirect: "manual"'),
@@ -288,10 +261,6 @@ for old, new, count in hits:
     if count:
         mutations = mutations.replace(old, new, 1)
 
-mutations, parser_payload_hits = migrate_fragment(
-    mutations, old_parser_expr, new_parser_expr, "streamed multipart mutation parser"
-)
-
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 if mutations.count(mutation_anchor) != 1:
     fail(f"Stable mutation insertion anchor drifted: {mutations.count(mutation_anchor)}")
@@ -302,51 +271,36 @@ new_mutations = "\n".join([
         + rf'/if \({response_var_re}\.status >= 300 && {response_var_re}\.status <= 399\) \{{\n\s*throw new Error\("Unexpected OpenAI redirect blocked after dispatch\."\);\n\s*\}}/, ""],'
     ),
     (
-        '  ["remove multipart parser Content-Type propagation -> integration multipart parser carries intercepted Content-Type", '
+        '  ["drop foreign harness Request header normalization -> integration normalizes foreign harness Request before MSW", '
         '"tests/integration/worker.test.js", '
-        r'/,\{headers:\{[\'"]Content-Type[\'"]:seenContentType\}\}/, ""],'
+        r'/\s*init\.headers\?\.forEach\?\.\(\(value,name\)=>headers\.append\(name,value\)\);/, ""],'
     ),
 ])
 mutations = mutations.replace(mutation_anchor, new_mutations + "\n" + mutation_anchor, 1)
 write(MUTATIONS, mutations)
 
-
 final_audit = read(AUDIT)
 final_mutations = read(MUTATIONS)
-if final_audit.count('"redirect errors"') != 1:
-    fail('Existing "redirect errors" safeguard count drifted')
-if final_audit.count('"redirect manual mode rejects every 3xx before body parsing"') != 1:
-    fail("Explicit redirect 3xx safeguard missing or duplicated")
-if final_audit.count('"integration multipart parser carries intercepted Content-Type"') != 1:
-    fail("Multipart parser Content-Type safeguard missing or duplicated")
-if final_mutations.count("remove explicit redirect status rejection -> redirect errors") != 1:
-    fail("Explicit redirect-guard removal mutation missing or duplicated")
-if final_mutations.count("remove multipart parser Content-Type propagation -> integration multipart parser carries intercepted Content-Type") != 1:
-    fail("Multipart parser Content-Type mutation missing or duplicated")
+for label in (
+    '"redirect errors"',
+    '"redirect manual mode rejects every 3xx before body parsing"',
+    '"integration normalizes foreign harness Request before MSW"',
+):
+    if final_audit.count(label) != 1:
+        fail(f"Final audit safeguard missing or duplicated: {label}")
+for label in (
+    "remove explicit redirect status rejection -> redirect errors",
+    "drop foreign harness Request header normalization -> integration normalizes foreign harness Request before MSW",
+):
+    if final_mutations.count(label) != 1:
+        fail(f"Final mutation missing or duplicated: {label}")
 if any(old in final_mutations for old, _ in target_forms):
     fail("Old redirect-error mutation payload target survived migration")
 
-print(f"Integration harness verification PASS: harness={wrangler_listens[0].group(1)}; MSW precedes Wrangler.")
-print(
-    "Integration streamed multipart parser repair PASS: direct "
-    f"request.clone().formData() for {parser_var} is replaced by a test-only "
-    "Response over cloned bytes with the intercepted Content-Type."
-)
-print(
-    f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses '
-    'redirect="manual" + immediate all-3xx fail-closed rejection.'
-)
-print("Redirect static safeguards preserve the original entry and add an explicit all-3xx guard check.")
-print("Multipart parser safeguard + Content-Type-removal mutation PASS.")
-print("Payload-migrated follow mutation + explicit 3xx-guard removal mutation PASS.")
-if audit_parser_migrations:
-    print("Existing streamed-body safeguard parser target migrated.")
-else:
-    print("Existing streamed-body safeguard uses a broader parser fragment; no parser-target migration required.")
-if parser_payload_hits:
-    print("Existing streamed-body mutation parser target migrated.")
-else:
-    print("Existing streamed-body mutation uses a broader parser fragment; no parser-target migration required.")
+print(f"Integration harness verification PASS: harness={wrangler_listen.group(1)}; MSW precedes Wrangler.")
+print("Foreign streamed Request normalization installed test-only before MSW fetch reconstruction; direct request.clone().formData() proof preserved.")
+print(f'Worker redirect repair PASS: {response_var} = await fetchImpl(...) uses redirect="manual" + immediate all-3xx fail-closed rejection.')
+print("Redirect and harness-normalizer safeguards/mutations installed.")
 if test_changes:
     print("Redirect-mode test migrations: " + ", ".join(test_changes))
 else:
