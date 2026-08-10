@@ -13,11 +13,12 @@ EXPECTED_SIZE = 139944
 EXPECTED_SHA256 = '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb'
 
 # The uploaded 1.0.12 snapshot is immutable evidence. Fresh certification found
-# two CI-environment issues after that snapshot was reviewed: stale/tag-pinned
-# first-party Actions and fresh runners that do not guarantee ffmpeg/ffprobe.
-# Materialization repairs only those reviewed CI surfaces after verifying the
-# source archive byte-for-byte. Every product/release gate runs on the derived
-# tree and is free to reject it.
+# three CI-environment/coverage issues after that snapshot was reviewed:
+# stale/tag-pinned first-party Actions, fresh runners that do not guarantee
+# ffmpeg/ffprobe, and the packaged macOS Safari job not running the full
+# validation suite. Materialization repairs only those reviewed CI surfaces
+# after verifying the source archive byte-for-byte. Every product/release gate
+# runs on the derived tree and is free to reject it.
 ACTION_MIGRATIONS = {
     'actions/checkout@v6.0.2': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',  # v7.0.1
     'actions/setup-node@v6.4.0': 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e',  # v6.4.0
@@ -185,42 +186,87 @@ windows_media = '''      - name: Provision media validation toolchain
           & $ffmpeg.Source -version | Select-Object -First 1
           & $ffprobe.Source -version | Select-Object -First 1
 '''
+validate_step = '''      - working-directory: work
+        run: npm run validate
+'''
 
 
-def inject_before_validate_step(text: str, job: str, next_job: str, block: str) -> str:
+def isolate_job(text: str, job: str, next_job: str) -> tuple[int, int, str]:
     start_marker = f'  {job}:\n'
     end_marker = f'  {next_job}:\n'
     start = text.find(start_marker)
     end = text.find(end_marker, start + len(start_marker))
     if start < 0 or end < 0:
         fail(f'Could not isolate inner CI job {job}')
-    segment = text[start:end]
+    return start, end, text[start:end]
 
-    # Parse top-level step blocks by their six-space list indentation. This is
-    # deliberately tolerant of key order (`run`, `name`, `working-directory`)
-    # while still requiring exactly one step whose command is npm run validate.
-    steps = list(re.finditer(r'(?ms)^      - .*?(?=^      - |\Z)', segment))
-    hits = []
-    for step in steps:
-        body = step.group(0)
-        if re.search(r'(?m)^\s*(?:-\s*)?run:\s*npm run validate\s*$', body):
+
+def step_blocks(segment: str) -> list[re.Match[str]]:
+    return list(re.finditer(r'(?ms)^      - .*?(?=^      - |\Z)', segment))
+
+
+def simple_run_commands(segment: str) -> list[str]:
+    commands: list[str] = []
+    for step in step_blocks(segment):
+        commands.extend(re.findall(r'(?m)^\s*(?:-\s*)?run:\s*([^|>][^\n]*)$', step.group(0)))
+    return commands
+
+
+def command_step_hits(segment: str, command: str) -> list[re.Match[str]]:
+    hits: list[re.Match[str]] = []
+    pattern = re.compile(rf'(?m)^\s*(?:-\s*)?run:\s*{re.escape(command)}\s*$')
+    for step in step_blocks(segment):
+        if pattern.search(step.group(0)):
             hits.append(step)
+    return hits
+
+
+def inject_before_required_command(text: str, job: str, next_job: str, command: str, block: str) -> str:
+    start, end, segment = isolate_job(text, job, next_job)
+    hits = command_step_hits(segment, command)
     if len(hits) != 1:
-        commands = []
-        for step in steps:
-            commands.extend(re.findall(r'(?m)^\s*(?:-\s*)?run:\s*([^|>][^\n]*)$', step.group(0)))
         fail(
-            f'Expected exactly one npm run validate step in inner CI job {job}; '
-            f'found {len(hits)}. Discovered simple run commands: {commands}'
+            f'Expected exactly one {command} step in inner CI job {job}; found {len(hits)}. '
+            f'Discovered simple run commands: {simple_run_commands(segment)}'
         )
     hit = hits[0]
     segment = segment[:hit.start()] + block + segment[hit.start():]
     return text[:start] + segment + text[end:]
 
 
-ci_text = inject_before_validate_step(ci_text, 'linux-full', 'macos-safari', linux_media)
-ci_text = inject_before_validate_step(ci_text, 'macos-safari', 'windows-release', mac_media)
-ci_text = inject_before_validate_step(ci_text, 'windows-release', 'all-green', windows_media)
+# Linux and Windows already had full validation; ensure the media decoder/probe
+# prerequisite exists immediately before it.
+ci_text = inject_before_required_command(
+    ci_text, 'linux-full', 'macos-safari', 'npm run validate', linux_media
+)
+ci_text = inject_before_required_command(
+    ci_text, 'windows-release', 'all-green', 'npm run validate', windows_media
+)
+
+# Fresh evidence proved the packaged macOS Safari job never ran full validation.
+# Add it before the existing build/browser stages, along with the media tools
+# required by the MP3 decoder-visibility tests. Fail closed if this assumption
+# drifts or if validation already appears unexpectedly more than once.
+mac_start, mac_end, mac_segment = isolate_job(ci_text, 'macos-safari', 'windows-release')
+mac_validate_hits = command_step_hits(mac_segment, 'npm run validate')
+if len(mac_validate_hits) > 1:
+    fail(
+        f'Expected at most one npm run validate step in inner macOS CI; found {len(mac_validate_hits)}. '
+        f'Discovered simple run commands: {simple_run_commands(mac_segment)}'
+    )
+if len(mac_validate_hits) == 1:
+    hit = mac_validate_hits[0]
+    mac_segment = mac_segment[:hit.start()] + mac_media + mac_segment[hit.start():]
+else:
+    build_hits = command_step_hits(mac_segment, 'npm run build')
+    if len(build_hits) != 1:
+        fail(
+            f'Expected exactly one npm run build anchor in inner macOS CI when adding validation; '
+            f'found {len(build_hits)}. Discovered simple run commands: {simple_run_commands(mac_segment)}'
+        )
+    hit = build_hits[0]
+    mac_segment = mac_segment[:hit.start()] + mac_media + validate_step + mac_segment[hit.start():]
+ci_text = ci_text[:mac_start] + mac_segment + ci_text[mac_end:]
 
 if ci_text.count('name: Provision media validation toolchain') != 3:
     fail('Inner CI media provisioning was not inserted into all three platform jobs')
@@ -228,15 +274,17 @@ if ci_text.count('name: Provision MP3 fixture toolchain') != 1:
     fail('Inner CI fixture media provisioning was not inserted exactly once')
 if 'brew install ffmpeg' not in ci_text or 'choco install ffmpeg -y --no-progress' not in ci_text:
     fail('Inner CI is missing macOS or Windows ffmpeg provisioning')
+if len(re.findall(r'(?m)^\s*run:\s*npm run validate\s*$', ci_text)) < 4:
+    fail('Derived inner CI does not contain full validation in resolve-lock, Linux, macOS and Windows jobs')
 ci_path.write_text(ci_text, encoding='utf-8', newline='')
 changed.add('.github/workflows/ci.yml')
 
 # Extend the source's own static and mutation gates so the repaired packaged CI
-# cannot later lose its fresh-runner media prerequisite unnoticed.
+# cannot later lose its fresh-runner media prerequisite or macOS full validation unnoticed.
 audit_path = WORK / 'scripts' / 'audit-lib.mjs'
 audit_text = read_utf8(audit_path)
 audit_anchor = '    ,["CI resolves one reviewed lock and reuses it across every platform",'
-audit_guard = '''    ,["CI provisions and verifies ffprobe before fixture generation and every platform MP3 validation", () => (s(".github/workflows/ci.yml").match(/name: Provision media validation toolchain/g)||[]).length===3 && (s(".github/workflows/ci.yml").match(/name: Provision MP3 fixture toolchain/g)||[]).length===1 && /sudo apt-get install -y --no-install-recommends ffmpeg/.test(s(".github/workflows/ci.yml")) && /brew install ffmpeg/.test(s(".github/workflows/ci.yml")) && /choco install ffmpeg -y --no-progress/.test(s(".github/workflows/ci.yml")) && /Get-Command ffprobe/.test(s(".github/workflows/ci.yml"))]
+audit_guard = '''    ,["CI provisions ffprobe and runs full validation on every certification platform", () => (s(".github/workflows/ci.yml").match(/name: Provision media validation toolchain/g)||[]).length===3 && (s(".github/workflows/ci.yml").match(/name: Provision MP3 fixture toolchain/g)||[]).length===1 && (s(".github/workflows/ci.yml").match(/run: npm run validate/g)||[]).length>=4 && /sudo apt-get install -y --no-install-recommends ffmpeg/.test(s(".github/workflows/ci.yml")) && /brew install ffmpeg/.test(s(".github/workflows/ci.yml")) && /choco install ffmpeg -y --no-progress/.test(s(".github/workflows/ci.yml")) && /Get-Command ffprobe/.test(s(".github/workflows/ci.yml"))]
 '''
 if audit_text.count(audit_anchor) != 1:
     fail('Could not locate unique inner CI safeguard insertion anchor')
@@ -248,6 +296,7 @@ mutation_text = read_utf8(mutation_path)
 mutation_anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
 mutation_guard = '''  ["remove per-platform ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision media validation toolchain/g, "name: Removed media validation toolchain"],
   ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision MP3 fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
+  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /        run: npm run validate\n(?=      - working-directory: work\n        run: npm run build)/, ""],
 '''
 if mutation_text.count(mutation_anchor) != 1:
     fail('Could not locate unique inner CI mutation insertion anchor')
@@ -288,6 +337,7 @@ print(f'CI source snapshot bytes: {len(raw)}')
 print(f'CI source snapshot SHA-256: {actual_sha}')
 print(f'Inner CI immutable action pin gate PASS ({len(action_refs)} refs).')
 print('Inner CI fresh-runner ffmpeg/ffprobe provisioning gate PASS (fixture + Linux + macOS + Windows).')
+print('Inner CI macOS full validation coverage gate PASS.')
 for old, new in ACTION_MIGRATIONS.items():
     escaped_old = old.replace('/', r'\/').replace('.', r'\.')
     print(
