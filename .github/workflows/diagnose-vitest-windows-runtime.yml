@@ -1,34 +1,32 @@
-name: Diagnose Vitest Windows runtime casing
+name: Diagnose Vitest Windows fresh-temp launcher
 
 on:
   push:
     branches: ['diag/vitest-windows-runtime-1.0.12']
-  pull_request:
-    branches: ['ci/1.0.12']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  prove-vitest-runtime-repair:
+  fresh-temp-launcher-ab:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Materialize reviewed source
-        shell: pwsh
-        run: python .ci/materialize.py
-      - name: Apply existing reviewed repairs
+      - name: Materialize reviewed source and durable repairs
         shell: pwsh
         run: |
+          python .ci/materialize.py
           python .ci/repair_integration.py
           python .ci/repair_e2e.py
           python .ci/repair_install_policy.py
+          python .ci/repair_vitest_windows.py
+          python .ci/repair_vitest_windows_mutation_guard.py
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - name: Install exact current dependency graph without lifecycle scripts
+      - name: Resolve exact graph and build source seed
         working-directory: work
         shell: pwsh
         run: |
@@ -36,63 +34,97 @@ jobs:
           if ((node --version).Trim() -ne 'v24.19.0') { throw "Unexpected Node: $(node --version)" }
           if ((npm --version).Trim() -ne '12.0.2') { throw "Unexpected npm: $(npm --version)" }
           npm install --ignore-scripts --no-audit --no-fund
-          $pkg = Get-Content node_modules\vitest\package.json -Raw | ConvertFrom-Json
-          if ($pkg.version -ne '4.1.10') { throw "Expected vitest 4.1.10, found $($pkg.version)" }
-      - name: Prove exact pre-patch lowercase-path failure
-        working-directory: work
-        shell: pwsh
-        run: |
-          @'
-          export default { test: { include: ['.ctw-vitest-runtime-case.test.mjs'] } }
-          '@ | Set-Content .ctw-vitest-runtime-case.config.mjs -Encoding utf8
-          @'
-          import { describe, expect, it } from 'vitest'
-          describe('single runtime', () => { it('has collector state', () => expect(1).toBe(1)) })
-          '@ | Set-Content .ctw-vitest-runtime-case.test.mjs -Encoding utf8
-          $cwd = (Resolve-Path .).Path
-          $cli = (Resolve-Path node_modules\vitest\vitest.mjs).Path
-          if ($cwd[1] -ne ':' -or $cli[1] -ne ':') { throw 'Diagnostic requires a Windows drive path.' }
-          $lowerCwd = $cwd.Substring(0,1).ToLowerInvariant() + $cwd.Substring(1)
-          $lowerCli = $cli.Substring(0,1).ToLowerInvariant() + $cli.Substring(1)
-          $old = $ErrorActionPreference
-          $ErrorActionPreference = 'Continue'
-          cmd.exe /d /c "cd /d `"$lowerCwd`" && node `"$lowerCli`" run --config .ctw-vitest-runtime-case.config.mjs --no-watch --maxWorkers=1" *>&1 | Tee-Object -FilePath .ctw-vitest-before.txt
-          $code = $LASTEXITCODE
-          $ErrorActionPreference = $old
-          $out = Get-Content .ctw-vitest-before.txt -Raw
-          if ($code -eq 0) { throw 'Expected upstream Vitest 4.1.10 lowercase-path reproduction to fail before patch, but it passed.' }
-          if ($out -notmatch "reading 'config'|failed to find the current suite|failed to find the runner") { throw "Pre-patch failure did not match the upstream duplicate-runtime signature. Exit=$code`n$out" }
-          Write-Host 'Pre-patch upstream Windows duplicate-runtime reproduction PASS (failure observed as required).'
-          $global:LASTEXITCODE = 0
-      - name: Apply exact guarded upstream compatibility semantics
-        working-directory: work
-        shell: pwsh
-        run: python ..\.ci\patch_vitest_4110_windows_runtime.py .
-      - name: Prove lowercase-path reproduction is repaired
-        working-directory: work
-        shell: pwsh
-        run: |
-          $cwd = (Resolve-Path .).Path
-          $cli = (Resolve-Path node_modules\vitest\vitest.mjs).Path
-          $lowerCwd = $cwd.Substring(0,1).ToLowerInvariant() + $cwd.Substring(1)
-          $lowerCli = $cli.Substring(0,1).ToLowerInvariant() + $cli.Substring(1)
-          cmd.exe /d /c "cd /d `"$lowerCwd`" && node `"$lowerCli`" run --config .ctw-vitest-runtime-case.config.mjs --no-watch --maxWorkers=1" *>&1 | Tee-Object -FilePath .ctw-vitest-after.txt
-          if ($LASTEXITCODE -ne 0) { throw "Patched lowercase-path reproduction failed.`n$(Get-Content .ctw-vitest-after.txt -Raw)" }
-          $out = Get-Content .ctw-vitest-after.txt -Raw
-          if ($out -notmatch '1 passed') { throw "Patched reproduction did not report one passing test.`n$out" }
-          if ($out -match "reading 'config'|failed to find the current suite|failed to find the runner") { throw "Patched reproduction still contains duplicate-runtime signature.`n$out" }
-      - name: Fresh npm-ci Worker stress with patch after every install
-        working-directory: work
-        shell: pwsh
-        run: |
-          Remove-Item node_modules -Recurse -Force -ErrorAction SilentlyContinue
-          npm ci
           npm run deps:install-scripts:verify
-          python ..\.ci\patch_vitest_4110_windows_runtime.py .
-          1..20 | ForEach-Object {
-            Write-Host "=== Worker launch $_ / 20 ==="
-            npm run test:worker
-            if ($LASTEXITCODE -ne 0) { throw "Worker launch $_ failed" }
+          npm rebuild
+          npm audit
+          $seed = Join-Path $env:RUNNER_TEMP 'ctw-vitest-seed'
+          Remove-Item $seed -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $seed | Out-Null
+          Get-ChildItem . -Force | Where-Object Name -ne 'node_modules' | Copy-Item -Destination $seed -Recurse -Force
+          Write-Host "Seed=$seed"
+      - name: Compare npm launcher vs canonical realpath launcher in pristine AppData temp copies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $seed = Join-Path $env:RUNNER_TEMP 'ctw-vitest-seed'
+          $summary = Join-Path $env:RUNNER_TEMP 'vitest-launcher-ab-summary.txt'
+          Remove-Item $summary -Force -ErrorAction SilentlyContinue
+
+          function New-Probe([string]$name) {
+            $dir = Join-Path $env:TEMP ("ctw-vitest-" + $name + '-' + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            Get-ChildItem $seed -Force | Copy-Item -Destination $dir -Recurse -Force
+            Push-Location $dir
+            try {
+              npm ci
+              if ($LASTEXITCODE -ne 0) { throw "npm ci failed in $name" }
+              $cwd = (Get-Location).Path
+              $realCwd = node -e "process.stdout.write(require('fs').realpathSync.native(process.cwd()))"
+              $cliLiteral = (Resolve-Path node_modules\vitest\vitest.mjs).Path
+              $cliReal = node -e "process.stdout.write(require('fs').realpathSync.native('node_modules/vitest/vitest.mjs'))"
+              $cmdShim = Get-Content node_modules\.bin\vitest.cmd -Raw
+              Add-Content $summary "=== $name ==="
+              Add-Content $summary "cwd=$cwd"
+              Add-Content $summary "realCwd=$realCwd"
+              Add-Content $summary "cliLiteral=$cliLiteral"
+              Add-Content $summary "cliReal=$cliReal"
+              Add-Content $summary "vitest.cmd=$($cmdShim -replace \"`r?`n\",' | ')"
+              return @{Dir=$dir; CliReal=$cliReal}
+            } finally { Pop-Location }
           }
-          npm run test:integration
-          if ($LASTEXITCODE -ne 0) { throw 'Integration suite failed after Vitest compatibility patch.' }
+
+          function Invoke-Captured([string]$label,[string]$dir,[scriptblock]$command) {
+            Push-Location $dir
+            try {
+              $log = Join-Path $env:RUNNER_TEMP ("$label.txt")
+              $old = $ErrorActionPreference
+              $ErrorActionPreference = 'Continue'
+              & $command *>&1 | Tee-Object -FilePath $log
+              $code = $LASTEXITCODE
+              $ErrorActionPreference = $old
+              Add-Content $summary "$label.exit=$code"
+              Add-Content $summary "$label.log=$log"
+              return $code
+            } finally { Pop-Location }
+          }
+
+          $npmProbe = New-Probe 'npm'
+          $npmCode = Invoke-Captured 'npm-launcher' $npmProbe.Dir { npm run test:worker }
+
+          $literalProbe = New-Probe 'literal'
+          $literalCode = Invoke-Captured 'literal-node-launcher' $literalProbe.Dir {
+            node scripts/vitest-windows-runtime-compat.mjs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            node node_modules\vitest\vitest.mjs run --config vitest.config.js --no-watch --maxWorkers=1
+          }
+
+          $realProbe = New-Probe 'realpath'
+          $realCli = $realProbe.CliReal
+          $realCode = Invoke-Captured 'realpath-node-launcher' $realProbe.Dir {
+            node scripts/vitest-windows-runtime-compat.mjs
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            node $realCli run --config vitest.config.js --no-watch --maxWorkers=1
+          }
+
+          Write-Host '=== A/B SUMMARY ==='
+          Get-Content $summary
+          if ($npmCode -ne 0 -and $realCode -eq 0) {
+            Write-Host 'DIAGNOSIS PASS: npm launcher fails while canonical realpath Node launcher passes in independent fresh installs.'
+            exit 0
+          }
+          if ($npmCode -eq 0 -and $literalCode -eq 0 -and $realCode -eq 0) {
+            throw 'All three pristine probes passed; the release-only failure did not reproduce in this reduced harness.'
+          }
+          throw "No clean launcher differential. npm=$npmCode literal=$literalCode realpath=$realCode. Deeper resolver tracing required."
+      - name: Preserve launcher diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: vitest-fresh-temp-launcher-ab
+          path: |
+            ${{ runner.temp }}/vitest-launcher-ab-summary.txt
+            ${{ runner.temp }}/npm-launcher.txt
+            ${{ runner.temp }}/literal-node-launcher.txt
+            ${{ runner.temp }}/realpath-node-launcher.txt
+          if-no-files-found: warn
+          retention-days: 3
