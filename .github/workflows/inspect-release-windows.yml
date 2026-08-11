@@ -1,8 +1,7 @@
 name: Inspect Windows release runner patch points
 
 on:
-  pull_request:
-    branches: ['ci/1.0.12']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,33 +10,4 @@ jobs:
   inspect-release-runner:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Materialize reviewed source
-        shell: pwsh
-        run: python .ci/materialize.py
-      - name: Apply existing reviewed repairs
-        shell: pwsh
-        run: |
-          python .ci/repair_integration.py
-          python .ci/repair_e2e.py
-          python .ci/repair_install_policy.py
-      - name: Print package source verification implementation
-        shell: pwsh
-        run: |
-          $pkg = Get-Content work\package.json -Raw | ConvertFrom-Json
-          Write-Host "package:source=$($pkg.scripts.'package:source')"
-          Write-Host "release:verify=$($pkg.scripts.'release:verify')"
-          Write-Host "release:windows=$($pkg.scripts.'release:windows')"
-          Write-Host '--- MATCHING SCRIPT FILES ---'
-          $patterns = 'package:source|npm ci|test:worker|RELEASE_MANIFEST|source\.zip|fresh|extract|releaseReady'
-          $files = Get-ChildItem work -Recurse -File | Where-Object { $_.FullName -notmatch '\\node_modules\\' -and $_.Extension -in '.js','.mjs','.cjs','.ps1','.json' }
-          $matches = $files | Select-String -Pattern $patterns
-          $paths = $matches | ForEach-Object Path | Sort-Object -Unique
-          $paths | ForEach-Object { Write-Host $_ }
-          foreach ($path in $paths) {
-            if ($path -match '\\scripts\\|package\.json$|RELEASE-WINDOWS\.ps1$') {
-              Write-Host "--- BEGIN $path ---"
-              Get-Content $path -Raw
-              Write-Host "--- END $path ---"
-            }
-          }
+      - run: echo 'Manual inspection only. No PR-triggered diagnostic noise.'
