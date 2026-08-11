@@ -23,7 +23,7 @@ jobs:
       - name: Print exact suspected sources with line numbers
         working-directory: work
         run: |
-          for file in tests/worker/runtime.test.js vitest.config.js tests/worker/wrangler.test.jsonc scripts/package-source.mjs scripts/verify-source-package.mjs scripts/release-verify.mjs scripts/checksums.mjs RELEASE_MANIFEST.json package.json; do
+          for file in tests/worker/runtime.test.js vitest.config.js tests/worker/wrangler.test.jsonc scripts/package-source.mjs scripts/verify-source-package.mjs scripts/release-verify.mjs scripts/npm-invoke.mjs scripts/zip-utils.mjs RELEASE-WINDOWS.ps1 WINDOWS-TOOLCHAIN.ps1 package.json .npmrc; do
             echo
             echo "===== $file ====="
             nl -ba "$file"
@@ -39,8 +39,11 @@ jobs:
             work/scripts/package-source.mjs
             work/scripts/verify-source-package.mjs
             work/scripts/release-verify.mjs
-            work/scripts/checksums.mjs
-            work/RELEASE_MANIFEST.json
+            work/scripts/npm-invoke.mjs
+            work/scripts/zip-utils.mjs
+            work/RELEASE-WINDOWS.ps1
+            work/WINDOWS-TOOLCHAIN.ps1
             work/package.json
+            work/.npmrc
           if-no-files-found: error
           retention-days: 3
