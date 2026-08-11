@@ -223,6 +223,10 @@ jobs:
         run: npm run validate
       - working-directory: work
         run: npm run test:worker
+      - name: Apply proven upstream Undici 7.29.0 ToS compatibility fix
+        run: python3 .ci/patch_undici_729_tos.py work
+      - name: Prove macOS compatibility patch did not alter reviewed dependency graph
+        run: cmp reviewed/package-lock.json work/package-lock.json
       - working-directory: work
         run: npm run test:integration
       - working-directory: work
