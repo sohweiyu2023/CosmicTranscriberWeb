@@ -21,11 +21,11 @@ def replace_once(path: pathlib.Path, old: str, new: str, label: str) -> None:
 
 
 # The original mutation target appears both in verifyPatched() and in the executable
-# resolver rewrite.  Mutation-suite replaces only the first match, so it could mutate
-# the verifier string while leaving the actual rewrite intact.  Bind the safeguard and
+# resolver rewrite. Mutation-suite replaces only the first match, so it could mutate
+# the verifier string while leaving the actual rewrite intact. Bind the safeguard and
 # deliberate mutation to the unique executable replaceOnce call instead.
-audit_old = '    && s("scripts/vitest-windows-runtime-compat.mjs").includes("ctwVitestRuntimeWithLoadedCasing(pathToFileURL(file).href)")'
-audit_new = audit_old + '\n    && s("scripts/vitest-windows-runtime-compat.mjs").includes("text=replaceOnce(text,oldDistExternalize")'
+audit_old = 's("scripts/vitest-windows-runtime-compat.mjs").includes("ctwVitestRuntimeWithLoadedCasing(pathToFileURL(file).href)")'
+audit_new = audit_old + ' && s("scripts/vitest-windows-runtime-compat.mjs").includes("text=replaceOnce(text,oldDistExternalize")'
 replace_once(AUDIT, audit_old, audit_new, "Vitest executable-rewrite audit anchor")
 
 mutation_old = r'/ctwVitestRuntimeWithLoadedCasing\(pathToFileURL\(file\)\.href\)/, "pathToFileURL(file).href"'
