@@ -66,11 +66,36 @@ jobs:
         working-directory: work
         shell: pwsh
         run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
-      - name: Run actual complete Windows release certification
+      - name: Run actual complete Windows release certification with preserved transcript
+        id: complete-release
         working-directory: work
         shell: pwsh
-        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'release-windows-transcript.txt'
+          $oldErrorAction = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1 *>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          $ErrorActionPreference = $oldErrorAction
+          "`n=== DIAGNOSTIC CHILD EXIT CODE: $code ===" | Add-Content -Path $log -Encoding utf8
+          Write-Host "Complete runner child exit code: $code"
+          if ($code -ne 0) { exit $code }
+      - name: Preserve complete Windows release transcript and failure evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: complete-windows-release-diagnostic
+          path: |
+            ${{ runner.temp }}/release-windows-transcript.txt
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/RELEASE_MANIFEST.json
+            CosmicTranscriberWeb-1.0.12-source.zip
+          if-no-files-found: warn
+          retention-days: 3
       - name: Require exact complete-runner success and unchanged dependency lock
+        if: ${{ steps.complete-release.outcome == 'success' }}
         working-directory: work
         shell: pwsh
         env:
