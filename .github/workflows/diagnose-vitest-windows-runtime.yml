@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  inspect-vitest-runtime:
+  prove-vitest-runtime-repair:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,32 +38,60 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund
           $pkg = Get-Content node_modules\vitest\package.json -Raw | ConvertFrom-Json
           if ($pkg.version -ne '4.1.10') { throw "Expected vitest 4.1.10, found $($pkg.version)" }
-      - name: Locate compiled cached Vitest resolver
+      - name: Prove exact pre-patch lowercase-path failure
         working-directory: work
         shell: pwsh
         run: |
           @'
-          from pathlib import Path
-          root = Path('node_modules/vitest/dist')
-          needles = ('normalizedDistDir', 'getCachedVitestImport', 'externalizeMap')
-          hits = []
-          for p in root.rglob('*.js'):
-              text = p.read_text(encoding='utf-8')
-              if 'normalizedDistDir' in text and 'externalizeMap' in text:
-                  hits.append((p, text))
-          print(f'candidate_count={len(hits)}')
-          if len(hits) != 1:
-              for p, _ in hits:
-                  print('candidate', p.as_posix())
-              raise SystemExit('Expected exactly one compiled Vitest cached-resolver target')
-          p, text = hits[0]
-          print('target=' + p.as_posix())
-          for needle in needles:
-              print(needle + '_count=' + str(text.count(needle)))
-          idx = text.index('const normalizedDistDir')
-          start = max(0, idx - 500)
-          end = min(len(text), idx + 5000)
-          print('--- BEGIN COMPILED RESOLVER EXCERPT ---')
-          print(text[start:end])
-          print('--- END COMPILED RESOLVER EXCERPT ---')
-          '@ | python -
+          export default { test: { include: ['.ctw-vitest-runtime-case.test.mjs'] } }
+          '@ | Set-Content .ctw-vitest-runtime-case.config.mjs -Encoding utf8
+          @'
+          import { describe, expect, it } from 'vitest'
+          describe('single runtime', () => { it('has collector state', () => expect(1).toBe(1)) })
+          '@ | Set-Content .ctw-vitest-runtime-case.test.mjs -Encoding utf8
+          $cwd = (Resolve-Path .).Path
+          $cli = (Resolve-Path node_modules\vitest\vitest.mjs).Path
+          if ($cwd[1] -ne ':' -or $cli[1] -ne ':') { throw 'Diagnostic requires a Windows drive path.' }
+          $lowerCwd = $cwd.Substring(0,1).ToLowerInvariant() + $cwd.Substring(1)
+          $lowerCli = $cli.Substring(0,1).ToLowerInvariant() + $cli.Substring(1)
+          $old = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          cmd.exe /d /c "cd /d `"$lowerCwd`" && node `"$lowerCli`" run --config .ctw-vitest-runtime-case.config.mjs --no-watch --maxWorkers=1" *>&1 | Tee-Object -FilePath .ctw-vitest-before.txt
+          $code = $LASTEXITCODE
+          $ErrorActionPreference = $old
+          $out = Get-Content .ctw-vitest-before.txt -Raw
+          if ($code -eq 0) { throw 'Expected upstream Vitest 4.1.10 lowercase-path reproduction to fail before patch, but it passed.' }
+          if ($out -notmatch "reading 'config'|failed to find the current suite|failed to find the runner") { throw "Pre-patch failure did not match the upstream duplicate-runtime signature. Exit=$code`n$out" }
+          Write-Host 'Pre-patch upstream Windows duplicate-runtime reproduction PASS (failure observed as required).'
+      - name: Apply exact guarded upstream compatibility semantics
+        working-directory: work
+        shell: pwsh
+        run: python ..\.ci\patch_vitest_4110_windows_runtime.py .
+      - name: Prove lowercase-path reproduction is repaired
+        working-directory: work
+        shell: pwsh
+        run: |
+          $cwd = (Resolve-Path .).Path
+          $cli = (Resolve-Path node_modules\vitest\vitest.mjs).Path
+          $lowerCwd = $cwd.Substring(0,1).ToLowerInvariant() + $cwd.Substring(1)
+          $lowerCli = $cli.Substring(0,1).ToLowerInvariant() + $cli.Substring(1)
+          cmd.exe /d /c "cd /d `"$lowerCwd`" && node `"$lowerCli`" run --config .ctw-vitest-runtime-case.config.mjs --no-watch --maxWorkers=1" *>&1 | Tee-Object -FilePath .ctw-vitest-after.txt
+          if ($LASTEXITCODE -ne 0) { throw "Patched lowercase-path reproduction failed.`n$(Get-Content .ctw-vitest-after.txt -Raw)" }
+          $out = Get-Content .ctw-vitest-after.txt -Raw
+          if ($out -notmatch '1 passed') { throw "Patched reproduction did not report one passing test.`n$out" }
+          if ($out -match "reading 'config'|failed to find the current suite|failed to find the runner") { throw "Patched reproduction still contains duplicate-runtime signature.`n$out" }
+      - name: Fresh npm-ci Worker stress with patch after every install
+        working-directory: work
+        shell: pwsh
+        run: |
+          Remove-Item node_modules -Recurse -Force -ErrorAction SilentlyContinue
+          npm ci
+          npm run deps:install-scripts:verify
+          python ..\.ci\patch_vitest_4110_windows_runtime.py .
+          1..20 | ForEach-Object {
+            Write-Host "=== Worker launch $_ / 20 ==="
+            npm run test:worker
+            if ($LASTEXITCODE -ne 0) { throw "Worker launch $_ failed" }
+          }
+          npm run test:integration
+          if ($LASTEXITCODE -ne 0) { throw 'Integration suite failed after Vitest compatibility patch.' }
