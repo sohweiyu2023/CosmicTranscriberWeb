@@ -42,18 +42,25 @@ def js_regex_exact(text: str) -> str:
 
 # repair_e2e.py deliberately converted the shared E2E mock server to HTTPS so
 # Secure __Host cookies are exercised correctly. The separate native-Safari
-# smoke harness owns its own localhost origin and must move with that protocol.
+# smoke harness owns its own loopback origin and must move with that protocol.
+#
+# The harness is allowed to spell loopback as either localhost or 127.0.0.1.
+# Bind the candidate to the variable explicitly passed as COSMIC_E2E_PORT so a
+# separate plain-HTTP SafariDriver control endpoint can never be upgraded by
+# accident.
 safari = read(SAFARI)
 if HTTPS_MARKER in safari or TLS_MARKER in safari:
     fail("Real-Safari HTTPS/TLS repair marker unexpectedly already present")
 
-http_hits = list(re.finditer(r"http://localhost:\$\{(?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\}", safari))
+http_hits = list(
+    re.finditer(
+        r"http://(?P<host>localhost|127\.0\.0\.1):\$\{(?P<var>[A-Za-z_$][A-Za-z0-9_$]*)\}",
+        safari,
+    )
+)
 if not http_hits:
-    fail("Real-Safari smoke no longer contains the reviewed HTTP localhost template origin")
+    fail("Real-Safari smoke no longer contains a reviewed HTTP loopback template origin")
 
-# Prefer the localhost template whose port variable is explicitly passed to the
-# shared mock server as COSMIC_E2E_PORT. This avoids touching SafariDriver's own
-# local WebDriver REST endpoint if that endpoint also uses HTTP.
 candidates = []
 for hit in http_hits:
     var = hit.group("var")
@@ -66,11 +73,13 @@ for hit in http_hits:
 if len(candidates) == 1:
     hit = candidates[0]
 elif len(http_hits) == 1:
+    # A single reviewed HTTP loopback template is safe only when there is no
+    # competing SafariDriver template that could be confused with the mock.
     hit = http_hits[0]
 else:
     fail(
         "Could not uniquely bind real-Safari mock origin to COSMIC_E2E_PORT: "
-        f"{len(http_hits)} localhost HTTP templates, {len(candidates)} port-bound candidates"
+        f"{len(http_hits)} loopback HTTP templates, {len(candidates)} port-bound candidates"
     )
 
 old_origin = hit.group(0)
@@ -78,7 +87,7 @@ new_origin = "https://" + old_origin[len("http://") :]
 safari = safari[: hit.start()] + new_origin + safari[hit.end() :]
 
 # Mark the exact repaired origin line so static and mutation gates bind to this
-# Safari-specific contract rather than to another unrelated localhost URL.
+# Safari-specific contract rather than to another unrelated loopback URL.
 origin_line_re = re.compile(rf"(?m)^(?P<line>[^\n]*{re.escape(new_origin)}[^\n]*)$")
 origin_lines = list(origin_line_re.finditer(safari))
 if len(origin_lines) != 1:
@@ -88,7 +97,7 @@ repaired_origin_line = origin_line + f" // {HTTPS_MARKER}"
 safari = safari[: origin_lines[0].start()] + repaired_origin_line + safari[origin_lines[0].end() :]
 
 # The Node side of this dedicated test process also probes the ephemeral
-# self-signed HTTPS localhost server. Disable certificate verification only in
+# self-signed HTTPS loopback server. Disable certificate verification only in
 # this test-only process, never in app, Worker, deployment, or release code.
 imports = list(re.finditer(r"(?ms)^import\b.*?;[ \t]*(?:\r?\n|$)", safari))
 if not imports:
@@ -150,7 +159,7 @@ check = (
     f'    ,["{LABEL}", () => '
     f's("tests/safari/safari-smoke.mjs").includes({json.dumps(HTTPS_MARKER)})'
     f' && s("tests/safari/safari-smoke.mjs").includes({json.dumps(TLS_LINE)})'
-    ' && s("tests/safari/safari-smoke.mjs").includes("https://localhost:${")'
+    ' && /https:\\/\\/(?:localhost|127\\.0\\.0\\.1):\\$\\{/.test(s("tests/safari/safari-smoke.mjs"))'
     ' && s("tests/safari/safari-smoke.mjs").includes("acceptInsecureCerts:true")]\n'
 )
 audit = audit.replace(audit_anchor, check + audit_anchor, 1)
