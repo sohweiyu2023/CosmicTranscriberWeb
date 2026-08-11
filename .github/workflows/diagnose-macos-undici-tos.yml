@@ -1,0 +1,121 @@
+name: Diagnose macOS Undici ToS integration repair 1.0.12
+
+on:
+  push:
+    branches: ['diag/macos-undici-tos-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  macos-diagnostic:
+    name: macOS integration stress + WebKit + real Safari
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Publish exact diagnostic run URL
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          url='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          payload="$(TARGET_URL="$url" python3 -c 'import json,os; print(json.dumps({"state":"pending","context":"cosmic-macos-undici-tos-run","description":"macOS integration ToS compatibility diagnostic","target_url":os.environ["TARGET_URL"]}))')"
+          curl -fsSL -X POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            '${{ github.api_url }}/repos/${{ github.repository }}/statuses/${{ github.sha }}' \
+            -d "$payload" >/dev/null
+          echo "Diagnostic run: $url"
+      - name: Materialize exact reviewed source
+        run: python3 .ci/materialize.py
+      - name: Apply integration repair
+        run: python3 .ci/repair_integration.py
+      - name: Apply E2E endpoint repair
+        run: python3 .ci/repair_e2e.py
+      - name: Apply existing certification repairs
+        run: python3 .ci/repair_install_policy.py
+      - name: Apply macOS Undici default-ToS compatibility guard
+        run: python3 .ci/repair_macos_undici_tos.py
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Restore exact reviewed lock and fixtures from failed certification run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs
+          path: reviewed
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 31466247889
+      - name: Restore reviewed dependency graph and fixtures
+        run: |
+          cp reviewed/package-lock.json work/package-lock.json
+          mkdir -p work/tests/fixtures
+          cp reviewed/tests/fixtures/*.mp3 work/tests/fixtures/
+      - name: Activate exact reviewed npm
+        working-directory: work
+        run: |
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Install exact reviewed graph
+        working-directory: work
+        run: npm ci
+      - name: Verify lifecycle policy and audit
+        working-directory: work
+        run: |
+          npm run deps:install-scripts:verify
+          npm audit
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Full adversarial validation including ToS safeguard/mutations
+        working-directory: work
+        run: npm run validate
+      - name: Stress whole-Worker integration 20 independent times with zero retries
+        id: integration-stress
+        shell: bash
+        working-directory: work
+        run: |
+          set -euo pipefail
+          mkdir -p macos-undici-evidence
+          for i in $(seq 1 20); do
+            echo "=== macOS integration run ${i}/20 ==="
+            npm run test:integration 2>&1 | tee "macos-undici-evidence/integration-${i}.log"
+          done
+      - name: Install WebKit
+        working-directory: work
+        run: npm run browsers:install:webkit
+      - name: Run WebKit E2E
+        working-directory: work
+        run: npm run test:e2e:webkit
+      - name: Enable SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Run real native Safari WebDriver smoke
+        working-directory: work
+        run: npm run test:safari:real
+      - name: Upload macOS Undici diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-undici-tos-diagnostic
+          path: |
+            work/macos-undici-evidence
+            work/test-results
+            work/playwright-report
+          if-no-files-found: warn
+          retention-days: 3
