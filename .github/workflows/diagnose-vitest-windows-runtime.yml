@@ -1,4 +1,4 @@
-name: Diagnose Vitest Windows fresh-temp launcher
+name: Diagnose Vitest Windows fresh-install release sequence
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  fresh-temp-launcher-ab:
+  fresh-install-release-sequence:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,106 +28,95 @@ jobs:
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - name: Resolve exact graph and build source seed
-        working-directory: work
+      - name: Activate exact npm and provision fixture toolchain
         shell: pwsh
         run: |
           npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
           if ((node --version).Trim() -ne 'v24.19.0') { throw "Unexpected Node: $(node --version)" }
           if ((npm --version).Trim() -ne '12.0.2') { throw "Unexpected npm: $(npm --version)" }
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'ffmpeg/ffprobe provisioning failed.' }
+      - name: Resolve exact graph and build source seed
+        working-directory: work
+        shell: pwsh
+        run: |
           npm install --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'npm install failed while resolving seed lock.' }
           npm run deps:install-scripts:verify
+          if ($LASTEXITCODE -ne 0) { throw 'install-script policy failed.' }
           npm rebuild
+          if ($LASTEXITCODE -ne 0) { throw 'npm rebuild failed.' }
           npm audit
+          if ($LASTEXITCODE -ne 0) { throw 'npm audit failed.' }
+          node scripts/generate-test-fixtures.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'fixture generation failed.' }
           $seed = Join-Path $env:RUNNER_TEMP 'ctw-vitest-seed'
           Remove-Item $seed -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $seed | Out-Null
           Get-ChildItem . -Force | Where-Object Name -ne 'node_modules' | Copy-Item -Destination $seed -Recurse -Force
           Write-Host "Seed=$seed"
-      - name: Compare npm launcher vs canonical realpath launcher in pristine AppData temp copies
+      - name: Stress 10 independent fresh installs through exact release pre-Worker sequence
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $seed = Join-Path $env:RUNNER_TEMP 'ctw-vitest-seed'
-          $summary = Join-Path $env:RUNNER_TEMP 'vitest-launcher-ab-summary.txt'
+          $summary = Join-Path $env:RUNNER_TEMP 'fresh-install-release-sequence-summary.txt'
           Remove-Item $summary -Force -ErrorAction SilentlyContinue
 
-          function New-Probe([string]$name) {
-            $dir = Join-Path $env:TEMP ("ctw-vitest-" + $name + '-' + [guid]::NewGuid().ToString('N'))
+          function Run-Checked([string]$label, [string]$log, [scriptblock]$command) {
+            Add-Content $log "`n=== $label ==="
+            $old = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            & $command *>&1 | Tee-Object -FilePath $log -Append | Out-Host
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $old
+            if ($code -ne 0) { throw "$label failed with exit $code" }
+          }
+
+          1..10 | ForEach-Object {
+            $i = $_
+            $dir = Join-Path $env:TEMP ("ctw-fresh-release-seq-$i-" + [guid]::NewGuid().ToString('N'))
+            $log = Join-Path $env:RUNNER_TEMP ("fresh-install-$i.txt")
             New-Item -ItemType Directory -Path $dir | Out-Null
             Get-ChildItem $seed -Force | Copy-Item -Destination $dir -Recurse -Force
+            Add-Content $summary "iteration=$i dir=$dir"
             Push-Location $dir
             try {
-              npm ci
-              if ($LASTEXITCODE -ne 0) { throw "npm ci failed in $name" }
-              $cwd = (Get-Location).Path
-              $realCwd = node -e "process.stdout.write(require('fs').realpathSync.native(process.cwd()))"
-              $cliLiteral = (Resolve-Path node_modules\vitest\vitest.mjs).Path
-              $cliReal = node -e "process.stdout.write(require('fs').realpathSync.native('node_modules/vitest/vitest.mjs'))"
-              $cmdShim = Get-Content node_modules\.bin\vitest.cmd -Raw
-              $cmdShimSingle = $cmdShim -replace "`r?`n", ' | '
-              Add-Content $summary "=== $name ==="
-              Add-Content $summary "cwd=$cwd"
-              Add-Content $summary "realCwd=$realCwd"
-              Add-Content $summary "cliLiteral=$cliLiteral"
-              Add-Content $summary "cliReal=$cliReal"
-              Add-Content $summary "vitest.cmd=$cmdShimSingle"
-              return @{Dir=$dir; CliReal=$cliReal}
-            } finally { Pop-Location }
+              Run-Checked 'npm ci' $log { npm ci }
+              Run-Checked 'validate:version' $log { npm run validate:version }
+              Run-Checked 'deps:lock:verify' $log { npm run deps:lock:verify }
+              Run-Checked 'deps:check' $log { npm run deps:check }
+              Run-Checked 'deps:install-scripts:verify' $log { npm run deps:install-scripts:verify }
+              Run-Checked 'validate:powershell' $log { npm run validate:powershell }
+              Run-Checked 'npm audit' $log { npm audit }
+              Run-Checked 'validate' $log { npm run validate }
+              $before = @(Get-Process workerd -ErrorAction SilentlyContinue).Count
+              Add-Content $log "workerd_before=$before"
+              Run-Checked 'test:worker' $log { npm run test:worker }
+              $after = @(Get-Process workerd -ErrorAction SilentlyContinue).Count
+              Add-Content $log "workerd_after=$after"
+              Add-Content $summary "iteration=$i PASS workerd_before=$before workerd_after=$after"
+            } catch {
+              Add-Content $summary "iteration=$i FAIL $($_.Exception.Message)"
+              Get-Content $log | Select-Object -Last 180 | Out-Host
+              throw
+            } finally {
+              Pop-Location
+              Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+            }
           }
-
-          function Invoke-Captured([string]$label,[string]$dir,[scriptblock]$command) {
-            Push-Location $dir
-            try {
-              $log = Join-Path $env:RUNNER_TEMP ("$label.txt")
-              $old = $ErrorActionPreference
-              $ErrorActionPreference = 'Continue'
-              & $command *>&1 | Tee-Object -FilePath $log
-              $code = $LASTEXITCODE
-              $ErrorActionPreference = $old
-              Add-Content $summary "$label.exit=$code"
-              Add-Content $summary "$label.log=$log"
-              return $code
-            } finally { Pop-Location }
-          }
-
-          $npmProbe = New-Probe 'npm'
-          $npmCode = Invoke-Captured 'npm-launcher' $npmProbe.Dir { npm run test:worker }
-
-          $literalProbe = New-Probe 'literal'
-          $literalCode = Invoke-Captured 'literal-node-launcher' $literalProbe.Dir {
-            node scripts/vitest-windows-runtime-compat.mjs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            node node_modules\vitest\vitest.mjs run --config vitest.config.js --no-watch --maxWorkers=1
-          }
-
-          $realProbe = New-Probe 'realpath'
-          $realCli = $realProbe.CliReal
-          $realCode = Invoke-Captured 'realpath-node-launcher' $realProbe.Dir {
-            node scripts/vitest-windows-runtime-compat.mjs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            node $realCli run --config vitest.config.js --no-watch --maxWorkers=1
-          }
-
-          Write-Host '=== A/B SUMMARY ==='
+          Write-Host '=== FRESH INSTALL RELEASE-SEQUENCE SUMMARY ==='
           Get-Content $summary
-          if ($npmCode -ne 0 -and $realCode -eq 0) {
-            Write-Host 'DIAGNOSIS PASS: npm launcher fails while canonical realpath Node launcher passes in independent fresh installs.'
-            exit 0
-          }
-          if ($npmCode -eq 0 -and $literalCode -eq 0 -and $realCode -eq 0) {
-            throw 'All three pristine probes passed; the release-only failure did not reproduce in this reduced harness.'
-          }
-          throw "No clean launcher differential. npm=$npmCode literal=$literalCode realpath=$realCode. Deeper resolver tracing required."
-      - name: Preserve launcher diagnostic evidence
+          Write-Host '10/10 independent fresh installs passed exact release pre-Worker sequence with zero retries.'
+      - name: Preserve fresh-install stress evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: vitest-fresh-temp-launcher-ab
+          name: vitest-fresh-install-release-sequence
           path: |
-            ${{ runner.temp }}/vitest-launcher-ab-summary.txt
-            ${{ runner.temp }}/npm-launcher.txt
-            ${{ runner.temp }}/literal-node-launcher.txt
-            ${{ runner.temp }}/realpath-node-launcher.txt
+            ${{ runner.temp }}/fresh-install-release-sequence-summary.txt
+            ${{ runner.temp }}/fresh-install-*.txt
           if-no-files-found: warn
           retention-days: 3
