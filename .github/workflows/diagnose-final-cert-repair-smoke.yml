@@ -20,7 +20,7 @@ jobs:
           python .ci/repair_e2e.py
           python .ci/repair_install_policy.py
       - name: Apply Windows package certification hardening
-        run: python .ci/repair_windows_package_certification.py
+        run: python .ci/repair_windows_package_certification_v2.py
       - name: Parse repaired JSON and JavaScript modules
         working-directory: work
         run: |
@@ -29,15 +29,9 @@ jobs:
           node --check scripts/release-verify.mjs
           node --check scripts/audit-lib.mjs
           node --check scripts/mutation-suite.mjs
-      - name: Print legacy release-package safeguard context
-        working-directory: work
-        run: |
-          grep -n -C 3 "release source packaging cannot bypass dependency-backed release gates" scripts/audit-lib.mjs || true
-          grep -n -C 3 "release source packaging" scripts/mutation-suite.mjs || true
       - name: Run repaired dependency-free safeguard audit
         working-directory: work
         run: node scripts/static-audit.mjs
       - name: Run repaired deliberate mutation suite
-        if: always()
         working-directory: work
         run: node scripts/mutation-suite.mjs
