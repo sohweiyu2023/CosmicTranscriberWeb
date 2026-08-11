@@ -219,7 +219,8 @@ print(
     "deliberate regression mutations installed."
 )
 
-# Run the cross-browser behavioral cookie-contract repair after the E2E and
-# dependency repairs have established their stable derived anchors. Any failure
-# propagates and stops certification on every platform.
+# Run cross-browser certification repairs after the E2E and dependency repairs
+# have established their stable derived anchors. Any failure propagates and
+# stops certification identically on every platform.
 runpy.run_path(str(ROOT / ".ci" / "repair_cookie_contract.py"), run_name="__main__")
+runpy.run_path(str(ROOT / ".ci" / "repair_safari.py"), run_name="__main__")
