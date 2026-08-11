@@ -1,0 +1,172 @@
+name: Diagnose Windows release 1.0.12
+
+on:
+  push:
+    branches: ['diag/windows-release-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  windows-release-diagnostic:
+    name: Windows inner release diagnostic
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize exact reviewed source snapshot
+        shell: pwsh
+        run: python .ci/materialize.py
+      - name: Repair and verify integration harness
+        shell: pwsh
+        run: python .ci/repair_integration.py
+      - name: Repair Playwright E2E endpoint inheritance
+        shell: pwsh
+        run: python .ci/repair_e2e.py
+      - name: Apply certification repairs
+        shell: pwsh
+        run: python .ci/repair_install_policy.py
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Restore exact reviewed lock and fixtures from failed certification run
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs
+          path: reviewed
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 31450081424
+      - name: Restore reviewed dependency graph and fixtures
+        shell: pwsh
+        run: |
+          Copy-Item reviewed\package-lock.json work\package-lock.json -Force
+          New-Item -ItemType Directory -Path work\tests\fixtures -Force | Out-Null
+          Copy-Item reviewed\tests\fixtures\*.mp3 work\tests\fixtures\ -Force
+      - name: Activate reviewed npm
+        shell: pwsh
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact Node/npm
+        shell: pwsh
+        working-directory: work
+        run: |
+          if ((node --version).Trim() -ne 'v24.19.0') { throw "Expected Node v24.19.0; got $(node --version)" }
+          if ((npm --version).Trim() -ne '12.0.2') { throw "Expected npm 12.0.2; got $(npm --version)" }
+      - name: Execute Windows toolchain self-test
+        shell: pwsh
+        working-directory: work
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\WINDOWS-TOOLCHAIN-SELFTEST.ps1
+      - name: Install exact reviewed dependencies
+        working-directory: work
+        run: npm ci
+      - name: Verify lifecycle-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+      - name: Provision media validation toolchain
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
+          & $ffmpeg.Source -version | Select-Object -First 1
+          & $ffprobe.Source -version | Select-Object -First 1
+      - name: Validate
+        working-directory: work
+        run: npm run validate
+      - name: Worker tests
+        working-directory: work
+        run: npm run test:worker
+      - name: Integration tests
+        working-directory: work
+        run: npm run test:integration
+      - name: Install branded browsers
+        working-directory: work
+        run: npm run browsers:install:branded
+      - name: Branded Chrome/Edge E2E
+        working-directory: work
+        run: npm run test:e2e:branded
+      - name: Build inspection
+        working-directory: work
+        run: npm run build:inspect
+      - name: Run complete Windows release certification with durable capture
+        id: inner-release
+        continue-on-error: true
+        shell: pwsh
+        working-directory: work
+        run: |
+          $output = Join-Path $PWD 'windows-release-output.log'
+          $transcript = Join-Path $PWD 'windows-release-transcript.log'
+          $exitFile = Join-Path $PWD 'windows-release-exit-code.txt'
+          Remove-Item $output,$transcript,$exitFile -Force -ErrorAction SilentlyContinue
+          $code = 1
+          Start-Transcript -Path $transcript -Force
+          try {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1 2>&1 | Tee-Object -FilePath $output
+            $code = $LASTEXITCODE
+          }
+          catch {
+            $_ | Format-List * -Force | Out-String | Tee-Object -FilePath $output -Append | Write-Host
+            $code = 1
+          }
+          finally {
+            try { Stop-Transcript | Out-Null } catch {}
+          }
+          Set-Content -Path $exitFile -Value $code -Encoding utf8
+          Write-Host "Inner RELEASE-WINDOWS.ps1 exit code: $code"
+          if ($code -ne 0) { exit $code }
+      - name: Capture diagnostic inventory
+        if: always()
+        shell: pwsh
+        working-directory: work
+        run: |
+          Write-Host '=== Top-level files ==='
+          Get-ChildItem -Force | Select-Object Mode,Length,LastWriteTime,Name | Format-Table -AutoSize
+          Write-Host '=== Likely diagnostic/release paths ==='
+          Get-ChildItem -Recurse -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '[\\/]node_modules[\\/]' -and ($_.Name -match '(?i)(release|test-results|playwright|report|error|failure|log|zip)') } |
+            Select-Object FullName,Length,LastWriteTime |
+            Format-Table -AutoSize |
+            Out-String -Width 240 |
+            Tee-Object -FilePath .\windows-release-inventory.txt |
+            Write-Host
+      - name: Upload inner Windows release diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-inner-release-diagnostic
+          path: |
+            work/windows-release-output.log
+            work/windows-release-transcript.log
+            work/windows-release-exit-code.txt
+            work/windows-release-inventory.txt
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/logs
+            work/artifacts
+            work/out
+            work/dist
+            work/*.zip
+            work/*release*.log
+            work/*release*.json
+            work/RELEASE-WINDOWS.ps1
+            work/package.json
+            work/package-lock.json
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Preserve diagnostic failure status
+        if: always()
+        shell: pwsh
+        env:
+          INNER_OUTCOME: ${{ steps.inner-release.outcome }}
+        run: |
+          if ($env:INNER_OUTCOME -ne 'success') { throw "Inner release runner failed; diagnostics uploaded." }
