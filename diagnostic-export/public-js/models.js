@@ -1,0 +1,8 @@
+export const APP_VERSION = "1.0.12";
+export const DEFAULT_PROMPT = "Transcribe faithfully and completely. Do not summarize, omit, paraphrase, or add commentary. Preserve sentence order and meaning. Add sensible punctuation and paragraph breaks. Spell names and technical terms carefully.";
+export const MODELS = Object.freeze({
+  "gpt-transcribe": { label:"GPT Transcribe", price:0.0045, priceBasis:"published_per_minute", languages:"plural", keywords:true, prompt:true, diarize:false, previous:true, help:"Recommended general completed-file model. Supports multiple language hints: ISO 639-1, supported ISO 639-3 codes, and regional zh locales; also supports keywords and prompt context." },
+  "gpt-4o-transcribe-diarize": { label:"GPT-4o Transcribe Diarize", price:0.006, priceBasis:"derived_same_audio_token_rates", languages:"single", keywords:false, prompt:false, diarize:true, previous:false, help:"Speaker-labelled file transcription with one optional ISO 639-1 language hint. The displayed per-minute cost is a derived estimate because OpenAI currently publishes this model by audio-token rates rather than a direct per-minute estimate. Speaker labels are scoped to each independently uploaded Part." },
+  "gpt-4o-transcribe": { label:"GPT-4o Transcribe", price:0.006, priceBasis:"published_per_minute", languages:"single", keywords:false, prompt:true, diarize:false, previous:true, help:"High-quality completed-file transcription with one optional language hint." },
+  "gpt-4o-mini-transcribe": { label:"GPT-4o Mini Transcribe", price:0.003, priceBasis:"published_per_minute", languages:"single", keywords:false, prompt:true, diarize:false, previous:true, help:"Lower-cost completed-file transcription with one optional language hint." }
+});
