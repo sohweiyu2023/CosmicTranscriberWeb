@@ -13,6 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Parse certification harness and audit helpers
+        run: |
+          python -m py_compile .ci/repair_windows_package_certification.py .ci/repair_windows_package_certification_v2.py .ci/audit_certified_zip.py
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/certify.yml'); puts 'certify.yml YAML parse PASS'"
+          python - <<'PY'
+          import pathlib,re,sys
+          text=pathlib.Path('.github/workflows/certify.yml').read_text(encoding='utf-8')
+          refs=re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)',text,flags=re.M)
+          bad=[r for r in refs if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}',r)]
+          if bad:
+              raise SystemExit('Non-immutable action refs: '+repr(bad))
+          print(f'Outer certification immutable action-pin smoke PASS ({len(refs)} refs).')
+          PY
       - run: python .ci/materialize.py
       - name: Apply all existing repairs
         run: |
