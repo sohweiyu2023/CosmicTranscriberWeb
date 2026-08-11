@@ -63,7 +63,11 @@ jobs:
         id: lock-before
         working-directory: work
         shell: pwsh
-        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
+        run: |
+          $before=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "LOCK_BEFORE=$before"
+          Copy-Item -LiteralPath .\package-lock.json -Destination (Join-Path $env:RUNNER_TEMP 'worker-globals-package-lock-before.json') -Force
+          Write-Output ('hash=' + $before) >> $env:GITHUB_OUTPUT
       - name: Run exact complete Windows release certification with transcript
         id: release
         working-directory: work
@@ -84,11 +88,17 @@ jobs:
           LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
         run: |
           $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          Copy-Item -LiteralPath .\package-lock.json -Destination (Join-Path $env:RUNNER_TEMP 'worker-globals-package-lock-after.json') -Force
+          $zipPath=Join-Path (Resolve-Path ..).Path 'CosmicTranscriberWeb-1.0.12-source.zip'
+          Write-Host "LOCK_BEFORE=$env:LOCK_BEFORE"
+          Write-Host "LOCK_AFTER=$after"
+          Write-Host "ZIP_EXPECTED=$zipPath"
+          Write-Host "ZIP_EXISTS=$(Test-Path -LiteralPath $zipPath)"
           if ($after -ne $env:LOCK_BEFORE) { throw "Complete release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
-          $zip=Resolve-Path ..\CosmicTranscriberWeb-1.0.12-source.zip
-          if (-not (Test-Path $zip)) { throw 'Complete Windows release did not produce the certified source ZIP.' }
-          Write-Host "Complete Windows release ZIP: $($zip.Path)"
-          Write-Host "SHA256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())"
+          if (-not (Test-Path -LiteralPath $zipPath)) { throw 'Complete Windows release did not produce the certified source ZIP.' }
+          $zip=Get-Item -LiteralPath $zipPath
+          Write-Host "Complete Windows release ZIP: $($zip.FullName)"
+          Write-Host "SHA256=$((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
       - name: Preserve complete Windows diagnostic evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -96,6 +106,8 @@ jobs:
           name: complete-windows-worker-globals
           path: |
             ${{ runner.temp }}/worker-globals-release-windows-transcript.txt
+            ${{ runner.temp }}/worker-globals-package-lock-before.json
+            ${{ runner.temp }}/worker-globals-package-lock-after.json
             work/test-results
             work/playwright-report
             work/package.json
