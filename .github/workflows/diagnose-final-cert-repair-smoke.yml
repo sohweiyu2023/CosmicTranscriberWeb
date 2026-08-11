@@ -1,0 +1,37 @@
+name: Smoke final certification repairs 1.0.12
+
+on:
+  push:
+    branches: ['diag/final-cert-hardening-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repair-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python .ci/materialize.py
+      - name: Apply all existing repairs
+        run: |
+          python .ci/repair_integration.py
+          python .ci/repair_e2e.py
+          python .ci/repair_install_policy.py
+      - name: Apply Windows package certification hardening
+        run: python .ci/repair_windows_package_certification.py
+      - name: Parse repaired JSON and JavaScript modules
+        working-directory: work
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json parse PASS')"
+          node --check scripts/verify-source-package.mjs
+          node --check scripts/release-verify.mjs
+          node --check scripts/audit-lib.mjs
+          node --check scripts/mutation-suite.mjs
+      - name: Run repaired dependency-free safeguard audit
+        working-directory: work
+        run: node scripts/static-audit.mjs
+      - name: Run repaired deliberate mutation suite
+        working-directory: work
+        run: node scripts/mutation-suite.mjs
