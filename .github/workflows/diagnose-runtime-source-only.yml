@@ -10,26 +10,24 @@ permissions:
 
 jobs:
   capture:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Materialize exact reviewed source snapshot
-        shell: pwsh
         run: python .ci/materialize.py
       - name: Apply exact current certification repairs
-        shell: pwsh
         run: |
           python .ci/repair_integration.py
           python .ci/repair_e2e.py
           python .ci/repair_install_policy.py
       - name: Print exact suspected sources with line numbers
-        shell: pwsh
         working-directory: work
         run: |
-          foreach ($file in @('tests/worker/runtime.test.js','vitest.config.js','tests/worker/wrangler.test.jsonc','scripts/package-source.mjs','scripts/verify-source-package.mjs','scripts/release-verify.mjs','scripts/checksums.mjs','RELEASE_MANIFEST.json','package.json')) {
-            Write-Host "`n===== $file ====="
-            $n=0; Get-Content $file | ForEach-Object { $n++; Write-Host ('{0,4}: {1}' -f $n, $_) }
-          }
+          for file in tests/worker/runtime.test.js vitest.config.js tests/worker/wrangler.test.jsonc scripts/package-source.mjs scripts/verify-source-package.mjs scripts/release-verify.mjs scripts/checksums.mjs RELEASE_MANIFEST.json package.json; do
+            echo
+            echo "===== $file ====="
+            nl -ba "$file"
+          done
       - name: Upload exact source evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
