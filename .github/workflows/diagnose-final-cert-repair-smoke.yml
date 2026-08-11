@@ -29,9 +29,15 @@ jobs:
           node --check scripts/release-verify.mjs
           node --check scripts/audit-lib.mjs
           node --check scripts/mutation-suite.mjs
+      - name: Print legacy release-package safeguard context
+        working-directory: work
+        run: |
+          grep -n -C 3 "release source packaging cannot bypass dependency-backed release gates" scripts/audit-lib.mjs || true
+          grep -n -C 3 "release source packaging" scripts/mutation-suite.mjs || true
       - name: Run repaired dependency-free safeguard audit
         working-directory: work
         run: node scripts/static-audit.mjs
       - name: Run repaired deliberate mutation suite
+        if: always()
         working-directory: work
         run: node scripts/mutation-suite.mjs
