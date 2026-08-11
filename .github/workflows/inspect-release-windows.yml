@@ -1,0 +1,13 @@
+name: Inspect Windows release runner patch points
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-release-runner:
+    runs-on: windows-latest
+    steps:
+      - run: echo 'Manual inspection only. No PR-triggered diagnostic noise.'

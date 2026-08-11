@@ -1,0 +1,13 @@
+name: Diagnose complete Windows release with Vitest repair
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  complete-windows-release:
+    runs-on: windows-latest
+    steps:
+      - run: echo 'Manual diagnostic only. The focused fresh-temp launcher workflow is authoritative during investigation.'

@@ -1,0 +1,120 @@
+name: Diagnose complete Windows release with Worker Vitest globals
+
+on:
+  push:
+    branches: ['diag/vitest-windows-runtime-1.0.12']
+  pull_request:
+    branches: ['ci/1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  complete-windows-worker-globals:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize reviewed source and all proven/diagnostic repairs
+        shell: pwsh
+        run: |
+          python .ci/materialize.py
+          python .ci/repair_integration.py
+          python .ci/repair_e2e.py
+          python .ci/repair_install_policy.py
+          python .ci/repair_vitest_windows.py
+          python .ci/repair_vitest_windows_mutation_guard.py
+          python .ci/repair_worker_vitest_globals.py
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Activate exact npm and provision media toolchain
+        shell: pwsh
+        run: |
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          if ((node --version).Trim() -ne 'v24.19.0') { throw "Unexpected Node: $(node --version)" }
+          if ((npm --version).Trim() -ne '12.0.2') { throw "Unexpected npm: $(npm --version)" }
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'ffmpeg/ffprobe provisioning failed.' }
+      - name: Resolve current reviewed graph and prove repaired preflight
+        working-directory: work
+        shell: pwsh
+        run: |
+          # deps:latest runs validate:full internally, and the MP3 validation suite requires
+          # deterministic fixtures. Generate them before entering that dependency-refresh
+          # boundary so the diagnostic mirrors the authoritative release prerequisites.
+          node scripts/generate-test-fixtures.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'fixture generation failed.' }
+          # Mirror the authoritative resolve-lock boundary: refresh direct dependencies
+          # exactly once before recording the reviewed lock. The complete release runner
+          # then has to prove that the same refresh is idempotent and does not alter it.
+          npm run deps:latest
+          if ($LASTEXITCODE -ne 0) { throw 'reviewed dependency refresh failed.' }
+          npm run deps:lock:verify
+          if ($LASTEXITCODE -ne 0) { throw 'dependency lock verification failed.' }
+          npm run validate
+          if ($LASTEXITCODE -ne 0) { throw 'full validation/mutation gate failed.' }
+          npm run test:worker
+          if ($LASTEXITCODE -ne 0) { throw 'Worker preflight failed.' }
+          npm run test:integration
+          if ($LASTEXITCODE -ne 0) { throw 'integration preflight failed.' }
+      - name: Record dependency lock before complete runner
+        id: lock-before
+        working-directory: work
+        shell: pwsh
+        run: |
+          $before=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "LOCK_BEFORE=$before"
+          Copy-Item -LiteralPath .\package-lock.json -Destination (Join-Path $env:RUNNER_TEMP 'worker-globals-package-lock-before.json') -Force
+          Write-Output ('hash=' + $before) >> $env:GITHUB_OUTPUT
+      - name: Run exact complete Windows release certification with transcript
+        id: release
+        working-directory: work
+        shell: pwsh
+        run: |
+          $transcript = Join-Path $env:RUNNER_TEMP 'worker-globals-release-windows-transcript.txt'
+          $old = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1 *>&1 | Tee-Object -FilePath $transcript | Out-Host
+          $code = $LASTEXITCODE
+          $ErrorActionPreference = $old
+          Write-Host "RELEASE_WINDOWS_EXIT=$code"
+          if ($code -ne 0) { throw "RELEASE-WINDOWS.ps1 failed with exit $code" }
+      - name: Prove exact runner success, unchanged lock, and ZIP creation
+        working-directory: work
+        shell: pwsh
+        env:
+          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
+        run: |
+          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          Copy-Item -LiteralPath .\package-lock.json -Destination (Join-Path $env:RUNNER_TEMP 'worker-globals-package-lock-after.json') -Force
+          $zipPath=Join-Path (Resolve-Path ..).Path 'CosmicTranscriberWeb-1.0.12-source.zip'
+          Write-Host "LOCK_BEFORE=$env:LOCK_BEFORE"
+          Write-Host "LOCK_AFTER=$after"
+          Write-Host "ZIP_EXPECTED=$zipPath"
+          Write-Host "ZIP_EXISTS=$(Test-Path -LiteralPath $zipPath)"
+          if ($after -ne $env:LOCK_BEFORE) { throw "Complete release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
+          if (-not (Test-Path -LiteralPath $zipPath)) { throw 'Complete Windows release did not produce the certified source ZIP.' }
+          $zip=Get-Item -LiteralPath $zipPath
+          Write-Host "Complete Windows release ZIP: $($zip.FullName)"
+          Write-Host "SHA256=$((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - name: Preserve complete Windows diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: complete-windows-worker-globals
+          path: |
+            ${{ runner.temp }}/worker-globals-release-windows-transcript.txt
+            ${{ runner.temp }}/worker-globals-package-lock-before.json
+            ${{ runner.temp }}/worker-globals-package-lock-after.json
+            work/test-results
+            work/playwright-report
+            work/package.json
+            work/vitest.config.js
+            work/tests/worker/runtime.test.js
+            CosmicTranscriberWeb-1.0.12-source.zip
+          if-no-files-found: warn
+          retention-days: 3
