@@ -63,6 +63,7 @@ jobs:
           if ($code -eq 0) { throw 'Expected upstream Vitest 4.1.10 lowercase-path reproduction to fail before patch, but it passed.' }
           if ($out -notmatch "reading 'config'|failed to find the current suite|failed to find the runner") { throw "Pre-patch failure did not match the upstream duplicate-runtime signature. Exit=$code`n$out" }
           Write-Host 'Pre-patch upstream Windows duplicate-runtime reproduction PASS (failure observed as required).'
+          $global:LASTEXITCODE = 0
       - name: Apply exact guarded upstream compatibility semantics
         working-directory: work
         shell: pwsh
