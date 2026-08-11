@@ -45,6 +45,10 @@ jobs:
           if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
           & $ffmpeg.Source -version | Select-Object -First 1
           & $ffprobe.Source -version | Select-Object -First 1
+      - name: Generate deterministic MP3 fixtures exactly as certification resolve gate does
+        working-directory: work
+        shell: pwsh
+        run: node scripts/generate-test-fixtures.mjs
       - name: Resolve reviewed graph and durable-repair preflight
         working-directory: work
         shell: pwsh
