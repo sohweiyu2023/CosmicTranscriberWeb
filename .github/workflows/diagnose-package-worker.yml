@@ -1,0 +1,161 @@
+name: Diagnose source-package Worker verification 1.0.12
+
+on:
+  push:
+    branches: ['diag/package-worker-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  diagnose:
+    name: Compare materialized and packaged Worker configuration
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize exact reviewed source
+        shell: pwsh
+        run: python .ci/materialize.py
+      - name: Apply integration repair
+        shell: pwsh
+        run: python .ci/repair_integration.py
+      - name: Apply E2E endpoint repair
+        shell: pwsh
+        run: python .ci/repair_e2e.py
+      - name: Apply existing certification repairs
+        shell: pwsh
+        run: python .ci/repair_install_policy.py
+      - name: Apply Firefox secure-key repair
+        shell: pwsh
+        run: python .ci/repair_firefox_key_dialog.py
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Restore exact reviewed lock and fixtures
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs
+          path: reviewed
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 31450081424
+      - name: Install exact reviewed graph
+        shell: pwsh
+        run: |
+          Copy-Item reviewed\package-lock.json work\package-lock.json -Force
+          New-Item -ItemType Directory -Path work\tests\fixtures -Force | Out-Null
+          Copy-Item reviewed\tests\fixtures\*.mp3 work\tests\fixtures\ -Force
+          Push-Location work
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          if ((node --version).Trim() -ne 'v24.19.0') { throw "Wrong Node: $(node --version)" }
+          if ((npm --version).Trim() -ne '12.0.2') { throw "Wrong npm: $(npm --version)" }
+          npm ci
+          Pop-Location
+      - name: Prove materialized Worker suite passes
+        shell: pwsh
+        working-directory: work
+        run: npm run test:worker
+      - name: Capture materialized packaging inputs
+        shell: pwsh
+        run: |
+          $out = 'evidence\materialized'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $patterns = @('vitest*','wrangler*','package.json','package-lock.json','RELEASE_MANIFEST.json','.gitignore')
+          foreach ($p in $patterns) {
+            Get-ChildItem -Path work -Filter $p -Force -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName $out -Force }
+          }
+          $files = @(
+            'work\tests\worker\runtime.test.js',
+            'work\scripts\package-source.mjs',
+            'work\scripts\verify-source-package.mjs',
+            'work\scripts\release-verify.mjs',
+            'work\scripts\complete-release-verify.mjs'
+          )
+          foreach ($f in $files) {
+            if (Test-Path $f) { Copy-Item $f $out -Force }
+          }
+          Get-ChildItem work -Force -Recurse |
+            Where-Object { $_.FullName -notmatch '[\\/]node_modules[\\/]' -and ($_.Name -match '(?i)(vitest|wrangler|runtime\.test|package-source|verify-source|release-verify|manifest)') } |
+            Select-Object FullName,Length |
+            Format-Table -AutoSize |
+            Out-String -Width 260 |
+            Set-Content evidence\materialized-inventory.txt -Encoding utf8
+      - name: Build and verify source package
+        shell: pwsh
+        working-directory: work
+        run: npm run release:source
+      - name: Extract generated source package and capture contents
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem work -Filter '*-SOURCE.zip' -File | Select-Object -First 1
+          if ($null -eq $zip) { throw 'Generated source ZIP not found.' }
+          Copy-Item $zip.FullName evidence\ -Force
+          $fresh = (Resolve-Path evidence).Path + '\fresh'
+          New-Item -ItemType Directory -Path $fresh -Force | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $fresh -Force
+          Get-ChildItem $fresh -Force -Recurse |
+            Select-Object FullName,Length |
+            Format-Table -AutoSize |
+            Out-String -Width 280 |
+            Set-Content evidence\fresh-full-inventory.txt -Encoding utf8
+          Get-ChildItem $fresh -Force -Recurse |
+            Where-Object { $_.Name -match '(?i)(vitest|wrangler|runtime\.test|package-source|verify-source|release-verify|manifest|package\.json)' } |
+            Select-Object FullName,Length |
+            Format-Table -AutoSize |
+            Out-String -Width 280 |
+            Set-Content evidence\fresh-config-inventory.txt -Encoding utf8
+          $root = Get-ChildItem $fresh -Directory | Select-Object -First 1
+          if ($null -eq $root) { throw 'Source ZIP has no canonical root directory.' }
+          "FRESH_ROOT=$($root.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Install extracted source dependencies
+        shell: pwsh
+        working-directory: ${{ env.FRESH_ROOT }}
+        run: npm ci
+      - name: Run Worker suite from fresh source ZIP
+        id: fresh-worker
+        continue-on-error: true
+        shell: pwsh
+        working-directory: ${{ env.FRESH_ROOT }}
+        run: npm run test:worker 2>&1 | Tee-Object -FilePath ..\fresh-worker-output.log
+      - name: Copy extracted diagnostic inputs
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:FRESH_ROOT -and (Test-Path $env:FRESH_ROOT)) {
+            $dest='evidence\fresh-selected'
+            New-Item -ItemType Directory -Path $dest -Force | Out-Null
+            Get-ChildItem -Path $env:FRESH_ROOT -Force | Where-Object { $_.Name -match '^(vitest|wrangler)|^(package\.json|package-lock\.json|RELEASE_MANIFEST\.json)$' } | ForEach-Object { Copy-Item $_.FullName $dest -Force }
+            $selected=@('tests\worker\runtime.test.js','scripts\package-source.mjs','scripts\verify-source-package.mjs','scripts\release-verify.mjs','scripts\complete-release-verify.mjs')
+            foreach($rel in $selected){ $p=Join-Path $env:FRESH_ROOT $rel; if(Test-Path $p){ Copy-Item $p $dest -Force } }
+          }
+      - name: Upload package/Worker diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-worker-diagnostic
+          path: |
+            evidence
+            fresh-worker-output.log
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Publish exact diagnostic run URL
+        if: always()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          $body = @{ state='pending'; context='cosmic-package-worker-diagnostic-run'; description='Exact source-package Worker diagnostic run'; target_url=$url } | ConvertTo-Json -Compress
+          Invoke-RestMethod -Method Post -Uri '${{ github.api_url }}/repos/${{ github.repository }}/statuses/${{ github.sha }}' -Headers @{ Authorization="Bearer $env:GH_TOKEN"; Accept='application/vnd.github+json'; 'X-GitHub-Api-Version'='2022-11-28' } -ContentType 'application/json' -Body $body | Out-Null
+          Write-Host "Diagnostic run: $url"
+      - name: Preserve fresh Worker verification result
+        if: always()
+        shell: pwsh
+        env:
+          OUTCOME: ${{ steps.fresh-worker.outcome }}
+        run: |
+          if ($env:OUTCOME -ne 'success') { throw 'Freshly extracted source package Worker suite failed; diagnostic evidence uploaded.' }
