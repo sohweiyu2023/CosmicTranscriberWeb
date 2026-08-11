@@ -70,29 +70,28 @@ jobs:
           }
           $files = @(
             'work\tests\worker\runtime.test.js',
+            'work\tests\worker\wrangler.test.jsonc',
             'work\scripts\package-source.mjs',
             'work\scripts\verify-source-package.mjs',
-            'work\scripts\release-verify.mjs',
-            'work\scripts\complete-release-verify.mjs'
+            'work\scripts\release-verify.mjs'
           )
-          foreach ($f in $files) {
-            if (Test-Path $f) { Copy-Item $f $out -Force }
-          }
+          foreach ($f in $files) { if (Test-Path $f) { Copy-Item $f $out -Force } }
           Get-ChildItem work -Force -Recurse |
             Where-Object { $_.FullName -notmatch '[\\/]node_modules[\\/]' -and ($_.Name -match '(?i)(vitest|wrangler|runtime\.test|package-source|verify-source|release-verify|manifest)') } |
             Select-Object FullName,Length |
             Format-Table -AutoSize |
             Out-String -Width 260 |
             Set-Content evidence\materialized-inventory.txt -Encoding utf8
-      - name: Build and verify source package
+      - name: Build retained audit-candidate source ZIP with the real packager
         shell: pwsh
         working-directory: work
-        run: npm run release:source
+        run: npm run package:source:candidate
       - name: Extract generated source package and capture contents
         shell: pwsh
         run: |
-          $zip = Get-ChildItem work -Filter '*-SOURCE.zip' -File | Select-Object -First 1
-          if ($null -eq $zip) { throw 'Generated source ZIP not found.' }
+          $zip = Get-ChildItem . -Filter '*-source.zip' -File | Select-Object -First 1
+          if ($null -eq $zip) { throw 'Generated source ZIP not found beside work directory.' }
+          New-Item -ItemType Directory -Path evidence -Force | Out-Null
           Copy-Item $zip.FullName evidence\ -Force
           $fresh = (Resolve-Path evidence).Path + '\fresh'
           New-Item -ItemType Directory -Path $fresh -Force | Out-Null
@@ -120,7 +119,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         working-directory: ${{ env.FRESH_ROOT }}
-        run: npm run test:worker 2>&1 | Tee-Object -FilePath ..\fresh-worker-output.log
+        run: npm run test:worker 2>&1 | Tee-Object -FilePath "$env:GITHUB_WORKSPACE\evidence\fresh-worker-output.log"
       - name: Copy extracted diagnostic inputs
         if: always()
         shell: pwsh
@@ -129,7 +128,7 @@ jobs:
             $dest='evidence\fresh-selected'
             New-Item -ItemType Directory -Path $dest -Force | Out-Null
             Get-ChildItem -Path $env:FRESH_ROOT -Force | Where-Object { $_.Name -match '^(vitest|wrangler)|^(package\.json|package-lock\.json|RELEASE_MANIFEST\.json)$' } | ForEach-Object { Copy-Item $_.FullName $dest -Force }
-            $selected=@('tests\worker\runtime.test.js','scripts\package-source.mjs','scripts\verify-source-package.mjs','scripts\release-verify.mjs','scripts\complete-release-verify.mjs')
+            $selected=@('tests\worker\runtime.test.js','tests\worker\wrangler.test.jsonc','scripts\package-source.mjs','scripts\verify-source-package.mjs','scripts\release-verify.mjs')
             foreach($rel in $selected){ $p=Join-Path $env:FRESH_ROOT $rel; if(Test-Path $p){ Copy-Item $p $dest -Force } }
           }
       - name: Upload package/Worker diagnostic evidence
@@ -137,9 +136,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: package-worker-diagnostic
-          path: |
-            evidence
-            fresh-worker-output.log
+          path: evidence
           if-no-files-found: warn
           retention-days: 3
       - name: Publish exact diagnostic run URL
