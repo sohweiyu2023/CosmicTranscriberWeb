@@ -1,0 +1,29 @@
+name: Inspect Windows release runner patch points
+
+on:
+  pull_request:
+    branches: ['ci/1.0.12']
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-release-runner:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize reviewed source
+        shell: pwsh
+        run: python .ci/materialize.py
+      - name: Apply existing reviewed repairs
+        shell: pwsh
+        run: |
+          python .ci/repair_integration.py
+          python .ci/repair_e2e.py
+          python .ci/repair_install_policy.py
+      - name: Print exact Windows release runner
+        shell: pwsh
+        run: |
+          Write-Host '--- BEGIN RELEASE-WINDOWS.ps1 ---'
+          Get-Content work\RELEASE-WINDOWS.ps1 -Raw
+          Write-Host '--- END RELEASE-WINDOWS.ps1 ---'
