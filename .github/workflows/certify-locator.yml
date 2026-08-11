@@ -41,7 +41,7 @@ jobs:
             exit 1
           fi
           target_url="${SERVER_URL}/${REPOSITORY}/actions/runs/${run_id}"
-          payload="$(python -c 'import json,os; print(json.dumps({"state":"pending","context":"cosmic-certification-run","description":"Exact hosted certification run for this head","target_url":os.environ["TARGET_URL"]}))' TARGET_URL="$target_url")"
+          payload="$(TARGET_URL="$target_url" python -c 'import json,os; print(json.dumps({"state":"pending","context":"cosmic-certification-run","description":"Exact hosted certification run for this head","target_url":os.environ["TARGET_URL"]}))')"
           curl -fsSL -X POST \
             -H 'Accept: application/vnd.github+json' \
             -H "Authorization: Bearer ${GH_TOKEN}" \
