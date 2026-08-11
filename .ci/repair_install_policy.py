@@ -223,5 +223,6 @@ print(
 # have established their stable derived anchors. Any failure propagates and
 # stops certification identically on every platform.
 runpy.run_path(str(ROOT / ".ci" / "repair_cancel.py"), run_name="__main__")
+runpy.run_path(str(ROOT / ".ci" / "repair_firefox_key_dialog.py"), run_name="__main__")
 runpy.run_path(str(ROOT / ".ci" / "repair_cookie_contract.py"), run_name="__main__")
 runpy.run_path(str(ROOT / ".ci" / "repair_safari.py"), run_name="__main__")
