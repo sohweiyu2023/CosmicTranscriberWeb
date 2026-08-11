@@ -43,6 +43,11 @@ jobs:
         working-directory: work
         shell: pwsh
         run: |
+          # deps:latest runs validate:full internally, and the MP3 validation suite requires
+          # deterministic fixtures. Generate them before entering that dependency-refresh
+          # boundary so the diagnostic mirrors the authoritative release prerequisites.
+          node scripts/generate-test-fixtures.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'fixture generation failed.' }
           # Mirror the authoritative resolve-lock boundary: refresh direct dependencies
           # exactly once before recording the reviewed lock. The complete release runner
           # then has to prove that the same refresh is idempotent and does not alter it.
@@ -50,8 +55,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'reviewed dependency refresh failed.' }
           npm run deps:lock:verify
           if ($LASTEXITCODE -ne 0) { throw 'dependency lock verification failed.' }
-          node scripts/generate-test-fixtures.mjs
-          if ($LASTEXITCODE -ne 0) { throw 'fixture generation failed.' }
           npm run validate
           if ($LASTEXITCODE -ne 0) { throw 'full validation/mutation gate failed.' }
           npm run test:worker
