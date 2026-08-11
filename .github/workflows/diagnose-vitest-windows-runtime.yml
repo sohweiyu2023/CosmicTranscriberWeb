@@ -65,12 +65,13 @@ jobs:
               $cliLiteral = (Resolve-Path node_modules\vitest\vitest.mjs).Path
               $cliReal = node -e "process.stdout.write(require('fs').realpathSync.native('node_modules/vitest/vitest.mjs'))"
               $cmdShim = Get-Content node_modules\.bin\vitest.cmd -Raw
+              $cmdShimSingle = $cmdShim -replace "`r?`n", ' | '
               Add-Content $summary "=== $name ==="
               Add-Content $summary "cwd=$cwd"
               Add-Content $summary "realCwd=$realCwd"
               Add-Content $summary "cliLiteral=$cliLiteral"
               Add-Content $summary "cliReal=$cliReal"
-              Add-Content $summary "vitest.cmd=$($cmdShim -replace \"`r?`n\",' | ')"
+              Add-Content $summary "vitest.cmd=$cmdShimSingle"
               return @{Dir=$dir; CliReal=$cliReal}
             } finally { Pop-Location }
           }
