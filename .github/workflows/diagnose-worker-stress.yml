@@ -1,0 +1,102 @@
+name: Diagnose repeated Windows Worker test startups 1.0.12
+
+on:
+  push:
+    branches: ['diag/worker-stress-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  statuses: write
+
+jobs:
+  stress:
+    name: Repeated independent Workers Vitest startups
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Publish exact diagnostic run URL
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url='${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          $body=@{state='pending';context='cosmic-worker-stress-run';description='Repeated Windows Workers Vitest startup diagnostic';target_url=$url}|ConvertTo-Json -Compress
+          Invoke-RestMethod -Method Post -Uri '${{ github.api_url }}/repos/${{ github.repository }}/statuses/${{ github.sha }}' -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28'} -ContentType 'application/json' -Body $body|Out-Null
+          Write-Host "Diagnostic run: $url"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Activate exact reviewed npm
+        shell: pwsh
+        run: |
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          if ((node --version).Trim() -ne 'v24.19.0') { throw "Wrong Node: $(node --version)" }
+          if ((npm --version).Trim() -ne '12.0.2') { throw "Wrong npm: $(npm --version)" }
+      - name: Download exact retained packaged source
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: package-worker-diagnostic
+          path: source-evidence
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: 31465010607
+      - name: Extract source and install exact graph once
+        shell: pwsh
+        run: |
+          $zip=Get-ChildItem source-evidence -Recurse -Filter '*-source.zip' -File|Select-Object -First 1
+          if($null -eq $zip){throw 'Retained source ZIP missing.'}
+          $base=Join-Path $env:RUNNER_TEMP 'ctw-worker-stress'
+          Remove-Item $base -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $base -Force|Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath $base -Force
+          $root=Get-ChildItem $base -Directory|Select-Object -First 1
+          if($null -eq $root){throw 'Extracted source root missing.'}
+          "STRESS_ROOT=$($root.FullName)"|Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Push-Location $root.FullName
+          try { npm ci } finally { Pop-Location }
+      - name: Run Worker suite 30 independent times and observe process lifecycle
+        id: stress
+        shell: pwsh
+        working-directory: ${{ env.STRESS_ROOT }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $out=Join-Path $env:GITHUB_WORKSPACE 'worker-stress-evidence'
+          New-Item -ItemType Directory -Path $out -Force|Out-Null
+          $summary=@()
+          $failed=0
+          function Snapshot([int]$iteration,[string]$phase){
+            $rows=@()
+            foreach($name in @('workerd','node')){
+              Get-Process $name -ErrorAction SilentlyContinue|ForEach-Object{
+                $rows += [pscustomobject]@{iteration=$iteration;phase=$phase;name=$_.ProcessName;id=$_.Id;start=$_.StartTime.ToUniversalTime().ToString('o');path=$_.Path}
+              }
+            }
+            if($rows.Count -eq 0){$rows=@([pscustomobject]@{iteration=$iteration;phase=$phase;name='none';id=0;start='';path=''})}
+            $rows|ConvertTo-Json -Depth 4|Set-Content (Join-Path $out ("process-{0:D2}-{1}.json" -f $iteration,$phase)) -Encoding utf8
+            return @($rows|Where-Object{$_.name -eq 'workerd'}).Count
+          }
+          for($i=1;$i -le 30;$i++){
+            Write-Host "=== WORKER STARTUP $i / 30 ==="
+            $before=Snapshot $i 'before'
+            $log=Join-Path $out ("worker-{0:D2}.log" -f $i)
+            & npm run test:worker 2>&1|Tee-Object -FilePath $log
+            $code=$LASTEXITCODE
+            $after=Snapshot $i 'after'
+            $summary += [pscustomobject]@{iteration=$i;exit=$code;workerdBefore=$before;workerdAfter=$after}
+            Write-Host "RESULT iteration=$i exit=$code workerdBefore=$before workerdAfter=$after"
+            if($code -ne 0){$failed=$i;break}
+          }
+          $summary|ConvertTo-Json -Depth 5|Set-Content (Join-Path $out 'summary.json') -Encoding utf8
+          $summary|Format-Table -AutoSize|Out-String -Width 220|Tee-Object -FilePath (Join-Path $out 'summary.txt')|Write-Host
+          if($failed -ne 0){throw "Worker startup stress failed at independent invocation $failed; evidence preserved."}
+      - name: Upload Worker startup stress evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: worker-startup-stress-evidence
+          path: worker-stress-evidence
+          if-no-files-found: error
+          retention-days: 3
