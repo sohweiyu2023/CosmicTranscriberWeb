@@ -1,8 +1,6 @@
 name: Diagnose complete Windows release with Vitest repair
 
 on:
-  pull_request:
-    branches: ['ci/1.0.12']
   workflow_dispatch:
 
 permissions:
@@ -12,98 +10,4 @@ jobs:
   complete-windows-release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Materialize exact reviewed source snapshot
-        shell: pwsh
-        run: python .ci/materialize.py
-      - name: Apply all existing reviewed repairs plus durable Vitest repair
-        shell: pwsh
-        run: |
-          python .ci/repair_integration.py
-          python .ci/repair_e2e.py
-          python .ci/repair_install_policy.py
-          python .ci/repair_vitest_windows.py
-          python .ci/repair_vitest_windows_mutation_guard.py
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '24.19.0'
-          package-manager-cache: false
-      - name: Activate exact reviewed npm and verify toolchain
-        working-directory: work
-        shell: pwsh
-        run: |
-          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-          if ((node --version).Trim() -ne 'v24.19.0') { throw "Unexpected Node: $(node --version)" }
-          if ((npm --version).Trim() -ne '12.0.2') { throw "Unexpected npm: $(npm --version)" }
-      - name: Provision media validation toolchain
-        shell: pwsh
-        run: |
-          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg -y --no-progress
-          }
-          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
-          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
-          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
-          & $ffmpeg.Source -version | Select-Object -First 1
-          & $ffprobe.Source -version | Select-Object -First 1
-      - name: Generate deterministic MP3 fixtures exactly as certification resolve gate does
-        working-directory: work
-        shell: pwsh
-        run: node scripts/generate-test-fixtures.mjs
-      - name: Resolve reviewed graph and durable-repair preflight
-        working-directory: work
-        shell: pwsh
-        run: |
-          npm install --ignore-scripts --no-audit --no-fund
-          npm run deps:install-scripts:verify
-          npm rebuild
-          npm audit
-          npm run validate
-          npm run test:worker
-          npm run test:integration
-      - name: Record repaired dependency lock
-        id: lock-before
-        working-directory: work
-        shell: pwsh
-        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
-      - name: Run actual complete Windows release certification with preserved transcript
-        id: complete-release
-        working-directory: work
-        shell: pwsh
-        run: |
-          $log = Join-Path $env:RUNNER_TEMP 'release-windows-transcript.txt'
-          $oldErrorAction = $ErrorActionPreference
-          $ErrorActionPreference = 'Continue'
-          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1 *>&1 | Tee-Object -FilePath $log
-          $code = $LASTEXITCODE
-          $ErrorActionPreference = $oldErrorAction
-          "`n=== DIAGNOSTIC CHILD EXIT CODE: $code ===" | Add-Content -Path $log -Encoding utf8
-          Write-Host "Complete runner child exit code: $code"
-          if ($code -ne 0) { exit $code }
-      - name: Preserve complete Windows release transcript and failure evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: complete-windows-release-diagnostic
-          path: |
-            ${{ runner.temp }}/release-windows-transcript.txt
-            work/test-results
-            work/playwright-report
-            work/blob-report
-            work/RELEASE_MANIFEST.json
-            CosmicTranscriberWeb-1.0.12-source.zip
-          if-no-files-found: warn
-          retention-days: 3
-      - name: Require exact complete-runner success and unchanged dependency lock
-        if: ${{ steps.complete-release.outcome == 'success' }}
-        working-directory: work
-        shell: pwsh
-        env:
-          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
-        run: |
-          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($after -ne $env:LOCK_BEFORE) { throw "Complete release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
-          $zip=Resolve-Path ..\CosmicTranscriberWeb-1.0.12-source.zip
-          if (-not (Test-Path $zip)) { throw 'Complete Windows release did not produce the certified source ZIP.' }
-          Write-Host "Complete Windows release ZIP: $($zip.Path)"
-          Write-Host "SHA256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - run: echo 'Manual diagnostic only. The focused fresh-temp launcher workflow is authoritative during investigation.'
