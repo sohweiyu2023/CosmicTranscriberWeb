@@ -1,0 +1,164 @@
+name: Diagnose macOS Undici upstream ToS repair
+
+on:
+  push:
+    branches: ['diag/macos-undici-upstream-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-lock:
+    name: Resolve diagnostic reviewed dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python .ci/materialize.py
+      - run: python .ci/repair_integration.py
+      - run: python .ci/repair_e2e.py
+      - run: python .ci/repair_install_policy.py
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - name: Activate exact npm
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Resolve one lock without lifecycle scripts
+        working-directory: work
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify install-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Rebuild after policy review
+        working-directory: work
+        run: npm rebuild
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+      - name: Provision deterministic MP3 fixture toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+      - name: Generate deterministic fixtures
+        working-directory: work
+        run: node scripts/generate-test-fixtures.mjs
+      - name: Validate materialized source
+        working-directory: work
+        run: npm run validate
+      - name: Upload exact diagnostic lock and fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-undici-reviewed-inputs
+          path: |
+            work/package-lock.json
+            work/tests/fixtures/*.mp3
+          if-no-files-found: error
+          retention-days: 3
+
+  macos-upstream-fix:
+    name: macOS exact upstream fix + 20x integration + WebKit + Safari
+    needs: resolve-lock
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 .ci/materialize.py
+      - run: python3 .ci/repair_integration.py
+      - run: python3 .ci/repair_e2e.py
+      - run: python3 .ci/repair_install_policy.py
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: macos-undici-reviewed-inputs
+          path: reviewed
+      - name: Restore exact diagnostic lock and fixtures
+        run: |
+          cp reviewed/package-lock.json work/package-lock.json
+          mkdir -p work/tests/fixtures
+          cp reviewed/tests/fixtures/*.mp3 work/tests/fixtures/
+      - name: Activate exact npm
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Install exact reviewed dependency graph
+        working-directory: work
+        run: npm ci
+      - name: Verify install-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Full source validation before dependency compatibility patch
+        working-directory: work
+        run: npm run validate
+      - name: Worker suite before compatibility patch
+        working-directory: work
+        run: npm run test:worker
+      - name: Apply fail-closed runtime portions of upstream Undici PR 5547
+        run: python3 .ci/patch_undici_729_tos.py work | tee undici-upstream-patch.log
+      - name: Prove lockfile unchanged by ephemeral dependency patch
+        shell: bash
+        run: |
+          cmp reviewed/package-lock.json work/package-lock.json
+          echo 'package-lock identity: PASS'
+      - name: Stress full integration harness 20 independent launches, zero retries
+        working-directory: work
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do
+            echo "=== INTEGRATION REPETITION ${i}/20 ==="
+            npm run test:integration
+          done
+          echo '20/20 independent integration launches: PASS'
+      - name: Install WebKit
+        working-directory: work
+        run: npm run browsers:install:webkit
+      - name: Run full WebKit E2E
+        working-directory: work
+        run: npm run test:e2e:webkit
+      - name: Enable native SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Run real native Safari WebDriver smoke
+        working-directory: work
+        run: npm run test:safari:real
+      - name: Upload diagnostic patch evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-undici-upstream-fix-evidence
+          path: |
+            undici-upstream-patch.log
+            work/package-lock.json
+            work/node_modules/undici/package.json
+            work/node_modules/undici/lib/core/request.js
+            work/node_modules/undici/lib/dispatcher/client-h1.js
+          if-no-files-found: warn
+          retention-days: 3
