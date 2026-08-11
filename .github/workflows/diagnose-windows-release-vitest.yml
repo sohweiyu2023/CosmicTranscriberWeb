@@ -45,12 +45,13 @@ jobs:
           if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
           & $ffmpeg.Source -version | Select-Object -First 1
           & $ffprobe.Source -version | Select-Object -First 1
-      - name: Fresh install and durable-repair preflight
+      - name: Resolve reviewed graph and durable-repair preflight
         working-directory: work
         shell: pwsh
         run: |
-          npm ci
+          npm install --ignore-scripts --no-audit --no-fund
           npm run deps:install-scripts:verify
+          npm rebuild
           npm audit
           npm run validate
           npm run test:worker
