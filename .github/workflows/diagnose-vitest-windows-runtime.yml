@@ -3,6 +3,8 @@ name: Diagnose Vitest Windows fresh-temp launcher
 on:
   push:
     branches: ['diag/vitest-windows-runtime-1.0.12']
+  pull_request:
+    branches: ['ci/1.0.12']
   workflow_dispatch:
 
 permissions:
