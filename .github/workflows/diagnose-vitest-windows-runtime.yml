@@ -1,4 +1,4 @@
-name: Diagnose Vitest Windows fresh-install release sequence
+name: Diagnose complete Windows release with Worker Vitest globals
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
   contents: read
 
 jobs:
-  fresh-install-release-sequence:
+  complete-windows-worker-globals:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Materialize reviewed source and durable repairs
+      - name: Materialize reviewed source and all proven/diagnostic repairs
         shell: pwsh
         run: |
           python .ci/materialize.py
@@ -24,11 +24,12 @@ jobs:
           python .ci/repair_install_policy.py
           python .ci/repair_vitest_windows.py
           python .ci/repair_vitest_windows_mutation_guard.py
+          python .ci/repair_worker_vitest_globals.py
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '24.19.0'
           package-manager-cache: false
-      - name: Activate exact npm and provision fixture toolchain
+      - name: Activate exact npm and provision media toolchain
         shell: pwsh
         run: |
           npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
@@ -38,12 +39,12 @@ jobs:
             choco install ffmpeg -y --no-progress
           }
           if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) { throw 'ffmpeg/ffprobe provisioning failed.' }
-      - name: Resolve exact graph and build source seed
+      - name: Resolve reviewed graph and prove repaired preflight
         working-directory: work
         shell: pwsh
         run: |
           npm install --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw 'npm install failed while resolving seed lock.' }
+          if ($LASTEXITCODE -ne 0) { throw 'npm install failed.' }
           npm run deps:install-scripts:verify
           if ($LASTEXITCODE -ne 0) { throw 'install-script policy failed.' }
           npm rebuild
@@ -52,71 +53,54 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'npm audit failed.' }
           node scripts/generate-test-fixtures.mjs
           if ($LASTEXITCODE -ne 0) { throw 'fixture generation failed.' }
-          $seed = Join-Path $env:RUNNER_TEMP 'ctw-vitest-seed'
-          Remove-Item $seed -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $seed | Out-Null
-          Get-ChildItem . -Force | Where-Object Name -ne 'node_modules' | Copy-Item -Destination $seed -Recurse -Force
-          Write-Host "Seed=$seed"
-      - name: Stress 10 independent fresh installs through exact release pre-Worker sequence
+          npm run validate
+          if ($LASTEXITCODE -ne 0) { throw 'full validation/mutation gate failed.' }
+          npm run test:worker
+          if ($LASTEXITCODE -ne 0) { throw 'Worker preflight failed.' }
+          npm run test:integration
+          if ($LASTEXITCODE -ne 0) { throw 'integration preflight failed.' }
+      - name: Record dependency lock before complete runner
+        id: lock-before
+        working-directory: work
+        shell: pwsh
+        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
+      - name: Run exact complete Windows release certification with transcript
+        id: release
+        working-directory: work
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $seed = Join-Path $env:RUNNER_TEMP 'ctw-vitest-seed'
-          $summary = Join-Path $env:RUNNER_TEMP 'fresh-install-release-sequence-summary.txt'
-          Remove-Item $summary -Force -ErrorAction SilentlyContinue
-
-          function Run-Checked([string]$label, [string]$log, [scriptblock]$command) {
-            Add-Content $log "`n=== $label ==="
-            $old = $ErrorActionPreference
-            $ErrorActionPreference = 'Continue'
-            & $command *>&1 | Tee-Object -FilePath $log -Append | Out-Host
-            $code = $LASTEXITCODE
-            $ErrorActionPreference = $old
-            if ($code -ne 0) { throw "$label failed with exit $code" }
-          }
-
-          1..10 | ForEach-Object {
-            $i = $_
-            $dir = Join-Path $env:TEMP ("ctw-fresh-release-seq-$i-" + [guid]::NewGuid().ToString('N'))
-            $log = Join-Path $env:RUNNER_TEMP ("fresh-install-$i.txt")
-            New-Item -ItemType Directory -Path $dir | Out-Null
-            Get-ChildItem $seed -Force | Copy-Item -Destination $dir -Recurse -Force
-            Add-Content $summary "iteration=$i dir=$dir"
-            Push-Location $dir
-            try {
-              Run-Checked 'npm ci' $log { npm ci }
-              Run-Checked 'validate:version' $log { npm run validate:version }
-              Run-Checked 'deps:lock:verify' $log { npm run deps:lock:verify }
-              Run-Checked 'deps:check' $log { npm run deps:check }
-              Run-Checked 'deps:install-scripts:verify' $log { npm run deps:install-scripts:verify }
-              Run-Checked 'validate:powershell' $log { npm run validate:powershell }
-              Run-Checked 'npm audit' $log { npm audit }
-              Run-Checked 'validate' $log { npm run validate }
-              $before = @(Get-Process workerd -ErrorAction SilentlyContinue).Count
-              Add-Content $log "workerd_before=$before"
-              Run-Checked 'test:worker' $log { npm run test:worker }
-              $after = @(Get-Process workerd -ErrorAction SilentlyContinue).Count
-              Add-Content $log "workerd_after=$after"
-              Add-Content $summary "iteration=$i PASS workerd_before=$before workerd_after=$after"
-            } catch {
-              Add-Content $summary "iteration=$i FAIL $($_.Exception.Message)"
-              Get-Content $log | Select-Object -Last 180 | Out-Host
-              throw
-            } finally {
-              Pop-Location
-              Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-          }
-          Write-Host '=== FRESH INSTALL RELEASE-SEQUENCE SUMMARY ==='
-          Get-Content $summary
-          Write-Host '10/10 independent fresh installs passed exact release pre-Worker sequence with zero retries.'
-      - name: Preserve fresh-install stress evidence
+          $transcript = Join-Path $env:RUNNER_TEMP 'worker-globals-release-windows-transcript.txt'
+          $old = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1 *>&1 | Tee-Object -FilePath $transcript | Out-Host
+          $code = $LASTEXITCODE
+          $ErrorActionPreference = $old
+          Write-Host "RELEASE_WINDOWS_EXIT=$code"
+          if ($code -ne 0) { throw "RELEASE-WINDOWS.ps1 failed with exit $code" }
+      - name: Prove exact runner success, unchanged lock, and ZIP creation
+        working-directory: work
+        shell: pwsh
+        env:
+          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
+        run: |
+          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($after -ne $env:LOCK_BEFORE) { throw "Complete release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
+          $zip=Resolve-Path ..\CosmicTranscriberWeb-1.0.12-source.zip
+          if (-not (Test-Path $zip)) { throw 'Complete Windows release did not produce the certified source ZIP.' }
+          Write-Host "Complete Windows release ZIP: $($zip.Path)"
+          Write-Host "SHA256=$((Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant())"
+      - name: Preserve complete Windows diagnostic evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: vitest-fresh-install-release-sequence
+          name: complete-windows-worker-globals
           path: |
-            ${{ runner.temp }}/fresh-install-release-sequence-summary.txt
-            ${{ runner.temp }}/fresh-install-*.txt
+            ${{ runner.temp }}/worker-globals-release-windows-transcript.txt
+            work/test-results
+            work/playwright-report
+            work/package.json
+            work/vitest.config.js
+            work/tests/worker/runtime.test.js
+            CosmicTranscriberWeb-1.0.12-source.zip
           if-no-files-found: warn
           retention-days: 3
