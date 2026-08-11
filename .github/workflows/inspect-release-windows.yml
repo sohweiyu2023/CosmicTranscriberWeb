@@ -21,9 +21,23 @@ jobs:
           python .ci/repair_integration.py
           python .ci/repair_e2e.py
           python .ci/repair_install_policy.py
-      - name: Print exact Windows release runner
+      - name: Print package source verification implementation
         shell: pwsh
         run: |
-          Write-Host '--- BEGIN RELEASE-WINDOWS.ps1 ---'
-          Get-Content work\RELEASE-WINDOWS.ps1 -Raw
-          Write-Host '--- END RELEASE-WINDOWS.ps1 ---'
+          $pkg = Get-Content work\package.json -Raw | ConvertFrom-Json
+          Write-Host "package:source=$($pkg.scripts.'package:source')"
+          Write-Host "release:verify=$($pkg.scripts.'release:verify')"
+          Write-Host "release:windows=$($pkg.scripts.'release:windows')"
+          Write-Host '--- MATCHING SCRIPT FILES ---'
+          $patterns = 'package:source|npm ci|test:worker|RELEASE_MANIFEST|source\.zip|fresh|extract|releaseReady'
+          $files = Get-ChildItem work -Recurse -File | Where-Object { $_.FullName -notmatch '\\node_modules\\' -and $_.Extension -in '.js','.mjs','.cjs','.ps1','.json' }
+          $matches = $files | Select-String -Pattern $patterns
+          $paths = $matches | ForEach-Object Path | Sort-Object -Unique
+          $paths | ForEach-Object { Write-Host $_ }
+          foreach ($path in $paths) {
+            if ($path -match '\\scripts\\|package\.json$|RELEASE-WINDOWS\.ps1$') {
+              Write-Host "--- BEGIN $path ---"
+              Get-Content $path -Raw
+              Write-Host "--- END $path ---"
+            }
+          }
