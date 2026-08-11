@@ -29,7 +29,10 @@ audit_new = audit_old + ' && s("scripts/vitest-windows-runtime-compat.mjs").incl
 replace_once(AUDIT, audit_old, audit_new, "Vitest executable-rewrite audit anchor")
 
 mutation_old = r'/ctwVitestRuntimeWithLoadedCasing\(pathToFileURL\(file\)\.href\)/, "pathToFileURL(file).href"'
-mutation_new = r'/text=replaceOnce\(text,oldDistExternalize/, "text=replaceOnce(text,oldDistExternalizeBROKEN"'
+# Important: the replacement must not retain the safeguard substring
+# "text=replaceOnce(text,oldDistExternalize"; otherwise the deliberate mutation
+# leaves the guard true and mutation testing cannot prove the executable rewrite.
+mutation_new = r'/text=replaceOnce\(text,oldDistExternalize/, "text=replaceOnce(text,ctwBrokenDistExternalize"'
 replace_once(MUTATIONS, mutation_old, mutation_new, "Vitest loaded-casing deliberate mutation")
 
-print("Vitest Windows mutation guard repair PASS: loaded-casing regression now targets the unique executable resolver rewrite, not a duplicate verifier string.")
+print("Vitest Windows mutation guard repair PASS: loaded-casing regression now targets and actually removes the unique executable resolver-rewrite safeguard substring.")
