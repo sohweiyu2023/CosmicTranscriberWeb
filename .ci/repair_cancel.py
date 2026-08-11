@@ -122,7 +122,7 @@ for label in (WAIT_LABEL, E2E_LABEL):
 wait_expr = (
     's("public/js/app.js").includes("// CTW_CANCEL_RACE_REPAIR")'
     ' && s("public/js/app.js").includes("if(signal?.aborted){rej(new DOMException(\'Aborted\',\'AbortError\'));return}")'
-    ' && (s("public/js/app.js").match(/signal\?\.removeEventListener\(\'abort\',onAbort\)/g)||[]).length===2'
+    r''' && (s("public/js/app.js").match(/signal\?\.removeEventListener\(\'abort\',onAbort\)/g)||[]).length===2'''
     ' && s("public/js/app.js").includes("if(state.cancelRequested||controller.signal.aborted)throw new DOMException(\'Cancelled\',\'AbortError\');")'
     ' && s("tests/e2e/mock-server.mjs").includes("reviewed cancellation-race repair")'
 )
