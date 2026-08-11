@@ -1,0 +1,40 @@
+name: Cosmic Transcriber cancellation diagnostics
+
+on:
+  push:
+    branches: ['diag/cancel-1.0.12']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-source:
+    name: Export exact cancellation source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize exact reviewed source snapshot
+        run: python .ci/materialize.py
+      - name: Repair and verify integration harness
+        run: python .ci/repair_integration.py
+      - name: Repair Playwright E2E endpoint inheritance
+        run: python .ci/repair_e2e.py
+      - name: Refresh reviewed install policy and Safari repair
+        run: python .ci/repair_install_policy.py
+      - name: Collect cancellation-related source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cancel-diag/public-js cancel-diag/tests
+          cp work/tests/e2e/app.spec.js cancel-diag/tests/app.spec.js
+          cp work/public/js/*.js cancel-diag/public-js/
+          cp work/playwright.config.js cancel-diag/playwright.config.js
+          cp work/package.json cancel-diag/package.json
+      - name: Upload cancellation diagnostics
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cancellation-source-diag
+          path: cancel-diag
+          if-no-files-found: error
+          retention-days: 1
