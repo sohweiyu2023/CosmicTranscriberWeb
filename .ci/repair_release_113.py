@@ -2,12 +2,42 @@ from __future__ import annotations
 
 import json
 import pathlib
-import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORK = ROOT / "work"
 OLD = "1.0.12"
 NEW = "1.0.13"
+
+# Registry @latest graph resolved with lifecycle scripts disabled in hosted run
+# 31551303711. package.json keeps upgrade-friendly caret ranges, while the
+# resolve-lock certification job produces one exact package-lock.json that every
+# platform reuses byte-for-byte.
+LATEST_DIRECT = {
+    "dependencies": {
+        "@noble/hashes": "^2.3.0",
+        "jose": "^6.2.8",
+    },
+    "devDependencies": {
+        "@cloudflare/vitest-pool-workers": "^0.21.1",
+        "@playwright/test": "^1.62.1",
+        "msw": "^2.15.0",
+        "vitest": "^4.1.10",
+        "wrangler": "^4.121.0",
+    },
+}
+EXPECTED_BASE_DIRECT = {
+    "dependencies": {
+        "@noble/hashes": "^2.3.0",
+        "jose": "^6.2.8",
+    },
+    "devDependencies": {
+        "@cloudflare/vitest-pool-workers": "^0.21.0",
+        "@playwright/test": "^1.62.1",
+        "msw": "^2.15.0",
+        "vitest": "^4.1.10",
+        "wrangler": "^4.120.0",
+    },
+}
 
 
 def fail(message: str) -> None:
@@ -39,11 +69,17 @@ def replace_exact(rel: str, old: str, new: str, expected: int | None = None) -> 
     write(rel, text.replace(old, new))
 
 
-# JSON release surfaces.
+# JSON release surfaces and exact reviewed latest direct ranges.
 package = json.loads(read("package.json"))
 if package.get("version") != OLD:
     fail(f"package.json baseline version drifted: {package.get('version')!r}")
+for section, expected in EXPECTED_BASE_DIRECT.items():
+    actual = package.get(section)
+    if actual != expected:
+        fail(f"package.json {section} baseline drifted: expected {expected!r}, got {actual!r}")
 package["version"] = NEW
+for section, latest in LATEST_DIRECT.items():
+    package[section] = latest.copy()
 write("package.json", json.dumps(package, indent=2, ensure_ascii=False) + "\n")
 
 manifest = json.loads(read("RELEASE_MANIFEST.json"))
@@ -92,12 +128,15 @@ write(".github/workflows/ci.yml", ci.replace(OLD, NEW))
 
 # Add a concise changelog entry while preserving prior release history.
 changelog = read("docs/CHANGELOG.md")
-heading = f"## {NEW} — dependency refresh candidate"
+heading = f"## {NEW} — current dependency refresh"
 if heading not in changelog:
     insertion = (
         f"{heading}\n\n"
-        "- Refresh every direct production and development dependency from the npm registry `latest` tag before certification.\n"
-        "- Preserve a committed exact `package-lock.json` for the dependency graph that actually passes release certification.\n"
+        "- Refreshed all direct production/development dependencies from the npm registry `latest` tag before certification.\n"
+        "- Updated `@cloudflare/vitest-pool-workers` from the reviewed 0.21.0 range to `^0.21.1`.\n"
+        "- Updated Wrangler from `^4.120.0` to `^4.121.0`.\n"
+        "- Other direct dependencies were already current: `@noble/hashes ^2.3.0`, `jose ^6.2.8`, `@playwright/test ^1.62.1`, `msw ^2.15.0`, and `vitest ^4.1.10`.\n"
+        "- Preserve one exact `package-lock.json` for the dependency graph that passes release certification, while keeping caret ranges in `package.json` for the next refresh.\n"
         "- Re-run Linux, Windows, macOS WebKit, native Safari, browser, security, packaging and independent ZIP gates on the refreshed graph.\n\n"
     )
     first_h2 = changelog.find("## ")
@@ -107,9 +146,12 @@ if heading not in changelog:
         changelog = changelog.rstrip() + "\n\n" + insertion
     write("docs/CHANGELOG.md", changelog)
 
-# Fail closed on the exact version surfaces we own here.
+# Fail closed on exact version and dependency surfaces we own here.
+final_package = json.loads(read("package.json"))
 checks = {
-    "package.json": json.loads(read("package.json")).get("version") == NEW,
+    "package.json version": final_package.get("version") == NEW,
+    "package.json dependencies": final_package.get("dependencies") == LATEST_DIRECT["dependencies"],
+    "package.json devDependencies": final_package.get("devDependencies") == LATEST_DIRECT["devDependencies"],
     "RELEASE_MANIFEST.json": json.loads(read("RELEASE_MANIFEST.json")).get("version") == NEW,
     "README.md": read("README.md").startswith(f"# Cosmic Transcriber Web {NEW}\n"),
     "public/js/models.js": f'APP_VERSION = "{NEW}"' in read("public/js/models.js"),
@@ -124,4 +166,4 @@ if bad:
 
 print("Cosmic Transcriber Web 1.0.13 release derivation PASS.")
 print("Historical 1.0.12 logs remain untouched; live release/version surfaces are now 1.0.13.")
-print("Next gate must resolve all direct dependencies from registry @latest and certify that exact lock graph.")
+print("Reviewed registry-latest direct ranges are frozen into the 1.0.13 package surface.")
