@@ -1,0 +1,585 @@
+name: Cosmic Transcriber Web 1.0.13 Certification
+
+on:
+  push:
+    branches: ['release/1.0.13']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  resolve-lock:
+    name: Resolve one reviewed latest dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Publish authoritative certification run locator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=pending \
+            -f context=cosmic-certification-run \
+            -f description='Exact hosted 1.0.13 certification run for this head' \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+      - name: Verify certification workflow action pins
+        shell: bash
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          p=pathlib.Path('.github/workflows/certify-1.0.13.yml')
+          text=p.read_text(encoding='utf-8')
+          refs=re.findall(r'^\s*-?\s*uses:\s*([^\s#]+)',text,flags=re.M)
+          bad=[r for r in refs if not re.fullmatch(r'actions/[A-Za-z0-9_.-]+@[0-9a-f]{40}',r)]
+          if bad:
+              print('Non-immutable GitHub Action refs:',*bad,sep='\n  - ')
+              sys.exit(1)
+          print(f'Outer certification immutable Action pin gate PASS ({len(refs)} refs).')
+          PY
+
+      - name: Materialize certified baseline
+        run: python .ci/materialize.py
+      - name: Repair and verify integration harness
+        run: python .ci/repair_integration.py
+      - name: Repair Playwright E2E endpoint inheritance
+        run: python .ci/repair_e2e.py
+      - name: Refresh reviewed dependency/install policy and cross-browser repairs
+        run: python .ci/repair_install_policy.py
+      - name: Repair Windows fresh-package verification and Firefox regression
+        run: python .ci/repair_windows_package_certification_v2.py
+      - name: Derive 1.0.13 release surfaces and latest direct ranges
+        run: python .ci/repair_release_113.py
+      - name: Align 1.0.13 dependency safeguards
+        run: python .ci/repair_latest_guards_113.py
+      - name: Modernize packaged setup-node to v7
+        run: python .ci/repair_actions_113.py
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+
+      - name: Activate reviewed current npm
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact current Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+
+      - name: Resolve one lock without lifecycle scripts
+        working-directory: work
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify lock-wide lifecycle-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Rebuild only after install-script review
+        working-directory: work
+        run: npm rebuild
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+      - name: Require current direct dependencies
+        working-directory: work
+        run: npm outdated --depth=0
+
+      - name: Provision MP3 fixture toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Generate deterministic MP3 fixtures
+        working-directory: work
+        run: node scripts/generate-test-fixtures.mjs
+      - name: Full dependency-free adversarial gate
+        working-directory: work
+        run: npm run validate
+
+      - name: Upload exact reviewed package surface, lock and fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reviewed-release-inputs-1.0.13
+          path: |
+            work/package.json
+            work/package-lock.json
+            work/tests/fixtures/*.mp3
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-full:
+    name: Linux Worker + integration + full browser matrix
+    needs: resolve-lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize certified baseline
+        run: python .ci/materialize.py
+      - name: Repair and verify integration harness
+        run: python .ci/repair_integration.py
+      - name: Repair Playwright E2E endpoint inheritance
+        run: python .ci/repair_e2e.py
+      - name: Refresh reviewed dependency/install policy and cross-browser repairs
+        run: python .ci/repair_install_policy.py
+      - name: Repair Windows fresh-package verification and Firefox regression
+        run: python .ci/repair_windows_package_certification_v2.py
+      - name: Derive 1.0.13 release surfaces and latest direct ranges
+        run: python .ci/repair_release_113.py
+      - name: Align 1.0.13 dependency safeguards
+        run: python .ci/repair_latest_guards_113.py
+      - name: Modernize packaged setup-node to v7
+        run: python .ci/repair_actions_113.py
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs-1.0.13
+          path: reviewed
+      - name: Prove derived package surface matches reviewed package surface
+        run: cmp reviewed/package.json work/package.json
+      - name: Restore exact reviewed lock and fixtures
+        run: |
+          cp reviewed/package-lock.json work/package-lock.json
+          mkdir -p work/tests/fixtures
+          cp reviewed/tests/fixtures/*.mp3 work/tests/fixtures/
+
+      - name: Activate reviewed current npm
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact current Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Install exact reviewed dependencies
+        working-directory: work
+        run: npm ci
+      - name: Verify lifecycle-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Full validation
+        working-directory: work
+        run: npm run validate
+      - name: Worker runtime tests
+        working-directory: work
+        run: npm run test:worker
+      - name: Integration tests
+        working-directory: work
+        run: npm run test:integration
+      - name: Install core Playwright browsers
+        working-directory: work
+        run: npm run browsers:install:ci
+      - name: Run Chromium Firefox WebKit and mobile-Safari E2E
+        id: core-e2e
+        working-directory: work
+        run: npm run test:e2e:core
+      - name: Upload Linux browser failure evidence
+        if: ${{ failure() && steps.core-e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-failure-linux-1.0.13
+          path: |
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/tests/e2e
+            work/playwright*.config.*
+            work/package.json
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Inspect built frontend
+        working-directory: work
+        run: npm run build:inspect
+
+  macos-safari:
+    name: macOS WebKit + real SafariDriver Safari
+    needs: resolve-lock
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize certified baseline
+        run: python3 .ci/materialize.py
+      - name: Repair and verify integration harness
+        run: python3 .ci/repair_integration.py
+      - name: Repair Playwright E2E endpoint inheritance
+        run: python3 .ci/repair_e2e.py
+      - name: Refresh reviewed dependency/install policy and cross-browser repairs
+        run: python3 .ci/repair_install_policy.py
+      - name: Repair Windows fresh-package verification and Firefox regression
+        run: python3 .ci/repair_windows_package_certification_v2.py
+      - name: Derive 1.0.13 release surfaces and latest direct ranges
+        run: python3 .ci/repair_release_113.py
+      - name: Align 1.0.13 dependency safeguards
+        run: python3 .ci/repair_latest_guards_113.py
+      - name: Modernize packaged setup-node to v7
+        run: python3 .ci/repair_actions_113.py
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs-1.0.13
+          path: reviewed
+      - name: Prove derived package surface matches reviewed package surface
+        run: cmp reviewed/package.json work/package.json
+      - name: Restore exact reviewed lock and fixtures
+        run: |
+          cp reviewed/package-lock.json work/package-lock.json
+          mkdir -p work/tests/fixtures
+          cp reviewed/tests/fixtures/*.mp3 work/tests/fixtures/
+
+      - name: Activate reviewed current npm
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact current Node/npm
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Install exact reviewed dependencies
+        working-directory: work
+        run: npm ci
+      - name: Verify lifecycle-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
+      - name: Full validation
+        working-directory: work
+        run: npm run validate
+      - name: Worker runtime tests
+        working-directory: work
+        run: npm run test:worker
+      - name: Apply proven upstream Undici ToS compatibility fix
+        run: python3 .ci/patch_undici_729_tos.py work
+      - name: Prove macOS compatibility patch did not alter reviewed dependency graph
+        run: cmp reviewed/package-lock.json work/package-lock.json
+      - name: Integration tests
+        working-directory: work
+        run: npm run test:integration
+      - name: Install WebKit
+        working-directory: work
+        run: npm run browsers:install:webkit
+      - name: Run WebKit E2E
+        id: webkit-e2e
+        working-directory: work
+        run: npm run test:e2e:webkit
+      - name: Upload macOS WebKit failure evidence
+        if: ${{ failure() && steps.webkit-e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-failure-macos-webkit-1.0.13
+          path: |
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/tests/e2e
+            work/playwright*.config.*
+            work/package.json
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Enable SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Real Safari WebDriver smoke
+        working-directory: work
+        run: npm run test:safari:real
+
+  windows-release:
+    name: Windows toolchain + Chrome/Edge + complete release ZIP
+    needs: resolve-lock
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Materialize certified baseline
+        shell: pwsh
+        run: python .ci/materialize.py
+      - name: Repair and verify integration harness
+        shell: pwsh
+        run: python .ci/repair_integration.py
+      - name: Repair Playwright E2E endpoint inheritance
+        shell: pwsh
+        run: python .ci/repair_e2e.py
+      - name: Refresh reviewed dependency/install policy and cross-browser repairs
+        shell: pwsh
+        run: python .ci/repair_install_policy.py
+      - name: Repair Windows fresh-package verification and Firefox regression
+        shell: pwsh
+        run: python .ci/repair_windows_package_certification_v2.py
+      - name: Derive 1.0.13 release surfaces and latest direct ranges
+        shell: pwsh
+        run: python .ci/repair_release_113.py
+      - name: Align 1.0.13 dependency safeguards
+        shell: pwsh
+        run: python .ci/repair_latest_guards_113.py
+      - name: Modernize packaged setup-node to v7
+        shell: pwsh
+        run: python .ci/repair_actions_113.py
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs-1.0.13
+          path: reviewed
+      - name: Prove derived package surface matches reviewed package surface
+        shell: pwsh
+        run: |
+          $a=(Get-FileHash reviewed\package.json -Algorithm SHA256).Hash
+          $b=(Get-FileHash work\package.json -Algorithm SHA256).Hash
+          if ($a -ne $b) { throw "Derived package.json differs from reviewed package surface: $a != $b" }
+      - name: Restore exact reviewed lock and fixtures
+        shell: pwsh
+        run: |
+          Copy-Item reviewed\package-lock.json work\package-lock.json -Force
+          New-Item -ItemType Directory -Path work\tests\fixtures -Force | Out-Null
+          Copy-Item reviewed\tests\fixtures\*.mp3 work\tests\fixtures\ -Force
+
+      - name: Activate reviewed current npm
+        shell: pwsh
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify exact current Node/npm
+        shell: pwsh
+        working-directory: work
+        run: |
+          if ((node --version).Trim() -ne 'v24.19.0') { throw "Expected Node v24.19.0; got $(node --version)" }
+          if ((npm --version).Trim() -ne '12.0.2') { throw "Expected npm 12.0.2; got $(npm --version)" }
+      - name: Execute private Windows toolchain regression self-test
+        shell: pwsh
+        working-directory: work
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\WINDOWS-TOOLCHAIN-SELFTEST.ps1
+      - name: Install exact reviewed dependencies
+        working-directory: work
+        run: npm ci
+      - name: Verify lifecycle-script policy
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+      - name: Dependency audit
+        working-directory: work
+        run: npm audit
+
+      - name: Provision media validation toolchain
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+          }
+          $ffmpeg=Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe=Get-Command ffprobe -ErrorAction SilentlyContinue
+          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
+          & $ffmpeg.Source -version | Select-Object -First 1
+          & $ffprobe.Source -version | Select-Object -First 1
+      - name: Full validation
+        working-directory: work
+        run: npm run validate
+      - name: Worker runtime tests
+        working-directory: work
+        run: npm run test:worker
+      - name: Integration tests
+        working-directory: work
+        run: npm run test:integration
+      - name: Install branded Chrome and Edge
+        working-directory: work
+        run: npm run browsers:install:branded
+      - name: Run branded Chrome/Edge E2E
+        id: branded-e2e
+        working-directory: work
+        run: npm run test:e2e:branded
+      - name: Upload Windows branded failure evidence
+        if: ${{ failure() && steps.branded-e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-failure-windows-branded-1.0.13
+          path: |
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/tests/e2e
+            work/playwright*.config.*
+            work/package.json
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Inspect built frontend
+        working-directory: work
+        run: npm run build:inspect
+
+      - name: Record reviewed lock hash
+        id: lock-before
+        shell: pwsh
+        working-directory: work
+        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
+
+      - name: Run complete Windows release certification with durable capture
+        id: inner-release
+        continue-on-error: true
+        shell: pwsh
+        working-directory: work
+        run: |
+          $output=Join-Path $PWD 'windows-release-output.log'
+          $transcript=Join-Path $PWD 'windows-release-transcript.log'
+          $exitFile=Join-Path $PWD 'windows-release-exit-code.txt'
+          Remove-Item $output,$transcript,$exitFile -Force -ErrorAction SilentlyContinue
+          $code=1
+          Start-Transcript -Path $transcript -Force
+          try {
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1 2>&1 | Tee-Object -FilePath $output
+            $code=$LASTEXITCODE
+          }
+          catch {
+            $_ | Format-List * -Force | Out-String | Tee-Object -FilePath $output -Append | Write-Host
+            $code=1
+          }
+          finally {
+            try { Stop-Transcript | Out-Null } catch {}
+          }
+          Set-Content -Path $exitFile -Value $code -Encoding utf8
+          Write-Host "Inner RELEASE-WINDOWS.ps1 exit code: $code"
+          if ($code -ne 0) { exit $code }
+
+      - name: Upload complete Windows release evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-complete-release-evidence-1.0.13
+          path: |
+            work/windows-release-output.log
+            work/windows-release-transcript.log
+            work/windows-release-exit-code.txt
+            work/test-results
+            work/playwright-report
+            work/blob-report
+            work/RELEASE-WINDOWS.ps1
+            work/scripts/verify-source-package.mjs
+            work/scripts/release-verify.mjs
+            work/package.json
+            work/package-lock.json
+            CosmicTranscriberWeb-1.0.13-source.zip
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Require complete Windows release success
+        shell: pwsh
+        working-directory: work
+        run: |
+          $exitFile='.\windows-release-exit-code.txt'
+          if (-not (Test-Path $exitFile)) { throw 'Complete Windows release exit-code evidence is missing.' }
+          $code=(Get-Content $exitFile -Raw).Trim()
+          if ($code -ne '0') { throw "Complete Windows release failed with exit code $code; evidence artifact uploaded." }
+
+      - name: Prove certification did not alter reviewed dependency graph
+        shell: pwsh
+        working-directory: work
+        env:
+          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
+        run: |
+          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($after -ne $env:LOCK_BEFORE) { throw "Release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
+
+      - name: Locate certified release ZIP
+        id: certified
+        shell: pwsh
+        working-directory: work
+        run: |
+          $zip=Resolve-Path ..\CosmicTranscriberWeb-1.0.13-source.zip
+          if (-not (Test-Path $zip)) { throw 'Certified 1.0.13 release ZIP missing.' }
+          Write-Output ('path=' + $zip.Path) >> $env:GITHUB_OUTPUT
+
+      - name: Upload certified release candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.0.13-certified
+          path: ${{ steps.certified.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  all-green:
+    name: ALL 1.0.13 RELEASE GATES GREEN
+    needs: [linux-full, macos-safari, windows-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download certified ZIP
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: CosmicTranscriberWeb-1.0.13-certified
+          path: certified
+      - name: Download exact reviewed lock
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: reviewed-release-inputs-1.0.13
+          path: reviewed
+      - name: Independent final certified ZIP audit
+        run: python .ci/audit_certified_zip.py certified/CosmicTranscriberWeb-1.0.13-source.zip reviewed/package-lock.json 1.0.13
+      - name: Require certified ZIP and print SHA-256
+        run: |
+          test -f certified/CosmicTranscriberWeb-1.0.13-source.zip
+          sha256sum certified/CosmicTranscriberWeb-1.0.13-source.zip
+          echo 'ALL 1.0.13 RELEASE GATES GREEN'
+
+  certification-status:
+    name: Final certification status context
+    if: always()
+    needs: [resolve-lock, linux-full, macos-safari, windows-release, all-green]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish final cosmic-certification-run status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESOLVE: ${{ needs.resolve-lock.result }}
+          LINUX: ${{ needs.linux-full.result }}
+          MACOS: ${{ needs.macos-safari.result }}
+          WINDOWS: ${{ needs.windows-release.result }}
+          ALL_GREEN: ${{ needs.all-green.result }}
+        run: |
+          state=failure
+          description='1.0.13 certification failed; inspect hosted run'
+          if [ "$RESOLVE" = success ] && [ "$LINUX" = success ] && [ "$MACOS" = success ] && [ "$WINDOWS" = success ] && [ "$ALL_GREEN" = success ]; then
+            state=success
+            description='Exact hosted 1.0.13 certification fully green'
+          fi
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state="$state" \
+            -f context=cosmic-certification-run \
+            -f description="$description" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          test "$state" = success
