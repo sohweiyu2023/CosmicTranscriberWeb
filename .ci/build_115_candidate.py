@@ -12,6 +12,7 @@ steps=[
     'repair_mp3_compat.py',
     'upgrade_114.py',
     'upgrade_115.py',
+    'repair_115_workerd_policy.py',
 ]
 for name in steps:
     path=ROOT/'.ci'/name
