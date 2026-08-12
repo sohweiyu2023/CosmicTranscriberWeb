@@ -38,11 +38,11 @@ for rel in ('SHA256SUMS.txt','windows-release-output.log','windows-release-trans
 replace_exact('.nvmrc','24.19.0','26.5.1')
 replace_exact('WINDOWS-TOOLCHAIN.ps1',"$script:CosmicNodeVersion = '24.19.0'", "$script:CosmicNodeVersion = '26.5.1'")
 replace_exact('WINDOWS-TOOLCHAIN.ps1','node-v24.19.0-win-x64.zip','node-v26.5.1-win-x64.zip')
-replace_exact('WINDOWS-TOOLCHAIN.ps1','8510b4466082caf8484425bc961fa93fd8351582603c153103009042825b93b9','c432c996b95cbf7568f13a0fbb37526de84a27e3a5c520c3be15f05a9a168212')
-replace_exact('WINDOWS-TOOLCHAIN.ps1','d549765346d61950efef43187c5341a82acf14c7bace91501f4aac2140e6f597','b48b0224081224cda1f49374e2fc63d143041ade51754f0cc6608fe8510ba29e')
+replace_exact('WINDOWS-TOOLCHAIN.ps1','57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73','c432c996b95cbf7568f13a0fbb37526de84a27e3a5c520c3be15f05a9a168212')
+replace_exact('WINDOWS-TOOLCHAIN.ps1','3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237','b48b0224081224cda1f49374e2fc63d143041ade51754f0cc6608fe8510ba29e')
 replace_exact('WINDOWS-TOOLCHAIN.ps1','node-v24.19.0-win-arm64.zip','node-v26.5.1-win-arm64.zip')
-replace_exact('WINDOWS-TOOLCHAIN.ps1','e685254175989372297e2b22f2e4a7ecf24afbbdf2c50ba0f108129e44fe5039','467f425228a2fdcc83a330f5f38b124b5b43b42f5033d7848b4e47c9becc36f9')
-replace_exact('WINDOWS-TOOLCHAIN.ps1','09987a221bdb9c47ae79f8c36f38f7b866cff8541e72b2701a6b382831c91420','c6ca33154ee426f46e02aa9f5676d69b768808b564aa22652fe18bb08c188fe5')
+replace_exact('WINDOWS-TOOLCHAIN.ps1','8502f4a50b458d4cc38ed8f2001556c2cd239d464920f74017926ccb1e1c157f','467f425228a2fdcc83a330f5f38b124b5b43b42f5033d7848b4e47c9becc36f9')
+replace_exact('WINDOWS-TOOLCHAIN.ps1','3958e4bb3f2d4ef37c938215dfc65a9d3c9d839b5060fec103bd2345fa78e951','c6ca33154ee426f46e02aa9f5676d69b768808b564aa22652fe18bb08c188fe5')
 replace_exact('WINDOWS-TOOLCHAIN.ps1','portable Node.js LTS archive','portable Node.js Current archive')
 
 first = read('FIRST-DEPLOY-WINDOWS.ps1')
@@ -70,7 +70,7 @@ rv=read('scripts/release-verify.mjs')
 rv=rv.replace('minimumNode=[24,19,0]','minimumNode=[26,5,1]')
 rv=rv.replace('nodeParts[0]===24','nodeParts[0]===26')
 rv=rv.replace('Node >=24.19.0 <25','Node >=26.5.1 <27')
-rv=rv.replace('reviewed LTS-major floor','reviewed Current-major floor')
+rv=rv.replace('reviewed LTS-major floor','reviewed Current-major floor').replace('current reviewed LTS floor','current reviewed Current-major floor')
 write('scripts/release-verify.mjs',rv)
 
 vc=read('scripts/version-consistency.mjs')
@@ -81,13 +81,17 @@ vc=vc.replace('Node 24.19 LTS-major floor','Node 26.5.1 Current-major floor')
 write('scripts/version-consistency.mjs',vc)
 
 repls = {
- '24.19.0':'26.5.1', '24\\.19\\.0':'26\\.5\\.1',
- '>=24.19 <25':'>=26.5.1 <27', '>=24\\.19 <25':'>=26\\.5\\.1 <27',
- '>=24.19.0 <25':'>=26.5.1 <27', '>=24\\.19\\.0 <25':'>=26\\.5\\.1 <27',
- '8510b4466082caf8484425bc961fa93fd8351582603c153103009042825b93b9':'c432c996b95cbf7568f13a0fbb37526de84a27e3a5c520c3be15f05a9a168212',
- 'd549765346d61950efef43187c5341a82acf14c7bace91501f4aac2140e6f597':'b48b0224081224cda1f49374e2fc63d143041ade51754f0cc6608fe8510ba29e',
- 'e685254175989372297e2b22f2e4a7ecf24afbbdf2c50ba0f108129e44fe5039':'467f425228a2fdcc83a330f5f38b124b5b43b42f5033d7848b4e47c9becc36f9',
- '09987a221bdb9c47ae79f8c36f38f7b866cff8541e72b2701a6b382831c91420':'c6ca33154ee426f46e02aa9f5676d69b768808b564aa22652fe18bb08c188fe5',
+ '24.19.0':'26.5.1',
+ '24\\.19\\.0':'26\\.5\\.1',
+ 'minimumNode=\\[24,19,0\\]':'minimumNode=\\[26,5,1\\]',
+ '>=24.19 <25':'>=26.5.1 <27',
+ '>=24\\.19 <25':'>=26\\.5\\.1 <27',
+ '>=24.19.0 <25':'>=26.5.1 <27',
+ '>=24\\.19\\.0 <25':'>=26\\.5\\.1 <27',
+ '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73':'c432c996b95cbf7568f13a0fbb37526de84a27e3a5c520c3be15f05a9a168212',
+ '3602f2bb1a10f2cbab4c36886218a33c1ab3db87290e73b033c46c77147d0237':'b48b0224081224cda1f49374e2fc63d143041ade51754f0cc6608fe8510ba29e',
+ '8502f4a50b458d4cc38ed8f2001556c2cd239d464920f74017926ccb1e1c157f':'467f425228a2fdcc83a330f5f38b124b5b43b42f5033d7848b4e47c9becc36f9',
+ '3958e4bb3f2d4ef37c938215dfc65a9d3c9d839b5060fec103bd2345fa78e951':'c6ca33154ee426f46e02aa9f5676d69b768808b564aa22652fe18bb08c188fe5',
 }
 for rel in ('scripts/audit-lib.mjs','scripts/mutation-suite.mjs','tests/node/windows-toolchain-policy.test.mjs','tests/node/version-consistency.test.mjs','WINDOWS-TOOLCHAIN-SELFTEST.ps1','RELEASE-WINDOWS.ps1','.github/workflows/ci.yml'):
     t=read(rel)
@@ -100,6 +104,7 @@ doc_repls = {
  'Node 24.x is the LTS line selected for this release; the official Node 24 archive listed v26.5.1 as the latest LTS build at review time.':'Node 26.x Current is selected for this release; Node v26.5.1 was the current stable release when this candidate was created.',
  'Current Node 24 LTS / npm 12 / Playwright release assumptions':'Current Node 26 / npm 12 / Playwright release assumptions',
  'Node 24 LTS and current direct dependency release lines':'Node 26 Current and current direct dependency release lines',
+ 'Node 26.5.1 as Latest LTS':'Node 26.5.1 as the current stable release',
  'Node 24.19 LTS floor':'Node 26.5.1 Current floor',
  'Node 24.19 LTS-major floor':'Node 26.5.1 Current-major floor',
  'Node 24 LTS floor':'Node 26.5.1 Current floor',
