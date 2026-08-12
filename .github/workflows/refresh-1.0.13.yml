@@ -1,0 +1,111 @@
+name: Cosmic Transcriber Web 1.0.13 Latest Dependency Refresh
+
+on:
+  push:
+    branches: ['release/1.0.13']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-latest:
+    name: Resolve registry latest graph without lifecycle scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Materialize certified 1.0.12 baseline
+        run: python .ci/materialize.py
+      - name: Apply integration repair
+        run: python .ci/repair_integration.py
+      - name: Apply E2E repair
+        run: python .ci/repair_e2e.py
+      - name: Apply dependency and cross-browser repairs
+        run: python .ci/repair_install_policy.py
+      - name: Apply Windows package certification repair
+        run: python .ci/repair_windows_package_certification_v2.py
+      - name: Derive 1.0.13 release surfaces
+        run: python .ci/repair_release_113.py
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '24.19.0'
+          package-manager-cache: false
+
+      - name: Activate latest reviewed npm major
+        working-directory: work
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+
+      - name: Verify exact current Node/npm release toolchain
+        working-directory: work
+        run: |
+          test "$(node --version)" = "v24.19.0"
+          test "$(npm --version)" = "12.0.2"
+
+      - name: Resolve every direct dependency from registry latest
+        working-directory: work
+        run: node scripts/deps-latest.mjs
+
+      - name: Print resolved direct dependency graph
+        working-directory: work
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+          const l=JSON.parse(fs.readFileSync('package-lock.json','utf8'));
+          console.log('package version:',p.version);
+          for(const section of ['dependencies','devDependencies']){
+            console.log(section+':');
+            for(const [name,spec] of Object.entries(p[section]||{})){
+              const rec=l.packages?.[`node_modules/${name}`];
+              console.log(`  ${name}: ${spec} -> ${rec?.version||'(missing)'}`);
+            }
+          }
+          console.log('Lock packages with hasInstallScript=true:');
+          for(const [path,rec] of Object.entries(l.packages||{})){
+            if(rec?.hasInstallScript) console.log(`  ${path}: ${rec.version}`);
+          }
+          NODE
+
+      - name: Check current install-script approval policy
+        id: policy
+        continue-on-error: true
+        working-directory: work
+        run: npm run deps:install-scripts:verify
+
+      - name: Audit refreshed graph
+        working-directory: work
+        run: npm audit
+
+      - name: Require no outdated direct dependencies
+        working-directory: work
+        run: |
+          set +e
+          npm outdated --depth=0
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then exit "$code"; fi
+          if [ "$code" -eq 1 ]; then
+            echo 'Direct dependency refresh did not reach registry latest.' >&2
+            exit 1
+          fi
+
+      - name: Upload exact refreshed graph for review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ctw-1.0.13-latest-graph
+          path: |
+            work/package.json
+            work/package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Report lifecycle review requirement
+        shell: bash
+        run: |
+          if [ "${{ steps.policy.outcome }}" = "failure" ]; then
+            echo 'Latest graph resolved, but new lifecycle-script packages require explicit review before rebuild/certification.'
+          else
+            echo 'Latest graph resolved and existing lifecycle-script policy still covers it.'
+          fi
