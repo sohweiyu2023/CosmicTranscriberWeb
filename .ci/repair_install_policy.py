@@ -65,5 +65,5 @@ if final.get('allowScripts',{}).get('workerd') is True: fail('broad workerd life
 if final.get(section,{}).get(POOL)!='^0.21.0': fail('pre-refresh Workers Vitest migration failed')
 print('Reviewed install-script policy repair PASS; direct dependency freshness is no longer version-number pinned.')
 
-for script in ('repair_cancel.py','repair_firefox_key_dialog.py','repair_cookie_contract.py','repair_safari.py'):
+for script in ('repair_cancel.py','repair_firefox_key_dialog.py','repair_cookie_contract.py','repair_safari.py','repair_macos_undici.py'):
     runpy.run_path(str(ROOT/'.ci'/script),run_name='__main__')
