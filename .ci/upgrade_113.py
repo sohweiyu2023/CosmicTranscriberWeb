@@ -57,14 +57,10 @@ pkg['engines']={'node':'>=26.5.1 <27','npm':'>=12.0.2 <13'}
 pkg.setdefault('devDependencies',{})['wrangler']='^4.121.0'
 write('package.json', json.dumps(pkg, indent=2, ensure_ascii=False)+'\n')
 
-lock=json.loads(read('package-lock.json'))
-lock['version']='1.0.13'
-root=lock.get('packages',{}).get('')
-if not isinstance(root,dict): fail('package-lock root package missing')
-root['version']='1.0.13'
-root['engines']={'node':'>=26.5.1 <27','npm':'>=12.0.2 <13'}
-if isinstance(root.get('devDependencies'),dict): root['devDependencies']['wrangler']='^4.121.0'
-write('package-lock.json', json.dumps(lock, indent=2, ensure_ascii=False)+'\n')
+# The reviewed source lineage intentionally has no package-lock.json here. The resolve-lock
+# job creates the 1.0.13 lock only after moving every direct dependency to registry @latest.
+lock_path=WORK/'package-lock.json'
+if lock_path.exists(): lock_path.unlink()
 
 rv=read('scripts/release-verify.mjs')
 rv=rv.replace('minimumNode=[24,19,0]','minimumNode=[26,5,1]')
@@ -104,7 +100,6 @@ doc_repls = {
  'Node 24.x is the LTS line selected for this release; the official Node 24 archive listed v26.5.1 as the latest LTS build at review time.':'Node 26.x Current is selected for this release; Node v26.5.1 was the current stable release when this candidate was created.',
  'Current Node 24 LTS / npm 12 / Playwright release assumptions':'Current Node 26 / npm 12 / Playwright release assumptions',
  'Node 24 LTS and current direct dependency release lines':'Node 26 Current and current direct dependency release lines',
- 'Node 26.5.1 as Latest LTS':'Node 26.5.1 as the current stable release',
  'Node 24.19 LTS floor':'Node 26.5.1 Current floor',
  'Node 24.19 LTS-major floor':'Node 26.5.1 Current-major floor',
  'Node 24 LTS floor':'Node 26.5.1 Current floor',
@@ -140,6 +135,7 @@ checks={
  'case-insensitive confirmation': '$normalized -ine $Expected' in read('FIRST-DEPLOY-WINDOWS.ps1'),
  'x64 archive hash': 'c432c996b95cbf7568f13a0fbb37526de84a27e3a5c520c3be15f05a9a168212' in read('WINDOWS-TOOLCHAIN.ps1'),
  'arm64 archive hash': '467f425228a2fdcc83a330f5f38b124b5b43b42f5033d7848b4e47c9becc36f9' in read('WINDOWS-TOOLCHAIN.ps1'),
+ 'no inherited lock': not (WORK/'package-lock.json').exists(),
 }
 bad=[k for k,v in checks.items() if not v]
 if bad: fail('post-transform invariant failure(s): '+', '.join(bad))
