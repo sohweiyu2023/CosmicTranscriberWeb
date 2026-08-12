@@ -69,7 +69,9 @@ def replace_exact(rel: str, old: str, new: str, expected: int | None = None) -> 
     write(rel, text.replace(old, new))
 
 
-# JSON release surfaces and exact reviewed latest direct ranges.
+# package.json is intentionally normalized here because we are changing both its
+# release version and direct semver ranges. The lock resolved later is the exact
+# reproducible graph certified across every platform.
 package = json.loads(read("package.json"))
 if package.get("version") != OLD:
     fail(f"package.json baseline version drifted: {package.get('version')!r}")
@@ -82,31 +84,36 @@ for section, latest in LATEST_DIRECT.items():
     package[section] = latest.copy()
 write("package.json", json.dumps(package, indent=2, ensure_ascii=False) + "\n")
 
+# Preserve release-manifest structure while clearing inherited certification.
 manifest = json.loads(read("RELEASE_MANIFEST.json"))
 if manifest.get("version") != OLD:
     fail(f"RELEASE_MANIFEST.json baseline version drifted: {manifest.get('version')!r}")
 manifest["version"] = NEW
-# A new release must be re-certified; never inherit release-ready state.
 manifest["releaseReady"] = False
 write("RELEASE_MANIFEST.json", json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
-wrangler = json.loads(read("wrangler.jsonc"))
-for label, vars_obj in (
-    ("top-level", wrangler.get("vars")),
-    ("staging", wrangler.get("env", {}).get("staging", {}).get("vars")),
-    ("production", wrangler.get("env", {}).get("production", {}).get("vars")),
-):
-    if not isinstance(vars_obj, dict) or vars_obj.get("APP_VERSION") != OLD:
-        fail(f"wrangler.jsonc {label} APP_VERSION baseline drifted")
-    vars_obj["APP_VERSION"] = NEW
-write("wrangler.jsonc", json.dumps(wrangler, indent=2, ensure_ascii=False) + "\n")
-
-for rel in ("tests/worker/wrangler.test.jsonc", "tests/integration/wrangler.test.jsonc"):
-    obj = json.loads(read(rel))
-    if obj.get("vars", {}).get("APP_VERSION") != OLD:
-        fail(f"{rel} APP_VERSION baseline drifted")
-    obj["vars"]["APP_VERSION"] = NEW
-    write(rel, json.dumps(obj, indent=2, ensure_ascii=False) + "\n")
+# IMPORTANT: preserve the exact JSONC formatting of Wrangler configs. Static
+# release safeguards deliberately assert compact integration-test structure as
+# part of the Worker-first/Access harness contract, so a version bump must not
+# reserialize otherwise unchanged config.
+replace_exact(
+    "wrangler.jsonc",
+    f'"APP_VERSION": "{OLD}"',
+    f'"APP_VERSION": "{NEW}"',
+    3,
+)
+replace_exact(
+    "tests/worker/wrangler.test.jsonc",
+    f'"APP_VERSION": "{OLD}"',
+    f'"APP_VERSION": "{NEW}"',
+    1,
+)
+replace_exact(
+    "tests/integration/wrangler.test.jsonc",
+    f'"APP_VERSION":"{OLD}"',
+    f'"APP_VERSION":"{NEW}"',
+    1,
+)
 
 # Exact text release/runtime surfaces required by version-consistency.mjs.
 replace_exact("public/js/models.js", f'APP_VERSION = "{OLD}"', f'APP_VERSION = "{NEW}"', 1)
@@ -116,6 +123,11 @@ replace_exact("tests/worker/runtime.test.js", f"APP_VERSION:'{OLD}'", f"APP_VERS
 replace_exact("tests/e2e/mock-server.mjs", OLD, NEW, 2)
 replace_exact("PASTE-ONCE-WINDOWS.ps1", f"$Version = '{OLD}'", f"$Version = '{NEW}'", 1)
 replace_exact("tests/node/version-consistency.test.mjs", OLD, NEW, 4)
+
+# Promote live static version guards and deliberate version-drift mutations.
+# These are executable release policy, not historical evidence.
+replace_exact("scripts/audit-lib.mjs", r"1\.0\.12", r"1\.0\.13", 1)
+replace_exact("scripts/mutation-suite.mjs", r"1\.0\.12", r"1\.0\.13", 4)
 
 # Packaged CI is a live release surface, not historical evidence. Update only
 # the workflow text inside the derived source; historical Windows transcripts
@@ -146,8 +158,10 @@ if heading not in changelog:
         changelog = changelog.rstrip() + "\n\n" + insertion
     write("docs/CHANGELOG.md", changelog)
 
-# Fail closed on exact version and dependency surfaces we own here.
+# Fail closed on exact version/dependency surfaces and on the formatting
+# invariants that were accidentally disturbed in the first 1.0.13 attempt.
 final_package = json.loads(read("package.json"))
+integration_cfg = read("tests/integration/wrangler.test.jsonc")
 checks = {
     "package.json version": final_package.get("version") == NEW,
     "package.json dependencies": final_package.get("dependencies") == LATEST_DIRECT["dependencies"],
@@ -159,6 +173,10 @@ checks = {
     "tests/worker/runtime.test.js": f"APP_VERSION:'{NEW}'" in read("tests/worker/runtime.test.js"),
     "tests/e2e/mock-server.mjs": read("tests/e2e/mock-server.mjs").count(NEW) >= 2,
     "PASTE-ONCE-WINDOWS.ps1": f"$Version = '{NEW}'" in read("PASTE-ONCE-WINDOWS.ps1"),
+    "integration LOCAL_AUTH_BYPASS compact invariant": '"LOCAL_AUTH_BYPASS":"false"' in integration_cfg,
+    "integration run_worker_first compact invariant": '"run_worker_first":true' in integration_cfg,
+    "audit paste-once version guard": r"1\.0\.13" in read("scripts/audit-lib.mjs"),
+    "mutation version guards": read("scripts/mutation-suite.mjs").count(r"1\.0\.13") == 4,
 }
 bad = [name for name, ok in checks.items() if not ok]
 if bad:
@@ -167,3 +185,4 @@ if bad:
 print("Cosmic Transcriber Web 1.0.13 release derivation PASS.")
 print("Historical 1.0.12 logs remain untouched; live release/version surfaces are now 1.0.13.")
 print("Reviewed registry-latest direct ranges are frozen into the 1.0.13 package surface.")
+print("Wrangler JSONC formatting and live audit/mutation version invariants are preserved.")
