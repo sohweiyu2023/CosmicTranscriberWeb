@@ -16,4 +16,25 @@ apply('20ab265578a14b2cb650ebda5d04fb466eaefc31ec3f58d5adb7cd55722daac2',[
  (60,61," startBtn:$('startBtn'),rerunCompletedBtn:$('rerunCompletedBtn'),cancelBtn:$('cancelBtn'),progressTitle:$('progressTitle'),progressPercent:$('progressPercent'),progressBar:$('progressBar'),progressDetail:$('progressDetail'),fileCountStat:$('fileCountStat'),durationStat:$('durationStat'),completedStat:$('completedStat'),downloads:$('downloads'),downloadButtons:$('downloadButtons'),diagnosticsBtn:$('diagnosticsBtn'),versionText:$('versionText'),\n"),
  (11,11,"import {applyTransportClassification,isExplicitUserCancellation} from './transport-policy.js';\nimport {DIAGNOSTICS_REVISION,DIAGNOSTICS_SCHEMA,diagnosticErrorFields,makeDiagnosticEvent,pushDiagnostic} from './diagnostics.js';\n"),
 ] )
+
+# Keep transient browser timing/correlation details out of the durable checkpoint
+# attempt record. CHECKPOINT_SCHEMA intentionally uses exact-key validation; the
+# 1.0.15 diagnostics patch had accidentally added dispatchedAt/browserElapsedMs
+# to attemptRecord, causing every post-dispatch checkpoint save to fail in real
+# browsers. Timing remains available in bounded diagnostics events instead.
+text=P.read_text(encoding='utf-8')
+repairs=[
+ ("attemptRecord.dispatchedAt=nowIso();const requestStarted=performance.now();","const requestStarted=performance.now();"),
+ ("endTimedOperation('response_received');attemptRecord.browserElapsedMs=Math.round(performance.now()-requestStarted);","endTimedOperation('response_received');const browserElapsedMs=Math.round(performance.now()-requestStarted);"),
+ ("browserElapsedMs:attemptRecord.browserElapsedMs","browserElapsedMs"),
+]
+for old,new in repairs:
+ count=text.count(old)
+ if count!=1:raise SystemExit(f'expected exactly one checkpoint-timing repair anchor, found {count}: {old}')
+ text=text.replace(old,new,1)
+if 'attemptRecord.dispatchedAt=' in text or 'attemptRecord.browserElapsedMs=' in text:
+ raise SystemExit('transient timing must not be persisted in checkpoint attempt records')
+if "const browserElapsedMs=Math.round(performance.now()-requestStarted);" not in text:
+ raise SystemExit('diagnostic browser elapsed timing was not preserved')
+P.write_text(text,encoding='utf-8',newline='')
 print('repair_115_app_3 PASS.')
