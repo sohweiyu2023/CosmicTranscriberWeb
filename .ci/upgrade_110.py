@@ -57,11 +57,44 @@ with tempfile.NamedTemporaryFile(prefix='ctw-1.1.0-', suffix='.patch', dir=ROOT,
     tmp.write(patch)
     patch_path = pathlib.Path(tmp.name)
 try:
-    cmd = ['git', 'apply', '--directory=work', '-p1', '--whitespace=nowarn', str(patch_path)]
+    cmd = ['git', 'apply', '--directory=work', '-p1', '--whitespace=nowarn', '--exclude=*RELEASE_MANIFEST.json', str(patch_path)]
     subprocess.run(cmd[:2] + ['--check'] + cmd[2:], cwd=ROOT, check=True)
     subprocess.run(cmd, cwd=ROOT, check=True)
 finally:
     patch_path.unlink(missing_ok=True)
+
+# RELEASE_MANIFEST is certification-state metadata. The 1.0.15 CI baseline is
+# deliberately releaseReady:false, while the reviewed V1.1 patch was derived
+# from the immutable certified 1.0.15 artifact. Apply source changes without
+# that one file, then write the reviewed V1.1 candidate manifest explicitly.
+manifest_target = {
+    'product': 'Cosmic Transcriber Web',
+    'version': VERSION,
+    'generatedAt': None,
+    'releaseReady': False,
+    'dependencyLock': {
+        'status': 'candidate-unverified',
+        'sha256': None,
+        'registry': 'https://registry.npmjs.org',
+    },
+    'unicodeFixture': 'tests/fixtures/ID3 Unicode 東京.mp3',
+    'archiveEncoding': 'UTF-8 filenames (general-purpose bit 11 set for every entry)',
+    'wranglerReleaseFingerprint': None,
+    'wranglerMutableAfterRelease': [
+        'env.staging.vars.ACCESS_TEAM_DOMAIN',
+        'env.staging.vars.ACCESS_AUDIENCE',
+        'env.staging.vars.ADMIN_EMAILS',
+        'env.staging.d1_databases.USER_DB.database_id',
+        'env.production.vars.ACCESS_TEAM_DOMAIN',
+        'env.production.vars.ACCESS_AUDIENCE',
+        'env.production.vars.ADMIN_EMAILS',
+        'env.production.d1_databases.USER_DB.database_id',
+    ],
+    'notes': [],
+}
+(WORK / 'RELEASE_MANIFEST.json').write_text(
+    json.dumps(manifest_target, indent=2, ensure_ascii=True) + '\n', encoding='utf-8'
+)
 
 # A new release resolves/reviews a fresh registry-latest graph in certification.
 lock = WORK / 'package-lock.json'
