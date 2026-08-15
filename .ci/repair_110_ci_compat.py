@@ -15,20 +15,26 @@ def fail(message: str) -> None:
 
 
 def replace_top_level_audit_entry(text: str, label: str, replacement_body: str) -> str:
-    pattern = re.compile(rf'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["{re.escape(label)}"')
-    hits = list(pattern.finditer(text))
+    # The safeguard list is intentionally one-entry-per-line. Hosted run
+    # 31876469324 proved the earlier same-indentation block parser was too broad
+    # and could consume neighboring entries, leaving a non-pair in safeguards().
+    # Replace only the exact reviewed line that owns this label.
+    lines = text.splitlines(keepends=True)
+    hits = [i for i, line in enumerate(lines) if f'["{label}"' in line]
     if len(hits) != 1:
-        fail(f'Expected exactly one audit safeguard {label!r}; found {len(hits)}')
-    hit = hits[0]
-    indent = hit.group('indent')
-    comma = hit.group('comma')
-    nxt = re.search(rf'(?m)^{re.escape(indent)},?[ \t]*\["', text[hit.end():])
-    end = hit.end() + nxt.start() if nxt else len(text)
-    old_entry = text[hit.start():end]
-    if 'vitest.config.js' not in old_entry or 'BYOK_SESSION_MASTER_KEY_CURRENT' not in old_entry:
-        fail('Reviewed worker-test BYOK safeguard no longer inspects the expected Vitest binding')
-    replacement = f'{indent}{comma}["{label}", {replacement_body}]\n'
-    return text[:hit.start()] + replacement + text[end:]
+        fail(f'Expected exactly one audit safeguard line {label!r}; found {len(hits)}')
+    index = hits[0]
+    old = lines[index]
+    if 'vitest.config.js' not in old or 'BYOK_SESSION_MASTER_KEY_CURRENT' not in old:
+        fail('Reviewed worker-test BYOK safeguard line no longer inspects the expected Vitest binding')
+    match = re.match(r'^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*', old)
+    if match is None:
+        fail('Could not preserve BYOK safeguard indentation/comma convention')
+    indent = match.group('indent')
+    comma = match.group('comma')
+    newline = '\r\n' if old.endswith('\r\n') else '\n'
+    lines[index] = f'{indent}{comma}["{label}", {replacement_body}]' + newline
+    return ''.join(lines)
 
 
 def replace_mutation_for_safeguard(text: str) -> str:
@@ -192,4 +198,4 @@ if 'remove unit-test BYOK binding' in final_mutations:
 if not readme_path.read_bytes().startswith(f'# Cosmic Transcriber Web {VERSION}\n'.encode('utf-8')):
     fail('README release heading is not canonical LF after normalization')
 
-print('Cosmic Transcriber Web 1.1.0 CI compatibility + exact BYOK safeguard/mutation repair PASS.')
+print('Cosmic Transcriber Web 1.1.0 CI compatibility + exact-line BYOK safeguard/mutation repair PASS.')
