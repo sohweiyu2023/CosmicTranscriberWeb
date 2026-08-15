@@ -106,11 +106,19 @@ def main() -> None:
         fp = manifest.get("wranglerReleaseFingerprint")
         if not isinstance(fp, str) or not re.fullmatch(r"[0-9a-f]{64}", fp):
             fail("wrangler release fingerprint is missing or malformed")
+        # V1.1 introduces the Access-bound D1 registry and admin allow-list.
+        # These are the only additional post-certification Wrangler fields that
+        # the reviewed helper may fill after release packaging; keep the final
+        # independent ZIP audit fail-closed on this exact ordered contract.
         expected_mutable = [
             "env.staging.vars.ACCESS_TEAM_DOMAIN",
             "env.staging.vars.ACCESS_AUDIENCE",
+            "env.staging.vars.ADMIN_EMAILS",
+            "env.staging.d1_databases.USER_DB.database_id",
             "env.production.vars.ACCESS_TEAM_DOMAIN",
             "env.production.vars.ACCESS_AUDIENCE",
+            "env.production.vars.ADMIN_EMAILS",
+            "env.production.d1_databases.USER_DB.database_id",
         ]
         if manifest.get("wranglerMutableAfterRelease") != expected_mutable:
             fail("wrangler post-release mutable-field provenance contract drifted")
