@@ -32,22 +32,51 @@ def replace_top_level_audit_entry(text: str, label: str, replacement_body: str) 
 
 
 def replace_mutation_for_safeguard(text: str, label: str) -> str:
-    lines = text.splitlines(keepends=True)
-    hits = [i for i, line in enumerate(lines) if label in line]
-    if len(hits) != 1:
-        fail(f'Expected exactly one mutation targeting safeguard {label!r}; found {len(hits)}')
-    index = hits[0]
-    old = lines[index]
-    if 'vitest.config.js' not in old:
-        fail('Reviewed worker-test BYOK mutation no longer targets vitest.config.js')
-    newline = '\r\n' if old.endswith('\r\n') else '\n'
-    lines[index] = (
+    replacement = (
         '  ["remove Workers test BYOK binding -> worker tests inject test-only BYOK secret", '
         '"vitest.config.js", /BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY/, '
-        '"CTW_TEST_BYOK_BINDING_REMOVED:true"],'
-        + newline
+        '"CTW_TEST_BYOK_BINDING_REMOVED:true"],\n'
     )
-    return ''.join(lines)
+
+    # Older reviewed mutation labels are not guaranteed to repeat the safeguard
+    # label verbatim. Identify the mutation by the security surface it mutates,
+    # not by prose. Parse same-indentation array entries fail-closed, then replace
+    # exactly one Vitest/BYOK candidate if present. If the reviewed candidate has
+    # no dedicated mutation at all, add one at the stable mutation-list anchor.
+    entry_start = re.compile(r'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["')
+    starts = list(entry_start.finditer(text))
+    candidates: list[tuple[int, int, str]] = []
+    semantic_markers = (
+        'BYOK_SESSION_MASTER_KEY_CURRENT',
+        'TEST_BYOK_MASTER_KEY',
+        'defineWorkersConfig',
+        'poolOptions',
+        'miniflare',
+    )
+    for hit in starts:
+        indent = hit.group('indent')
+        nxt = re.search(rf'(?m)^{re.escape(indent)},?[ \t]*\["', text[hit.end():])
+        end = hit.end() + nxt.start() if nxt else len(text)
+        block = text[hit.start():end]
+        if 'vitest.config.js' in block and (label in block or any(marker in block for marker in semantic_markers)):
+            candidates.append((hit.start(), end, block))
+
+    if len(candidates) > 1:
+        detail = ' | '.join(re.sub(r'\s+', ' ', block)[:220] for _, _, block in candidates)
+        fail(f'Expected at most one reviewed Vitest/BYOK mutation; found {len(candidates)}: {detail}')
+    if len(candidates) == 1:
+        start, end, old = candidates[0]
+        if 'vitest.config.js' not in old:
+            fail('Reviewed worker-test BYOK mutation candidate no longer targets vitest.config.js')
+        return text[:start] + replacement + text[end:]
+
+    anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
+    if text.count(anchor) != 1:
+        fail(
+            'No existing Vitest/BYOK mutation was found and the stable mutation insertion '
+            f'anchor count was {text.count(anchor)} instead of 1'
+        )
+    return text.replace(anchor, replacement + anchor, 1)
 
 
 if not WORK.is_dir():
@@ -111,8 +140,8 @@ audit_path.write_text(audit, encoding='utf-8', newline='')
 
 # Keep mutation coverage in lockstep with the migrated safeguard. The mutation
 # removes the exact test-only Miniflare binding; validation must then report the
-# same named safeguard as failed. This replaces, rather than deletes, the old
-# mutation so the security gate remains actively exercised.
+# same named safeguard as failed. This replaces, rather than deletes, an old
+# Vitest/BYOK mutation when one exists; otherwise it adds a dedicated mutation.
 mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
 if not mutation_path.is_file():
     fail('Missing work/scripts/mutation-suite.mjs')
