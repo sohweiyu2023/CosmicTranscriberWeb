@@ -16,11 +16,15 @@ if not WORK.is_dir() or not SUITE.is_file():
     fail('1.1.0 Windows mutation-LF repair requires a materialized work tree and mutation suite')
 
 suite_text = SUITE.read_text(encoding='utf-8')
-# Mutation entries are arrays whose first two fields are the mutation label and
-# repository-relative target path. Discover targets from the reviewed suite so
-# this repair follows the suite as it evolves instead of maintaining a weaker
-# hand-written allowlist.
-entry = re.compile(r'''\[\s*["'][^"'\r\n]+["']\s*,\s*["'](?P<path>[^"'\r\n]+)["']\s*,''')
+# Mutation entries are top-level array records in the reviewed suite, emitted at
+# exactly two spaces of indentation. Anchor discovery to that structural shape;
+# an unanchored two-string-array regex also matches nested data such as Wrangler
+# mutable-field lists (for example ACCESS_AUDIENCE), which are not file targets.
+# Keep discovery fail-closed: every structurally valid mutation record still
+# contributes a target, and any missing target below is a hard failure.
+entry = re.compile(
+    r'''(?m)^  \[\s*["'][^"'\r\n]+["']\s*,\s*["'](?P<path>[^"'\r\n]+)["']\s*,'''
+)
 targets = sorted({m.group('path') for m in entry.finditer(suite_text)})
 if len(targets) < 20:
     fail(f'Mutation target discovery unexpectedly found only {len(targets)} target(s)')
