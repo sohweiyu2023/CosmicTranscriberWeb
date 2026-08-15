@@ -196,8 +196,8 @@ test('byte-sensitive audited generated sources are canonical UTF-8 LF on every p
   const app=await readFile(path.join(root,'public/js/app.js'),'utf8');
   assert.ok(app.includes({(checkpoint_import + chr(10) + prompt_marker)!r}));
   const first=await readFile(path.join(root,'scripts/first-deploy.mjs'),'utf8');
-  assert.match(first,/try \{{\n  await writeFile\(secretsFile/);
-  assert.match(first,/finally \{{\n  await rm\(tempDir/);
+  assert.ok(first.includes('try {{\\n  await writeFile(secretsFile'));
+  assert.ok(first.includes('finally {{\\n  await rm(tempDir'));
 }});
 """.encode('utf-8'))
 
