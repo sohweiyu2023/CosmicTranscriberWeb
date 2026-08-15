@@ -31,52 +31,29 @@ def replace_top_level_audit_entry(text: str, label: str, replacement_body: str) 
     return text[:hit.start()] + replacement + text[end:]
 
 
-def replace_mutation_for_safeguard(text: str, label: str) -> str:
+def replace_mutation_for_safeguard(text: str) -> str:
+    # Hosted certification exposed the exact reviewed pre-migration mutation:
+    #   ["remove unit-test BYOK binding", "vitest.config.js",
+    #    /BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,/g, ""],
+    # Replace that exact security mutation, not a broad semantic neighborhood,
+    # so unrelated mutation entries cannot be consumed accidentally.
+    pattern = re.compile(
+        r'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*'
+        r'\["remove unit-test BYOK binding",[ \t]*"vitest\.config\.js",[ \t]*'
+        r'/BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,/g,[ \t]*""\],[ \t]*$'
+    )
+    hits = list(pattern.finditer(text))
+    if len(hits) != 1:
+        fail(f'Expected exactly one reviewed pre-migration unit-test BYOK mutation; found {len(hits)}')
+    hit = hits[0]
+    indent = hit.group('indent')
+    comma = hit.group('comma')
     replacement = (
-        '  ["remove Workers test BYOK binding -> worker tests inject test-only BYOK secret", '
+        f'{indent}{comma}["remove Workers test BYOK binding -> worker tests inject test-only BYOK secret", '
         '"vitest.config.js", /BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY/, '
-        '"CTW_TEST_BYOK_BINDING_REMOVED:true"],\n'
+        '"CTW_TEST_BYOK_BINDING_REMOVED:true"],'
     )
-
-    # Older reviewed mutation labels are not guaranteed to repeat the safeguard
-    # label verbatim. Identify the mutation by the security surface it mutates,
-    # not by prose. Parse same-indentation array entries fail-closed, then replace
-    # exactly one Vitest/BYOK candidate if present. If the reviewed candidate has
-    # no dedicated mutation at all, add one at the stable mutation-list anchor.
-    entry_start = re.compile(r'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["')
-    starts = list(entry_start.finditer(text))
-    candidates: list[tuple[int, int, str]] = []
-    semantic_markers = (
-        'BYOK_SESSION_MASTER_KEY_CURRENT',
-        'TEST_BYOK_MASTER_KEY',
-        'defineWorkersConfig',
-        'poolOptions',
-        'miniflare',
-    )
-    for hit in starts:
-        indent = hit.group('indent')
-        nxt = re.search(rf'(?m)^{re.escape(indent)},?[ \t]*\["', text[hit.end():])
-        end = hit.end() + nxt.start() if nxt else len(text)
-        block = text[hit.start():end]
-        if 'vitest.config.js' in block and (label in block or any(marker in block for marker in semantic_markers)):
-            candidates.append((hit.start(), end, block))
-
-    if len(candidates) > 1:
-        detail = ' | '.join(re.sub(r'\s+', ' ', block)[:220] for _, _, block in candidates)
-        fail(f'Expected at most one reviewed Vitest/BYOK mutation; found {len(candidates)}: {detail}')
-    if len(candidates) == 1:
-        start, end, old = candidates[0]
-        if 'vitest.config.js' not in old:
-            fail('Reviewed worker-test BYOK mutation candidate no longer targets vitest.config.js')
-        return text[:start] + replacement + text[end:]
-
-    anchor = '  ["stop CI from sharing one reviewed lock across platforms",'
-    if text.count(anchor) != 1:
-        fail(
-            'No existing Vitest/BYOK mutation was found and the stable mutation insertion '
-            f'anchor count was {text.count(anchor)} instead of 1'
-        )
-    return text.replace(anchor, replacement + anchor, 1)
+    return text[:hit.start()] + replacement + text[hit.end():]
 
 
 if not WORK.is_dir():
@@ -140,13 +117,13 @@ audit_path.write_text(audit, encoding='utf-8', newline='')
 
 # Keep mutation coverage in lockstep with the migrated safeguard. The mutation
 # removes the exact test-only Miniflare binding; validation must then report the
-# same named safeguard as failed. This replaces, rather than deletes, an old
-# Vitest/BYOK mutation when one exists; otherwise it adds a dedicated mutation.
+# same named safeguard as failed. The exact pre-migration mutation is replaced,
+# not deleted, so this security property remains actively mutation-tested.
 mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
 if not mutation_path.is_file():
     fail('Missing work/scripts/mutation-suite.mjs')
 mutations = mutation_path.read_text(encoding='utf-8')
-mutations = replace_mutation_for_safeguard(mutations, AUDIT_LABEL)
+mutations = replace_mutation_for_safeguard(mutations)
 mutation_path.write_text(mutations, encoding='utf-8', newline='')
 
 # Windows checkout/apply can produce CRLF in the patched README while the
@@ -210,7 +187,9 @@ if final_audit.count(f'"{AUDIT_LABEL}"') != 1:
     fail('Migrated worker-test BYOK safeguard is missing or duplicated')
 if final_mutations.count('remove Workers test BYOK binding -> worker tests inject test-only BYOK secret') != 1:
     fail('Migrated worker-test BYOK mutation is missing or duplicated')
+if 'remove unit-test BYOK binding' in final_mutations:
+    fail('Obsolete pre-migration BYOK mutation survived migration')
 if not readme_path.read_bytes().startswith(f'# Cosmic Transcriber Web {VERSION}\n'.encode('utf-8')):
     fail('README release heading is not canonical LF after normalization')
 
-print('Cosmic Transcriber Web 1.1.0 CI compatibility + BYOK safeguard repair PASS.')
+print('Cosmic Transcriber Web 1.1.0 CI compatibility + exact BYOK safeguard/mutation repair PASS.')
