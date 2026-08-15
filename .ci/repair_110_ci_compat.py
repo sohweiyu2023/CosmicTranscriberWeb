@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORK = ROOT / 'work'
@@ -16,10 +17,9 @@ if not WORK.is_dir():
     fail('1.1.0 CI compatibility repair requires a materialized work tree')
 
 # Cloudflare's current Workers Vitest integration uses cloudflareTest() from the
-# package root. Preserve BOTH reviewed test-only bindings from the pre-migration
-# config: the synthetic BYOK key and the D1 migration array. The existing static
-# safeguard and mutation suite already verify those security/test properties, so
-# do not rewrite those gates merely to fit a new configuration shape.
+# package root. Preserve all reviewed V1.1 test-state plumbing while migrating
+# the removed configuration API: the synthetic BYOK key, D1 migration array,
+# and the existing setupFiles hook that actually applies those migrations.
 vitest_path = WORK / 'vitest.config.js'
 if not vitest_path.is_file():
     fail('Missing work/vitest.config.js')
@@ -29,11 +29,26 @@ for required in [
     'BYOK_SESSION_MASTER_KEY_CURRENT',
     'TEST_MIGRATIONS',
     'readD1Migrations',
+    'setupFiles',
     'tests/worker/**/*.test.js',
     '20000',
 ]:
     if required not in old_vitest:
         fail(f'1.1.0 Vitest migration precondition missing: {required}')
+
+# Preserve the reviewed setupFiles value exactly. This is standard Vitest
+# configuration and Cloudflare runs setupFiles inside the Workers runtime, where
+# cloudflare:test can apply TEST_MIGRATIONS to USER_DB. Refuse ambiguous config.
+setup_matches = list(re.finditer(
+    r'setupFiles\s*:\s*(?P<value>\[[^\]]*\]|["\'][^"\']+["\'])',
+    old_vitest,
+    flags=re.S,
+))
+if len(setup_matches) != 1:
+    fail(f'Expected exactly one reviewed Vitest setupFiles value; found {len(setup_matches)}')
+setup_files_value = setup_matches[0].group('value').strip()
+if not re.search(r'worker|setup|migration', setup_files_value, flags=re.I):
+    fail(f'Reviewed setupFiles value is not recognizably Worker/migration setup: {setup_files_value}')
 
 new_vitest = f"""import {{ cloudflareTest, readD1Migrations }} from '@cloudflare/vitest-pool-workers';
 import {{ defineConfig }} from 'vitest/config';
@@ -50,10 +65,31 @@ export default defineConfig({{
       TEST_MIGRATIONS:await readD1Migrations('./migrations')
     }}}}
   }}))],
-  test:{{include:['tests/worker/**/*.test.js'],testTimeout:20000}}
+  test:{{
+    include:['tests/worker/**/*.test.js'],
+    setupFiles:{setup_files_value},
+    testTimeout:20000
+  }}
 }});
 """
 vitest_path.write_text(new_vitest, encoding='utf-8', newline='')
+
+# The setup file itself must still contain an explicit D1 migration application.
+# We discover the reviewed setup path from setupFiles rather than inventing one.
+setup_paths = re.findall(r'["\']([^"\']+)["\']', setup_files_value)
+if len(setup_paths) != 1:
+    fail(f'Expected one reviewed Worker setup file; found {setup_paths}')
+setup_rel = setup_paths[0]
+setup_path = (WORK / setup_rel).resolve()
+work_root = WORK.resolve()
+if work_root not in setup_path.parents:
+    fail(f'Vitest setup file escapes work tree: {setup_rel}')
+if not setup_path.is_file():
+    fail(f'Reviewed Vitest setup file is missing: {setup_rel}')
+setup_text = setup_path.read_text(encoding='utf-8')
+for invariant in ('applyD1Migrations', 'USER_DB', 'TEST_MIGRATIONS'):
+    if invariant not in setup_text:
+        fail(f'Reviewed D1 setup file no longer contains {invariant}: {setup_rel}')
 
 # Windows checkout/apply can produce CRLF in the patched README while the
 # version-consistency gate intentionally checks an exact release heading. Keep
@@ -82,16 +118,16 @@ version_text = version_text.replace(
 version_path.write_text(version_text, encoding='utf-8', newline='')
 
 # Add an executable regression test so a future registry-latest refresh cannot
-# silently restore the removed package subpath or drop D1 migration injection.
+# silently restore the removed package subpath or drop D1 setup/migration wiring.
 test_path = WORK / 'tests' / 'node' / 'vitest-config-current.test.mjs'
-test_path.write_text("""import test from 'node:test';
+test_path.write_text(f"""import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {{readFile}} from 'node:fs/promises';
 import path from 'node:path';
 
 const root=path.resolve(import.meta.dirname,'../..');
 
-test('Workers Vitest config uses current package-root API and preserves test bindings',async()=>{
+test('Workers Vitest config uses current package-root API and preserves D1 test setup',async()=>{{
   const text=await readFile(path.join(root,'vitest.config.js'),'utf8');
   assert.match(text,/from ['\"]@cloudflare\\/vitest-pool-workers['\"]/);
   assert.doesNotMatch(text,/@cloudflare\\/vitest-pool-workers\\/config/);
@@ -101,7 +137,12 @@ test('Workers Vitest config uses current package-root API and preserves test bin
   assert.match(text,/tests\\/worker\\/wrangler\\.test\\.jsonc/);
   assert.match(text,/BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY/);
   assert.match(text,/TEST_MIGRATIONS:await readD1Migrations/);
-});
+  assert.match(text,/setupFiles\\s*:/);
+  const setup=await readFile(path.resolve(root,{setup_rel!r}),'utf8');
+  assert.match(setup,/applyD1Migrations/);
+  assert.match(setup,/USER_DB/);
+  assert.match(setup,/TEST_MIGRATIONS/);
+}});
 """, encoding='utf-8', newline='')
 
 # Postconditions make the repair fail closed if any future candidate structure
@@ -114,12 +155,16 @@ if "import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-wo
 for invariant in (
     'BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,',
     "TEST_MIGRATIONS:await readD1Migrations('./migrations')",
+    f'setupFiles:{setup_files_value}',
 ):
     if final_vitest.count(invariant) != 1:
-        fail(f'Required current Workers test binding missing or duplicated: {invariant}')
+        fail(f'Required current Workers test invariant missing or duplicated: {invariant}')
 if TEST_BYOK_MASTER_KEY in (WORK / 'wrangler.jsonc').read_text(encoding='utf-8'):
     fail('Synthetic Workers test BYOK key leaked into production Wrangler config')
 if not readme_path.read_bytes().startswith(f'# Cosmic Transcriber Web {VERSION}\n'.encode('utf-8')):
     fail('README release heading is not canonical LF after normalization')
 
-print('Cosmic Transcriber Web 1.1.0 current Workers Vitest + preserved BYOK/D1 binding repair PASS.')
+print(
+    'Cosmic Transcriber Web 1.1.0 current Workers Vitest repair PASS: '
+    f'preserved BYOK binding, D1 migrations, and setupFiles={setup_files_value}.'
+)
