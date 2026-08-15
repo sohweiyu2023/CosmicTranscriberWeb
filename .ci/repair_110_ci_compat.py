@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import pathlib
-import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORK = ROOT / 'work'
 VERSION = '1.1.0'
-AUDIT_LABEL = 'worker tests inject test-only BYOK secret'
 TEST_BYOK_MASTER_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 
 
@@ -14,61 +12,14 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
-def replace_top_level_audit_entry(text: str, label: str, replacement_body: str) -> str:
-    # The safeguard list is intentionally one-entry-per-line. Hosted run
-    # 31876469324 proved the earlier same-indentation block parser was too broad
-    # and could consume neighboring entries, leaving a non-pair in safeguards().
-    # Replace only the exact reviewed line that owns this label.
-    lines = text.splitlines(keepends=True)
-    hits = [i for i, line in enumerate(lines) if f'["{label}"' in line]
-    if len(hits) != 1:
-        fail(f'Expected exactly one audit safeguard line {label!r}; found {len(hits)}')
-    index = hits[0]
-    old = lines[index]
-    if 'vitest.config.js' not in old or 'BYOK_SESSION_MASTER_KEY_CURRENT' not in old:
-        fail('Reviewed worker-test BYOK safeguard line no longer inspects the expected Vitest binding')
-    match = re.match(r'^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*', old)
-    if match is None:
-        fail('Could not preserve BYOK safeguard indentation/comma convention')
-    indent = match.group('indent')
-    comma = match.group('comma')
-    newline = '\r\n' if old.endswith('\r\n') else '\n'
-    lines[index] = f'{indent}{comma}["{label}", {replacement_body}]' + newline
-    return ''.join(lines)
-
-
-def replace_mutation_for_safeguard(text: str) -> str:
-    # Hosted certification exposed the exact reviewed pre-migration mutation:
-    #   ["remove unit-test BYOK binding", "vitest.config.js",
-    #    /BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,/g, ""],
-    # Replace that exact security mutation, not a broad semantic neighborhood,
-    # so unrelated mutation entries cannot be consumed accidentally.
-    pattern = re.compile(
-        r'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*'
-        r'\["remove unit-test BYOK binding",[ \t]*"vitest\.config\.js",[ \t]*'
-        r'/BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,/g,[ \t]*""\],[ \t]*$'
-    )
-    hits = list(pattern.finditer(text))
-    if len(hits) != 1:
-        fail(f'Expected exactly one reviewed pre-migration unit-test BYOK mutation; found {len(hits)}')
-    hit = hits[0]
-    indent = hit.group('indent')
-    comma = hit.group('comma')
-    replacement = (
-        f'{indent}{comma}["remove Workers test BYOK binding -> worker tests inject test-only BYOK secret", '
-        '"vitest.config.js", /BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY/, '
-        '"CTW_TEST_BYOK_BINDING_REMOVED:true"],'
-    )
-    return text[:hit.start()] + replacement + text[hit.end():]
-
-
 if not WORK.is_dir():
     fail('1.1.0 CI compatibility repair requires a materialized work tree')
 
-# Cloudflare's current Workers Vitest integration exports cloudflareTest() from
-# the package root. 1.1.0 resolves every direct dependency to registry latest,
-# so the candidate must migrate forward instead of pinning an obsolete package
-# solely to retain the removed /config subpath API.
+# Cloudflare's current Workers Vitest integration uses cloudflareTest() from the
+# package root. Preserve BOTH reviewed test-only bindings from the pre-migration
+# config: the synthetic BYOK key and the D1 migration array. The existing static
+# safeguard and mutation suite already verify those security/test properties, so
+# do not rewrite those gates merely to fit a new configuration shape.
 vitest_path = WORK / 'vitest.config.js'
 if not vitest_path.is_file():
     fail('Missing work/vitest.config.js')
@@ -76,13 +27,15 @@ old_vitest = vitest_path.read_text(encoding='utf-8')
 for required in [
     'tests/worker/wrangler.test.jsonc',
     'BYOK_SESSION_MASTER_KEY_CURRENT',
+    'TEST_MIGRATIONS',
+    'readD1Migrations',
     'tests/worker/**/*.test.js',
     '20000',
 ]:
     if required not in old_vitest:
         fail(f'1.1.0 Vitest migration precondition missing: {required}')
 
-new_vitest = f"""import {{ cloudflareTest }} from '@cloudflare/vitest-pool-workers';
+new_vitest = f"""import {{ cloudflareTest, readD1Migrations }} from '@cloudflare/vitest-pool-workers';
 import {{ defineConfig }} from 'vitest/config';
 
 // Synthetic TEST-ONLY 32-byte base64url master key injected only into the
@@ -90,47 +43,17 @@ import {{ defineConfig }} from 'vitest/config';
 const TEST_BYOK_MASTER_KEY = '{TEST_BYOK_MASTER_KEY}';
 
 export default defineConfig({{
-  plugins:[cloudflareTest({{
+  plugins:[cloudflareTest(async()=>({{
     wrangler:{{configPath:'./tests/worker/wrangler.test.jsonc'}},
-    miniflare:{{bindings:{{BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY}}}}
-  }})],
+    miniflare:{{bindings:{{
+      BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,
+      TEST_MIGRATIONS:await readD1Migrations('./migrations')
+    }}}}
+  }}))],
   test:{{include:['tests/worker/**/*.test.js'],testTimeout:20000}}
 }});
 """
 vitest_path.write_text(new_vitest, encoding='utf-8', newline='')
-
-# The old static safeguard coupled the security property to the removed
-# defineWorkersConfig()/poolOptions syntax. Migrate the gate to the current API
-# while preserving the actual fail-closed property: a synthetic key exists only
-# in the Workers test isolate, is wired through Miniflare bindings, and never
-# appears in production Wrangler configuration.
-audit_path = WORK / 'scripts' / 'audit-lib.mjs'
-if not audit_path.is_file():
-    fail('Missing work/scripts/audit-lib.mjs')
-audit = audit_path.read_text(encoding='utf-8')
-audit_body = (
-    '() => { const v=s("vitest.config.js"); return '
-    'v.includes("import { cloudflareTest } from \'@cloudflare/vitest-pool-workers\';")'
-    ' && v.includes("const TEST_BYOK_MASTER_KEY = \'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\';")'
-    ' && v.includes("plugins:[cloudflareTest({")'
-    ' && v.includes("wrangler:{configPath:\'./tests/worker/wrangler.test.jsonc\'}")'
-    ' && v.includes("miniflare:{bindings:{BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY}}")'
-    ' && !v.includes("@cloudflare/vitest-pool-workers/config")'
-    ' && !s("wrangler.jsonc").includes("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"); }'
-)
-audit = replace_top_level_audit_entry(audit, AUDIT_LABEL, audit_body)
-audit_path.write_text(audit, encoding='utf-8', newline='')
-
-# Keep mutation coverage in lockstep with the migrated safeguard. The mutation
-# removes the exact test-only Miniflare binding; validation must then report the
-# same named safeguard as failed. The exact pre-migration mutation is replaced,
-# not deleted, so this security property remains actively mutation-tested.
-mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
-if not mutation_path.is_file():
-    fail('Missing work/scripts/mutation-suite.mjs')
-mutations = mutation_path.read_text(encoding='utf-8')
-mutations = replace_mutation_for_safeguard(mutations)
-mutation_path.write_text(mutations, encoding='utf-8', newline='')
 
 # Windows checkout/apply can produce CRLF in the patched README while the
 # version-consistency gate intentionally checks an exact release heading. Keep
@@ -159,8 +82,7 @@ version_text = version_text.replace(
 version_path.write_text(version_text, encoding='utf-8', newline='')
 
 # Add an executable regression test so a future registry-latest refresh cannot
-# silently restore the removed package subpath. This is intentionally a source
-# contract test, not a version-number pin.
+# silently restore the removed package subpath or drop D1 migration injection.
 test_path = WORK / 'tests' / 'node' / 'vitest-config-current.test.mjs'
 test_path.write_text("""import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -169,33 +91,35 @@ import path from 'node:path';
 
 const root=path.resolve(import.meta.dirname,'../..');
 
-test('Workers Vitest config uses the current package-root cloudflareTest API',async()=>{
+test('Workers Vitest config uses current package-root API and preserves test bindings',async()=>{
   const text=await readFile(path.join(root,'vitest.config.js'),'utf8');
   assert.match(text,/from ['\"]@cloudflare\\/vitest-pool-workers['\"]/);
   assert.doesNotMatch(text,/@cloudflare\\/vitest-pool-workers\\/config/);
   assert.match(text,/\\bcloudflareTest\\s*\\(/);
+  assert.match(text,/\\breadD1Migrations\\b/);
   assert.match(text,/from ['\"]vitest\\/config['\"]/);
   assert.match(text,/tests\\/worker\\/wrangler\\.test\\.jsonc/);
-  assert.match(text,/BYOK_SESSION_MASTER_KEY_CURRENT/);
+  assert.match(text,/BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY/);
+  assert.match(text,/TEST_MIGRATIONS:await readD1Migrations/);
 });
 """, encoding='utf-8', newline='')
 
 # Postconditions make the repair fail closed if any future candidate structure
 # makes these assumptions invalid.
 final_vitest = vitest_path.read_text(encoding='utf-8')
-final_audit = audit_path.read_text(encoding='utf-8')
-final_mutations = mutation_path.read_text(encoding='utf-8')
 if '@cloudflare/vitest-pool-workers/config' in final_vitest:
     fail('Obsolete Workers Vitest /config import survived migration')
-if "import { cloudflareTest } from '@cloudflare/vitest-pool-workers';" not in final_vitest:
-    fail('Current Workers Vitest cloudflareTest import missing after migration')
-if final_audit.count(f'"{AUDIT_LABEL}"') != 1:
-    fail('Migrated worker-test BYOK safeguard is missing or duplicated')
-if final_mutations.count('remove Workers test BYOK binding -> worker tests inject test-only BYOK secret') != 1:
-    fail('Migrated worker-test BYOK mutation is missing or duplicated')
-if 'remove unit-test BYOK binding' in final_mutations:
-    fail('Obsolete pre-migration BYOK mutation survived migration')
+if "import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers';" not in final_vitest:
+    fail('Current Workers Vitest package-root imports missing after migration')
+for invariant in (
+    'BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY,',
+    "TEST_MIGRATIONS:await readD1Migrations('./migrations')",
+):
+    if final_vitest.count(invariant) != 1:
+        fail(f'Required current Workers test binding missing or duplicated: {invariant}')
+if TEST_BYOK_MASTER_KEY in (WORK / 'wrangler.jsonc').read_text(encoding='utf-8'):
+    fail('Synthetic Workers test BYOK key leaked into production Wrangler config')
 if not readme_path.read_bytes().startswith(f'# Cosmic Transcriber Web {VERSION}\n'.encode('utf-8')):
     fail('README release heading is not canonical LF after normalization')
 
-print('Cosmic Transcriber Web 1.1.0 CI compatibility + exact-line BYOK safeguard/mutation repair PASS.')
+print('Cosmic Transcriber Web 1.1.0 current Workers Vitest + preserved BYOK/D1 binding repair PASS.')
