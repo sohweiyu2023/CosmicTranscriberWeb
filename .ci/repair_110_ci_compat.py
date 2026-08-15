@@ -1,14 +1,53 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WORK = ROOT / 'work'
 VERSION = '1.1.0'
+AUDIT_LABEL = 'worker tests inject test-only BYOK secret'
+TEST_BYOK_MASTER_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 
 
 def fail(message: str) -> None:
     raise SystemExit(message)
+
+
+def replace_top_level_audit_entry(text: str, label: str, replacement_body: str) -> str:
+    pattern = re.compile(rf'(?m)^(?P<indent>[ \t]*)(?P<comma>,?)[ \t]*\["{re.escape(label)}"')
+    hits = list(pattern.finditer(text))
+    if len(hits) != 1:
+        fail(f'Expected exactly one audit safeguard {label!r}; found {len(hits)}')
+    hit = hits[0]
+    indent = hit.group('indent')
+    comma = hit.group('comma')
+    nxt = re.search(rf'(?m)^{re.escape(indent)},?[ \t]*\["', text[hit.end():])
+    end = hit.end() + nxt.start() if nxt else len(text)
+    old_entry = text[hit.start():end]
+    if 'vitest.config.js' not in old_entry or 'BYOK_SESSION_MASTER_KEY_CURRENT' not in old_entry:
+        fail('Reviewed worker-test BYOK safeguard no longer inspects the expected Vitest binding')
+    replacement = f'{indent}{comma}["{label}", {replacement_body}]\n'
+    return text[:hit.start()] + replacement + text[end:]
+
+
+def replace_mutation_for_safeguard(text: str, label: str) -> str:
+    lines = text.splitlines(keepends=True)
+    hits = [i for i, line in enumerate(lines) if label in line]
+    if len(hits) != 1:
+        fail(f'Expected exactly one mutation targeting safeguard {label!r}; found {len(hits)}')
+    index = hits[0]
+    old = lines[index]
+    if 'vitest.config.js' not in old:
+        fail('Reviewed worker-test BYOK mutation no longer targets vitest.config.js')
+    newline = '\r\n' if old.endswith('\r\n') else '\n'
+    lines[index] = (
+        '  ["remove Workers test BYOK binding -> worker tests inject test-only BYOK secret", '
+        '"vitest.config.js", /BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY/, '
+        '"CTW_TEST_BYOK_BINDING_REMOVED:true"],'
+        + newline
+    )
+    return ''.join(lines)
 
 
 if not WORK.is_dir():
@@ -31,22 +70,55 @@ for required in [
     if required not in old_vitest:
         fail(f'1.1.0 Vitest migration precondition missing: {required}')
 
-new_vitest = """import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
-import { defineConfig } from 'vitest/config';
+new_vitest = f"""import {{ cloudflareTest }} from '@cloudflare/vitest-pool-workers';
+import {{ defineConfig }} from 'vitest/config';
 
 // Synthetic TEST-ONLY 32-byte base64url master key injected only into the
 // Workers-runtime test isolate. Production Wrangler still requires a real secret.
-const TEST_BYOK_MASTER_KEY = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const TEST_BYOK_MASTER_KEY = '{TEST_BYOK_MASTER_KEY}';
 
-export default defineConfig({
-  plugins:[cloudflareTest({
-    wrangler:{configPath:'./tests/worker/wrangler.test.jsonc'},
-    miniflare:{bindings:{BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY}}
-  })],
-  test:{include:['tests/worker/**/*.test.js'],testTimeout:20000}
-});
+export default defineConfig({{
+  plugins:[cloudflareTest({{
+    wrangler:{{configPath:'./tests/worker/wrangler.test.jsonc'}},
+    miniflare:{{bindings:{{BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY}}}}
+  }})],
+  test:{{include:['tests/worker/**/*.test.js'],testTimeout:20000}}
+}});
 """
 vitest_path.write_text(new_vitest, encoding='utf-8', newline='')
+
+# The old static safeguard coupled the security property to the removed
+# defineWorkersConfig()/poolOptions syntax. Migrate the gate to the current API
+# while preserving the actual fail-closed property: a synthetic key exists only
+# in the Workers test isolate, is wired through Miniflare bindings, and never
+# appears in production Wrangler configuration.
+audit_path = WORK / 'scripts' / 'audit-lib.mjs'
+if not audit_path.is_file():
+    fail('Missing work/scripts/audit-lib.mjs')
+audit = audit_path.read_text(encoding='utf-8')
+audit_body = (
+    '() => { const v=s("vitest.config.js"); return '
+    'v.includes("import { cloudflareTest } from \'@cloudflare/vitest-pool-workers\';")'
+    ' && v.includes("const TEST_BYOK_MASTER_KEY = \'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\';")'
+    ' && v.includes("plugins:[cloudflareTest({")'
+    ' && v.includes("wrangler:{configPath:\'./tests/worker/wrangler.test.jsonc\'}")'
+    ' && v.includes("miniflare:{bindings:{BYOK_SESSION_MASTER_KEY_CURRENT:TEST_BYOK_MASTER_KEY}}")'
+    ' && !v.includes("@cloudflare/vitest-pool-workers/config")'
+    ' && !s("wrangler.jsonc").includes("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"); }'
+)
+audit = replace_top_level_audit_entry(audit, AUDIT_LABEL, audit_body)
+audit_path.write_text(audit, encoding='utf-8', newline='')
+
+# Keep mutation coverage in lockstep with the migrated safeguard. The mutation
+# removes the exact test-only Miniflare binding; validation must then report the
+# same named safeguard as failed. This replaces, rather than deletes, the old
+# mutation so the security gate remains actively exercised.
+mutation_path = WORK / 'scripts' / 'mutation-suite.mjs'
+if not mutation_path.is_file():
+    fail('Missing work/scripts/mutation-suite.mjs')
+mutations = mutation_path.read_text(encoding='utf-8')
+mutations = replace_mutation_for_safeguard(mutations, AUDIT_LABEL)
+mutation_path.write_text(mutations, encoding='utf-8', newline='')
 
 # Windows checkout/apply can produce CRLF in the patched README while the
 # version-consistency gate intentionally checks an exact release heading. Keep
@@ -99,11 +171,17 @@ test('Workers Vitest config uses the current package-root cloudflareTest API',as
 # Postconditions make the repair fail closed if any future candidate structure
 # makes these assumptions invalid.
 final_vitest = vitest_path.read_text(encoding='utf-8')
+final_audit = audit_path.read_text(encoding='utf-8')
+final_mutations = mutation_path.read_text(encoding='utf-8')
 if '@cloudflare/vitest-pool-workers/config' in final_vitest:
     fail('Obsolete Workers Vitest /config import survived migration')
 if "import { cloudflareTest } from '@cloudflare/vitest-pool-workers';" not in final_vitest:
     fail('Current Workers Vitest cloudflareTest import missing after migration')
+if final_audit.count(f'"{AUDIT_LABEL}"') != 1:
+    fail('Migrated worker-test BYOK safeguard is missing or duplicated')
+if final_mutations.count('remove Workers test BYOK binding -> worker tests inject test-only BYOK secret') != 1:
+    fail('Migrated worker-test BYOK mutation is missing or duplicated')
 if not readme_path.read_bytes().startswith(f'# Cosmic Transcriber Web {VERSION}\n'.encode('utf-8')):
     fail('README release heading is not canonical LF after normalization')
 
-print('Cosmic Transcriber Web 1.1.0 CI compatibility repair PASS.')
+print('Cosmic Transcriber Web 1.1.0 CI compatibility + BYOK safeguard repair PASS.')
