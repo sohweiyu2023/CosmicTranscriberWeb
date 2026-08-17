@@ -32,7 +32,7 @@ jobs:
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H 'X-GitHub-Api-Version: 2022-11-28' \
               "${API_URL}/repos/${REPOSITORY}/actions/runs?head_sha=${HEAD_SHA}&per_page=30")"
-            run_id="$(printf '%s' "$response" | python -c 'import json,sys; data=json.load(sys.stdin); runs=[r for r in data.get("workflow_runs",[]) if r.get("name")=="Cosmic Transcriber Web 1.0.12 Certification"]; print(runs[0]["id"] if runs else "")')"
+            run_id="$(printf '%s' "$response" | python -c 'import json,sys; data=json.load(sys.stdin); runs=[r for r in data.get("workflow_runs",[]) if r.get("name")=="Cosmic Transcriber Web 1.1.1 Certification"]; print(runs[0]["id"] if runs else "")')"
             if [ -n "$run_id" ]; then break; fi
             sleep 5
           done

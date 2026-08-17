@@ -35,6 +35,33 @@ EXPECTED_PARTS = {
     "upgrade_111_delta.b64.19": (1496, "612f8726f9ae38d104ce086e1fec4293b9667da226b666443daafb3f7c114de2"),
 }
 
+
+def replace_once(relative: str, old: str, new: str) -> None:
+    path = WORK / relative
+    text = path.read_text(encoding="utf-8")
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"1.1.1 hardening transform expected one match in {relative}, found {count}: {old[:100]!r}")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def insert_before_once(relative: str, marker: str, addition: str) -> None:
+    path = WORK / relative
+    text = path.read_text(encoding="utf-8")
+    count = text.count(marker)
+    if count != 1:
+        raise SystemExit(f"1.1.1 hardening transform expected one marker in {relative}, found {count}: {marker[:100]!r}")
+    path.write_text(text.replace(marker, addition + marker, 1), encoding="utf-8")
+
+
+def append_once(relative: str, sentinel: str, addition: str) -> None:
+    path = WORK / relative
+    text = path.read_text(encoding="utf-8")
+    if sentinel in text:
+        raise SystemExit(f"1.1.1 hardening transform would duplicate {sentinel!r} in {relative}")
+    path.write_text(text.rstrip() + "\n\n" + addition.rstrip() + "\n", encoding="utf-8")
+
+
 # Start from the exact reviewed/certified 1.1.0 lineage. The existing
 # materializer is itself part of that certified commit.
 subprocess.run(
@@ -91,6 +118,66 @@ with tarfile.open(fileobj=io.BytesIO(payload), mode="r:xz") as archive:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(source.read())
 
+# Final adversarial-review hardening applied after the reviewed delta. Every
+# transform is exact and fail-closed so upstream drift cannot be silently
+# accepted by the certification workflow.
+replace_once(
+    "scripts/configure-registry.mjs",
+    "runWrangler(['d1','create',databaseName]);",
+    "runWrangler(['d1','create',databaseName,'--update-config=false','--experimental-auto-create=false','--experimental-provision=false']);",
+)
+
+replace_once(
+    "tests/node/configure-registry.test.mjs",
+    "import test from 'node:test';",
+    "import { readFile } from 'node:fs/promises';\nimport test from 'node:test';",
+)
+append_once(
+    "tests/node/configure-registry.test.mjs",
+    "registry creation explicitly disables Wrangler config auto-mutation",
+    """test('registry creation explicitly disables Wrangler config auto-mutation', async () => {
+  const source = await readFile(new URL('../../scripts/configure-registry.mjs', import.meta.url), 'utf8');
+  assert.match(source, /d1','create',databaseName,'--update-config=false','--experimental-auto-create=false','--experimental-provision=false'/);
+});""",
+)
+
+insert_before_once(
+    "scripts/audit-lib.mjs",
+    '    ,["guided Windows deployment configures Access then authenticated registry before final verification",',
+    '    ,["registry D1 creation cannot auto-mutate Wrangler configuration", () => /d1\',\'create\',databaseName,\'--update-config=false\',\'--experimental-auto-create=false\',\'--experimental-provision=false\'/.test(s("scripts/configure-registry.mjs"))]\n',
+)
+
+replace_once(
+    "scripts/audit-lib.mjs",
+    '    ,["paste-once launcher is version-specific, unique-run and cmdlet-parameter safe", () => /\\$Version = [\'"]1\\.1\\.1[\'"]/.test(s("PASTE-ONCE-WINDOWS.ps1")) && /New-Item -ItemType Directory -Path \\$runRoot -Force/.test(s("PASTE-ONCE-WINDOWS.ps1")) && !/New-Item[^\\n]*-LiteralPath/.test(s("PASTE-ONCE-WINDOWS.ps1")) && /yyyyMMdd-HHmmss-fff/.test(s("PASTE-ONCE-WINDOWS.ps1")) && /run-\\$stamp/.test(s("PASTE-ONCE-WINDOWS.ps1"))]',
+    '    ,["paste-once launcher is version-specific, unique-run and cmdlet-parameter safe", () => { const launcher=s("PASTE-ONCE-WINDOWS.ps1"), match=/\\$Version = [\'"]([^\'"]+)[\'"]/.exec(launcher), current=JSON.parse(s("package.json")).version; return match?.[1]===current && /New-Item -ItemType Directory -Path \\$runRoot -Force/.test(launcher) && !/New-Item[^\\n]*-LiteralPath/.test(launcher) && /yyyyMMdd-HHmmss-fff/.test(launcher) && /run-\\$stamp/.test(launcher) }]',
+)
+
+insert_before_once(
+    "scripts/mutation-suite.mjs",
+    "const mutations = [",
+    'const currentVersion = JSON.parse(files["package.json"]).version;\nconst escapedVersion = currentVersion.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");\n\n',
+)
+for old, new in (
+    ('["drift deployed APP_VERSION from package version", "wrangler.jsonc", /"APP_VERSION": "1\\.1\\.1"/, \'"APP_VERSION": "0.0.0"\']', '["drift deployed APP_VERSION from package version", "wrangler.jsonc", new RegExp(`"APP_VERSION": "${escapedVersion}"`), \'"APP_VERSION": "0.0.0"\']'),
+    ('["drift Worker Vitest runtime APP_VERSION from package version", "tests/worker/wrangler.test.jsonc", /"APP_VERSION": "1\\.1\\.1"/, \'"APP_VERSION": "0.0.0"\']', '["drift Worker Vitest runtime APP_VERSION from packae version", "tests/worker/wrangler.test.jsonc", new RegExp(`"APP_VERSION": "${escapedVersion}"`), \'"APP_VERSION": "0.0.0"\']'),
+    ('["drift integration runtime APP_VERSION from package version", "tests/integration/wrangler.test.jsonc", /"APP_VERSION":"1\\.1\\.1"/, \'"APP_VERSION":"0.0.0"\']', '["drift integration runtime APP_VERSION from packae version", "tests/integration/wrangler.test.jsonc", new RegExp(`"APP_VERSION":"${escapedVersion}"`), \'"APP_VERSION":"0.0.0"\']'),
+    ('["drift E2E mock runtime version from package version", "tests/e2e/mock-server.mjs", /version:\'1\\.1\\.1\'/, "version:\'0.0.0\'"]', '["drift E2E mock runtime version from packae version", "tests/e2e/mock-server.mjs", new RegExp(`version:\'${escapedVersion}\'`), "version:\'0.0.0\'"]'),
+):
+    replace_once("scripts/mutation-suite.mjs", old, new)
+
+insert_before_once(
+    "scripts/mutation-suite.mjs",
+    '  ["remove mutation-suite baseline guard",',
+    '  ["allow Wrangler D1 create to mutate config", "scripts/configure-registry.mjs", /,\'--update-config=false\',\'--experimental-auto-create=false\',\'--experimental-provision=false\'/g, ""],\n',
+)
+
+replace_once(
+    "docs/CHANGELOG.md",
+    "- Adds additive D1 migration `0002_usage_result_receipts.sql`, regression tests, static safeguards and mutation tests for the repaired paths.",
+    "- Prevents `wrangler d1 create` from auto-editing or auto-provisioning the certified Wrangler configuration by explicitly disabling config update, auto-create, and experimental provisioning during registry creation.\n- Adds additive D1 migration `0002_usage_result_receipts.sql`, regression tests, static safeguards and mutation tests for the repaired paths.",
+)
+
 # Generated Windows evidence is never source and must not survive into a new
 # release candidate even if an older materializer happened to leave it behind.
 for generated in (
@@ -111,4 +198,5 @@ if manifest.get("releaseReady") is not False:
 
 print("1.1.1 delta per-part integrity PASS.")
 print(f"1.1.1 reviewed delta SHA-256 PASS: {got_sha256}")
-print("Materialized reviewed CosmicTranscriberWeb 1.1.1 candidate (releaseReady:false).")
+print("1.1.1 final adversarial-review hardening PASS.")
+print("Materialized reviewe CosmicTranscriberWeb 1.1.1 candidate (releaseReady:false).")
