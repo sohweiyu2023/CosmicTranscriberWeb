@@ -18,8 +18,9 @@ if (!base || !candidate) {
 
 const EXPECTED_CANDIDATE_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
 const IGNORE_DIRS = new Set(['.git', 'node_modules', '.wrangler', 'dist', 'coverage', 'evidence']);
-const REQUIRED_BASE = ['package.json','RELEASE_MANIFEST.json'];
-const REQUIRED_CANDIDATE = ['package.json','package-lock.json','app.js','wrangler.toml','RELEASE_MANIFEST.json','scripts/validate.mjs','tests'];
+const REQUIRED_BASE_FILES = ['package.json','RELEASE_MANIFEST.json'];
+const REQUIRED_CANDIDATE_FILES = ['package.json','package-lock.json','app.js','wrangler.toml','RELEASE_MANIFEST.json','scripts/validate.mjs'];
+const REQUIRED_CANDIDATE_DIRS = ['tests'];
 const CRITICAL_PATH_PATTERNS = [
   /^app\.js$/,
   /^worker(?:\/|\.|$)/i,
@@ -38,10 +39,21 @@ function fail(message, code = 1) {
 function ensureDir(p, label) {
   if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) fail(`${label} is not a directory: ${p}`, 2);
 }
-function requirePaths(root, required, label) {
-  const missing = required.filter((p)=>!fs.existsSync(path.join(root,p)));
-  if (missing.length) fail(`${label} is incomplete. Missing: ${missing.join(', ')}`);
+function requireFiles(root, required, label) {
+  const invalid = required.filter((p)=>{
+    const abs = path.join(root,p);
+    return !fs.existsSync(abs) || !fs.statSync(abs).isFile();
+  });
+  if (invalid.length) fail(`${label} is incomplete. Missing/non-file: ${invalid.join(', ')}`);
 }
+function requireDirs(root, required, label) {
+  const invalid = required.filter((p)=>{
+    const abs = path.join(root,p);
+    return !fs.existsSync(abs) || !fs.statSync(abs).isDirectory();
+  });
+  if (invalid.length) fail(`${label} is incomplete. Missing/non-directory: ${invalid.join(', ')}`);
+}
+
 function walk(root) {
   const out = [];
   function visit(rel) {
@@ -71,8 +83,9 @@ function critical(rel) { return CRITICAL_PATH_PATTERNS.some((r)=>r.test(rel)); }
 
 ensureDir(base, 'Base');
 ensureDir(candidate, 'Candidate');
-requirePaths(base, REQUIRED_BASE, 'V1.1.1 audit base');
-requirePaths(candidate, REQUIRED_CANDIDATE, 'V1.2 audit candidate');
+requireFiles(base, REQUIRED_BASE_FILES, 'V1.1.1 audit base');
+requireFiles(candidate, REQUIRED_CANDIDATE_FILES, 'V1.2 audit candidate');
+requireDirs(candidate, REQUIRED_CANDIDATE_DIRS, 'V1.2 audit candidate');
 
 const basePkg = readJson(path.join(base,'package.json'), 'base package.json');
 const baseManifest = readJson(path.join(base,'RELEASE_MANIFEST.json'), 'base RELEASE_MANIFEST.json');
@@ -118,15 +131,21 @@ if (fs.existsSync(deletionAllowlistPath)) {
   const parsed = readJson(deletionAllowlistPath, 'V1.2 deletion allowlist');
   if (!Array.isArray(parsed)) fail('V1.2 deletion allowlist must be a JSON array');
   for (const item of parsed) {
-    if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string' || !item.reason.trim()) {
-      fail('Each V1.2 deletion allowlist entry requires non-empty path and reason strings');
+    if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string' || !item.reason.trim() || typeof item.baseSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(item.baseSha256)) {
+      fail('Each V1.2 deletion allowlist entry requires non-empty path/reason strings and a lowercase 64-hex baseSha256');
     }
     const normalizedPath = item.path.replaceAll('\\','/');
     if (normalizedPath !== item.path || normalizedPath.startsWith('/') || normalizedPath.split('/').includes('..') || normalizedPath === '') {
       fail(`Unsafe V1.2 deletion allowlist path: ${JSON.stringify(item.path)}`);
     }
     if (allow.has(normalizedPath)) fail(`Duplicate V1.2 deletion allowlist path: ${normalizedPath}`);
-    allow.set(normalizedPath, item.reason.trim());
+    const baseFile = path.join(base, normalizedPath);
+    if (!fs.existsSync(baseFile) || !fs.statSync(baseFile).isFile()) fail(`Deletion allowlist path is not a regular file in the V1.1.1 base: ${normalizedPath}`);
+    const actualBaseSha256 = sha256(baseFile);
+    if (actualBaseSha256 !== item.baseSha256) {
+      fail(`Deletion allowlist baseSha256 mismatch for ${normalizedPath}: expected ${item.baseSha256}, actual ${actualBaseSha256}`);
+    }
+    allow.set(normalizedPath, {reason:item.reason.trim(), baseSha256:item.baseSha256});
   }
 }
 
@@ -144,7 +163,7 @@ const report = {
   counts: { added:added.length, modified:modified.length, deleted:deleted.length, unchanged:unchanged.length, unexplainedDeleted:unexplainedDeleted.length, staleAllowlist:staleAllowlist.length, criticalDeleted:criticalDeleted.length, criticalModified:criticalModified.length },
   added,
   modified,
-  deleted: deleted.map((p)=>({path:p, allowed:allow.has(p), reason:allow.get(p) ?? null, critical:critical(p)})),
+  deleted: deleted.map((p)=>({path:p, allowed:allow.has(p), reason:allow.get(p)?.reason ?? null, baseSha256:allow.get(p)?.baseSha256 ?? null, critical:critical(p)})),
   unexplainedDeleted,
   staleAllowlist,
   criticalDeleted,
