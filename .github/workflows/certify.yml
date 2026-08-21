@@ -11,11 +11,13 @@ permissions:
 
 # IMPORTANT:
 # This branch currently contains only the CI/documentation shell, not the
-# complete CosmicTranscriberWeb-1.2.0-dev application source. The historical
-# 1.0.12 certification workflow previously present here was unsafe to retain:
-# it used Node 24.19.0, MP3-only fixture transfer and 1.0.12 artifact names.
-# Until the exact V1.2 source is synchronized, CI must fail closed rather than
-# emit evidence that could be mistaken for V1.2 release certification.
+# complete CosmicTranscriberWeb-1.2.0-dev application source. Until the exact
+# V1.2 source is synchronized, CI must fail closed rather than emit evidence
+# that could be mistaken for release certification.
+#
+# This guard is deliberately NOT a certification workflow. Even when an exact
+# source tree is synchronized and the provenance checks below pass, this job
+# exits non-zero until the reviewed V1.2 certification matrix is restored.
 
 jobs:
   source-provenance-guard:
@@ -24,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Refuse certification of CI/documentation shell
+      - name: Validate source identity, then refuse certification
         shell: bash
         run: |
           set -euo pipefail
@@ -34,6 +36,7 @@ jobs:
             package-lock.json
             app.js
             wrangler.toml
+            RELEASE_MANIFEST.json
             scripts/validate.mjs
             tests
           )
@@ -54,8 +57,52 @@ jobs:
             exit 1
           fi
 
-          printf 'Source markers are present, but this guard intentionally does not certify V1.2.\n' >&2
-          printf 'Restore the reviewed V1.2 certification workflow only after exact source synchronization,\n' >&2
-          printf 'including Node 26.7.0/npm 12.0.2, nine-format fixtures, Worker/integration/browser\n' >&2
-          printf 'matrices, Windows release certification, fresh-ZIP revalidation and all-green aggregation.\n' >&2
+          # Presence alone is insufficient: a stale 1.0.x/1.1.x tree could
+          # otherwise satisfy the marker list. Use Node's built-in JSON parser
+          # so this check has no npm/dependency prerequisite.
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function readJson(path) {
+            try {
+              return JSON.parse(fs.readFileSync(path, 'utf8'));
+            } catch (error) {
+              console.error(`V1.2 provenance BLOCKED: ${path} is not valid JSON: ${error.message}`);
+              process.exit(1);
+            }
+          }
+
+          const pkg = readJson('package.json');
+          const manifest = readJson('RELEASE_MANIFEST.json');
+          const failures = [];
+
+          if (pkg.version !== '1.2.0') {
+            failures.push(`package.json version must be 1.2.0; found ${JSON.stringify(pkg.version)}`);
+          }
+          if (manifest.product !== 'Cosmic Transcriber Web') {
+            failures.push(`RELEASE_MANIFEST.json product mismatch: ${JSON.stringify(manifest.product)}`);
+          }
+          if (manifest.version !== '1.2.0') {
+            failures.push(`RELEASE_MANIFEST.json version must be 1.2.0; found ${JSON.stringify(manifest.version)}`);
+          }
+          if (manifest.releaseReady !== false) {
+            failures.push(`development candidate must have releaseReady:false; found ${JSON.stringify(manifest.releaseReady)}`);
+          }
+
+          if (failures.length) {
+            console.error('V1.2 provenance BLOCKED: synchronized tree has stale or unsafe identity:');
+            for (const failure of failures) console.error(` - ${failure}`);
+            process.exit(1);
+          }
+
+          console.error('V1.2 source identity markers PASS: package/manifest both identify 1.2.0 and releaseReady:false.');
+          NODE
+
+          printf '\nSource identity is plausible, but this guard intentionally does not certify V1.2.\n' >&2
+          printf 'Before this workflow may be replaced, compare the synchronized tree against the exact local\n' >&2
+          printf 'V1.2 candidate provenance (including lockfile/checksum evidence) and complete the mandatory\n' >&2
+          printf 'V1.1.1 -> V1.2 adversarial regression audit.\n\n' >&2
+          printf 'Then restore the reviewed V1.2 certification matrix, including Node 26.7.0/npm 12.0.2,\n' >&2
+          printf 'nine-format fixtures, Worker/integration/browser matrices, Windows release certification,\n' >&2
+          printf 'fresh-ZIP revalidation and all-green aggregation.\n' >&2
           exit 1
