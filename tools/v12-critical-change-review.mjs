@@ -47,6 +47,13 @@ function safeRel(rel, label) {
   }
   return rel;
 }
+function requireRegularCandidateFile(root, rel, label) {
+  const abs = path.join(root, rel);
+  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) {
+    fail(`${label} is not a regular candidate file: ${rel}`);
+  }
+  return abs;
+}
 
 if (!fs.existsSync(auditPath) || !fs.statSync(auditPath).isFile()) fail(`Audit JSON is not a file: ${auditPath}`, 2);
 if (!fs.existsSync(candidate) || !fs.statSync(candidate).isDirectory()) fail(`Candidate is not a directory: ${candidate}`, 2);
@@ -57,25 +64,34 @@ if (audit.status !== 'PASS') fail(`Critical-change review BLOCKED: regression au
 if (!audit.candidate || audit.candidate.version !== '1.2.0') fail('Critical-change review BLOCKED: audit candidate is not V1.2.0');
 if (!Array.isArray(audit.added) || !Array.isArray(audit.modified)) fail('Critical-change review BLOCKED: audit added/modified collections are missing');
 
+const resolvedCandidate = path.resolve(candidate);
+if (typeof audit.candidate.root !== 'string' || path.resolve(audit.candidate.root) !== resolvedCandidate) {
+  fail(`Critical-change review BLOCKED: audit candidate root does not match the candidate being reviewed.\n audit: ${JSON.stringify(audit.candidate.root)}\n current: ${resolvedCandidate}`);
+}
+
 const expected = new Map();
 for (const item of audit.modified) {
   if (!item || typeof item.path !== 'string' || typeof item.baseSha256 !== 'string' || typeof item.candidateSha256 !== 'string') {
     fail('Critical-change review BLOCKED: malformed modified entry in regression audit');
   }
   if (!critical(item.path)) continue;
-  safeRel(item.path, 'Regression audit modified entry');
-  expected.set(`modified:${item.path}`, {
-    path: item.path,
+  const rel = safeRel(item.path, 'Regression audit modified entry');
+  const abs = requireRegularCandidateFile(candidate, rel, 'Critical-change review BLOCKED: critical modified path');
+  const currentCandidateSha256 = sha256(abs);
+  if (currentCandidateSha256 !== item.candidateSha256) {
+    fail(`Critical-change review BLOCKED: stale regression audit for modified critical file ${rel}.\n audit candidateSha256: ${item.candidateSha256}\n current candidateSha256: ${currentCandidateSha256}`);
+  }
+  expected.set(`modified:${rel}`, {
+    path: rel,
     change: 'modified',
     baseSha256: item.baseSha256,
-    candidateSha256: item.candidateSha256
+    candidateSha256: currentCandidateSha256
   });
 }
 for (const raw of audit.added) {
   const rel = safeRel(raw, 'Regression audit added entry');
   if (!critical(rel)) continue;
-  const abs = path.join(candidate, rel);
-  if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) fail(`Critical-change review BLOCKED: critical added path is not a regular candidate file: ${rel}`);
+  const abs = requireRegularCandidateFile(candidate, rel, 'Critical-change review BLOCKED: critical added path');
   expected.set(`added:${rel}`, {
     path: rel,
     change: 'added',
@@ -124,11 +140,13 @@ if (mismatched.length) fail(`Critical-change review BLOCKED: hash mismatch: ${mi
 if (unreviewed.length) fail(`Critical-change review BLOCKED: unreviewed critical changes: ${unreviewed.join(', ')}`);
 
 const summary = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: 'PASS',
+  candidateRoot: resolvedCandidate,
   criticalAddedOrModified: expected.size,
   reviewed: seen.size,
-  note: 'PASS means critical added/modified file provenance is explicitly reviewed against exact hashes. It is NOT V1.2 release certification.'
+  staleAuditReplayProtection: true,
+  note: 'PASS means critical added/modified file provenance is explicitly reviewed against exact current candidate hashes. It is NOT V1.2 release certification.'
 };
 console.log(JSON.stringify(summary, null, 2));
 console.error('V1.2 critical-change provenance review PASS (not release certification).');
