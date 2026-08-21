@@ -98,10 +98,21 @@ jobs:
           console.error('V1.2 source identity markers PASS: package/manifest both identify 1.2.0 and releaseReady:false.');
           NODE
 
+          expected_lock_sha='1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c'
+          actual_lock_sha="$(sha256sum package-lock.json | awk '{print $1}')"
+          if [[ "$actual_lock_sha" != "$expected_lock_sha" ]]; then
+            printf 'V1.2 provenance BLOCKED: package-lock.json does not match the reviewed development candidate.\n' >&2
+            printf ' expected: %s\n' "$expected_lock_sha" >&2
+            printf ' actual:   %s\n' "$actual_lock_sha" >&2
+            printf 'Do not refresh dependencies or bless a new lockfile implicitly; review and record any dependency change first.\n' >&2
+            exit 1
+          fi
+          printf 'V1.2 reviewed package-lock SHA-256: PASS\n' >&2
+
           printf '\nSource identity is plausible, but this guard intentionally does not certify V1.2.\n' >&2
           printf 'Before this workflow may be replaced, compare the synchronized tree against the exact local\n' >&2
-          printf 'V1.2 candidate provenance (including lockfile/checksum evidence) and complete the mandatory\n' >&2
-          printf 'V1.1.1 -> V1.2 adversarial regression audit.\n\n' >&2
+          printf 'V1.2 candidate provenance/checksum inventory and complete the mandatory V1.1.1 -> V1.2\n' >&2
+          printf 'adversarial regression audit.\n\n' >&2
           printf 'Then restore the reviewed V1.2 certification matrix, including Node 26.7.0/npm 12.0.2,\n' >&2
           printf 'nine-format fixtures, Worker/integration/browser matrices, Windows release certification,\n' >&2
           printf 'fresh-ZIP revalidation and all-green aggregation.\n' >&2
