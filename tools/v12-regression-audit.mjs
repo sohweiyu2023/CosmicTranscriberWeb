@@ -16,7 +16,9 @@ if (!base || !candidate) {
   process.exit(2);
 }
 
+const EXPECTED_CANDIDATE_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
 const IGNORE_DIRS = new Set(['.git', 'node_modules', '.wrangler', 'dist', 'coverage', 'evidence']);
+const REQUIRED_BASE = ['package.json','RELEASE_MANIFEST.json'];
 const REQUIRED_CANDIDATE = ['package.json','package-lock.json','app.js','wrangler.toml','RELEASE_MANIFEST.json','scripts/validate.mjs','tests'];
 const CRITICAL_PATH_PATTERNS = [
   /^app\.js$/,
@@ -36,6 +38,10 @@ function fail(message, code = 1) {
 function ensureDir(p, label) {
   if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) fail(`${label} is not a directory: ${p}`, 2);
 }
+function requirePaths(root, required, label) {
+  const missing = required.filter((p)=>!fs.existsSync(path.join(root,p)));
+  if (missing.length) fail(`${label} is incomplete. Missing: ${missing.join(', ')}`);
+}
 function walk(root) {
   const out = [];
   function visit(rel) {
@@ -46,6 +52,7 @@ function walk(root) {
       const childRel = rel ? `${rel}/${ent.name}` : ent.name;
       if (ent.isDirectory()) visit(childRel);
       else if (ent.isFile()) out.push(childRel.replaceAll('\\','/'));
+      else if (ent.isSymbolicLink()) fail(`V1.2 audit BLOCKED: symbolic links are not permitted in compared source trees: ${childRel}`);
     }
   }
   visit('');
@@ -64,9 +71,17 @@ function critical(rel) { return CRITICAL_PATH_PATTERNS.some((r)=>r.test(rel)); }
 
 ensureDir(base, 'Base');
 ensureDir(candidate, 'Candidate');
+requirePaths(base, REQUIRED_BASE, 'V1.1.1 audit base');
+requirePaths(candidate, REQUIRED_CANDIDATE, 'V1.2 audit candidate');
 
-const missing = REQUIRED_CANDIDATE.filter((p)=>!fs.existsSync(path.join(candidate,p)));
-if (missing.length) fail(`V1.2 audit BLOCKED: candidate source is incomplete. Missing: ${missing.join(', ')}`);
+const basePkg = readJson(path.join(base,'package.json'), 'base package.json');
+const baseManifest = readJson(path.join(base,'RELEASE_MANIFEST.json'), 'base RELEASE_MANIFEST.json');
+const baseIdentityFailures = [];
+if (basePkg.version !== '1.1.1') baseIdentityFailures.push(`package.json version=${JSON.stringify(basePkg.version)}`);
+if (baseManifest.product !== 'Cosmic Transcriber Web') baseIdentityFailures.push(`manifest product=${JSON.stringify(baseManifest.product)}`);
+if (baseManifest.version !== '1.1.1') baseIdentityFailures.push(`manifest version=${JSON.stringify(baseManifest.version)}`);
+if (baseManifest.releaseReady !== true) baseIdentityFailures.push(`manifest releaseReady=${JSON.stringify(baseManifest.releaseReady)} (certified comparison base must be true)`);
+if (baseIdentityFailures.length) fail(`V1.2 audit BLOCKED: comparison base is not the certified V1.1.1 identity:\n - ${baseIdentityFailures.join('\n - ')}`);
 
 const pkg = readJson(path.join(candidate,'package.json'), 'candidate package.json');
 const manifest = readJson(path.join(candidate,'RELEASE_MANIFEST.json'), 'candidate RELEASE_MANIFEST.json');
@@ -76,6 +91,11 @@ if (manifest.product !== 'Cosmic Transcriber Web') identityFailures.push(`manife
 if (manifest.version !== '1.2.0') identityFailures.push(`manifest version=${JSON.stringify(manifest.version)}`);
 if (manifest.releaseReady !== false) identityFailures.push(`manifest releaseReady=${JSON.stringify(manifest.releaseReady)} (must be false during development)`);
 if (identityFailures.length) fail(`V1.2 audit BLOCKED: unsafe/stale candidate identity:\n - ${identityFailures.join('\n - ')}`);
+
+const candidateLockSha256 = sha256(path.join(candidate,'package-lock.json'));
+if (candidateLockSha256 !== EXPECTED_CANDIDATE_LOCK_SHA256) {
+  fail(`V1.2 audit BLOCKED: candidate package-lock.json does not match the reviewed development candidate.\n expected: ${EXPECTED_CANDIDATE_LOCK_SHA256}\n actual:   ${candidateLockSha256}`);
+}
 
 const baseFiles = walk(base);
 const candFiles = walk(candidate);
@@ -101,7 +121,12 @@ if (fs.existsSync(deletionAllowlistPath)) {
     if (!item || typeof item.path !== 'string' || typeof item.reason !== 'string' || !item.reason.trim()) {
       fail('Each V1.2 deletion allowlist entry requires non-empty path and reason strings');
     }
-    allow.set(item.path, item.reason.trim());
+    const normalizedPath = item.path.replaceAll('\\','/');
+    if (normalizedPath !== item.path || normalizedPath.startsWith('/') || normalizedPath.split('/').includes('..') || normalizedPath === '') {
+      fail(`Unsafe V1.2 deletion allowlist path: ${JSON.stringify(item.path)}`);
+    }
+    if (allow.has(normalizedPath)) fail(`Duplicate V1.2 deletion allowlist path: ${normalizedPath}`);
+    allow.set(normalizedPath, item.reason.trim());
   }
 }
 
@@ -111,11 +136,11 @@ const criticalDeleted = deleted.filter(critical);
 const criticalModified = modified.map((x)=>x.path).filter(critical);
 
 const report = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: unexplainedDeleted.length || staleAllowlist.length ? 'BLOCKED' : 'PASS',
   releaseReady: manifest.releaseReady,
-  base: { root:path.resolve(base), fileCount:baseFiles.length },
-  candidate: { root:path.resolve(candidate), fileCount:candFiles.length, version:pkg.version },
+  base: { root:path.resolve(base), fileCount:baseFiles.length, version:basePkg.version, releaseReady:baseManifest.releaseReady },
+  candidate: { root:path.resolve(candidate), fileCount:candFiles.length, version:pkg.version, packageLockSha256:candidateLockSha256 },
   counts: { added:added.length, modified:modified.length, deleted:deleted.length, unchanged:unchanged.length, unexplainedDeleted:unexplainedDeleted.length, staleAllowlist:staleAllowlist.length, criticalDeleted:criticalDeleted.length, criticalModified:criticalModified.length },
   added,
   modified,
@@ -124,7 +149,7 @@ const report = {
   staleAllowlist,
   criticalDeleted,
   criticalModified,
-  note: 'PASS means only that file-level deletion provenance and candidate identity passed. It is NOT V1.2 release certification.'
+  note: 'PASS means only that base/candidate identity, candidate dependency-lock provenance, and file-level deletion provenance passed. It is NOT V1.2 release certification.'
 };
 
 const text = JSON.stringify(report,null,2) + '\n';
