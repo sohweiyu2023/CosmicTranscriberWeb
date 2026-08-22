@@ -1,0 +1,98 @@
+name: Materialize V1.2 Batch 4 review source R2
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/materialize-v12-batch4-review-source-r2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: cosmic-v12-materialize-batch4-review-source-r2
+  cancel-in-progress: false
+
+env:
+  V12_ROOT: ${{ runner.temp }}/v12-materialize-r2/CosmicTranscriberWeb-1.2.0-dev
+  TARGET_BRANCH: dev/v1.2.0-product-batch4-review-r2
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041 # v6.4.0
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+
+      - name: Pin exact npm and reconstruct exact Batch 4 source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          bash tools/v12-reconstruct-through-batch4.sh "$V12_ROOT"
+          test "$(node -p "require('$V12_ROOT/package.json').version")" = '1.2.0'
+          test "$(node -p "require('$V12_ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+
+      - name: Exact focused dependency and billing-boundary gates
+        working-directory: ${{ runner.temp }}/v12-materialize-r2/CosmicTranscriberWeb-1.2.0-dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run validate
+          npm run audit:secrets
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+          npm run test:worker
+          npm run test:integration
+          npm run build:inspect
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+
+      - name: Publish isolated non-certifying review branch
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "refs/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "Refusing to overwrite existing review branch: $TARGET_BRANCH" >&2
+            exit 1
+          fi
+          rm -rf "$V12_ROOT/node_modules" "$V12_ROOT/dist" "$V12_ROOT/coverage" "$V12_ROOT/.wrangler" "$V12_ROOT/evidence" "$V12_ROOT/test-results" "$V12_ROOT/playwright-report" "$V12_ROOT/blob-report" "$V12_ROOT/.git"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --orphan v12-batch4-review-materialized-r2
+          git rm -rf .
+          git clean -fdx
+          (cd "$V12_ROOT" && tar -cf - .) | tar -xf -
+          cat > V1.2_REVIEW_SOURCE_PROVENANCE.json <<EOF
+          {
+            "schema": "cosmic-v12-materialized-review-source-1",
+            "version": "1.2.0",
+            "batch": 4,
+            "sourceShellCommit": "$SOURCE_SHA",
+            "releaseReady": false,
+            "v12Certified": false,
+            "productionV111Touched": false,
+            "stagingTouched": false,
+            "purpose": "Review-only Batch 4 materialization after exact Node 26.7.0/npm 12.0.2 validation, dependency, Worker, integration and build-inspection gates. Not a release candidate."
+          }
+          EOF
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Materialize V1.2 Batch 4 review source R2'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
