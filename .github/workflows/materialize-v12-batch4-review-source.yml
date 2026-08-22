@@ -21,7 +21,7 @@ env:
 
 jobs:
   materialize:
-    name: Reconstruct and publish non-certifying Batch 4 review tree
+    name: Reconstruct + exact Worker/integration gates + publish Batch 4 review tree
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -73,6 +73,37 @@ jobs:
             package-lock.json | sha256sum -c -
           npm run validate
           npm run audit:secrets
+
+      - name: Install exact reviewed dependency graph
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        run: npm ci
+
+      - name: Verify dependency policy and npm audit
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run deps:install-scripts:verify && npm audit
+
+      - name: Exact-toolchain Worker Vitest
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:worker
+
+      - name: Whole-Worker integration including Batch 4 zero-paid-dispatch MPEG regressions
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:integration
+
+      - name: Build inspection after billing-boundary change
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run build:inspect
+
+      - name: Reassert non-release boundary after executable gates
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').version")" = '1.2.0'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            package-lock.json | sha256sum -c -
 
       - name: Strip generated state and compute deterministic review-tree identity
         shell: bash
@@ -135,7 +166,7 @@ jobs:
             "v12Certified": false,
             "productionV111Touched": false,
             "stagingTouched": false,
-            "purpose": "Review-only materialization of the hash-pinned Batch 4 reconstructed source. This branch is not a release candidate and must not be deployed or packaged as certified."
+            "purpose": "Review-only materialization of the hash-pinned Batch 4 reconstructed source after exact Node 26.7.0/npm 12.0.2 Worker, integration, dependency-policy, npm-audit and build-inspection gates. This branch is not a release candidate and must not be deployed or packaged as certified."
           }
           EOF
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
@@ -153,7 +184,7 @@ jobs:
             echo
             echo "- Review branch: \`$TARGET_BRANCH\`"
             echo '- Reconstructed from the exact hash-pinned V1.1.1 + V1.2 Batch 1-4 chain: **yes**'
-            echo '- Dependency-free validation / secret audit: **passed if this job reached here**'
+            echo '- Exact Node 26.7.0 / npm 12.0.2 dependency, Worker, integration and build-inspection gates: **passed if this job reached here**'
             echo '- releaseReady: **false**'
             echo '- V1.2 certified: **no**'
             echo '- Production V1.1.1 changed: **no**'
