@@ -15,18 +15,20 @@ if (!base || !candidate || typeof expectedBaseTreeSha256 !== 'string' || !/^[a-f
 }
 
 const EXPECTED_CANDIDATE_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
-const IGNORE_DIRS = new Set(['.git','node_modules','.wrangler','dist','coverage','evidence']);
+const TREE_HASH_ALGORITHM = 'sha256-path-utf8-nul-filehash-ascii-lf-codeunit-sort-v1';
+const IGNORE_ROOT_DIRS = new Set(['.git','node_modules','.wrangler','dist','coverage','evidence']);
 const REQUIRED_BASE_FILES = ['package.json','RELEASE_MANIFEST.json'];
 const REQUIRED_CANDIDATE_FILES = ['package.json','package-lock.json','app.js','wrangler.toml','RELEASE_MANIFEST.json','scripts/validate.mjs'];
 const REQUIRED_CANDIDATE_DIRS = ['tests'];
 const CRITICAL_PATH_PATTERNS = [/^app\.js$/, /^worker(?:\/|\.|$)/i, /^src\/.*(?:session|checkpoint|transcrib|billing|auth|access|key)/i, /^scripts\/.*(?:deploy|configure|rollback|validate|certif)/i, /^tests\/.*(?:session|checkpoint|billing|format|mime|wrangler|deploy|auth)/i, /^wrangler\.toml$/, /^package(?:-lock)?\.json$/, /^RELEASE_MANIFEST\.json$/];
 function fail(message, code=1){ console.error(message); process.exit(code); }
+function compareNames(a,b){ return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }
 function ensureDir(p,label){ if(!fs.existsSync(p)||!fs.statSync(p).isDirectory()||fs.lstatSync(p).isSymbolicLink()) fail(`${label} is not a real directory: ${p}`,2); }
 function requireFiles(root,required,label){ const invalid=required.filter(p=>{const a=path.join(root,p);return !fs.existsSync(a)||!fs.statSync(a).isFile()||fs.lstatSync(a).isSymbolicLink();}); if(invalid.length) fail(`${label} is incomplete. Missing/non-regular-file: ${invalid.join(', ')}`); }
 function requireDirs(root,required,label){ const invalid=required.filter(p=>{const a=path.join(root,p);return !fs.existsSync(a)||!fs.statSync(a).isDirectory()||fs.lstatSync(a).isSymbolicLink();}); if(invalid.length) fail(`${label} is incomplete. Missing/non-real-directory: ${invalid.join(', ')}`); }
-function walk(root){ const out=[]; function visit(rel){ for(const ent of fs.readdirSync(path.join(root,rel),{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){ if(IGNORE_DIRS.has(ent.name)) continue; const child=rel?`${rel}/${ent.name}`:ent.name; if(ent.isDirectory()) visit(child); else if(ent.isFile()) out.push(child.replaceAll('\\','/')); else if(ent.isSymbolicLink()) fail(`V1.2 audit BLOCKED: symbolic links are not permitted in compared source trees: ${child}`); else fail(`V1.2 audit BLOCKED: unsupported filesystem entry: ${child}`); }} visit(''); return out; }
+function walk(root){ const out=[]; function visit(rel){ for(const ent of fs.readdirSync(path.join(root,rel),{withFileTypes:true}).sort(compareNames)){ if(!rel&&IGNORE_ROOT_DIRS.has(ent.name)) continue; const child=rel?`${rel}/${ent.name}`:ent.name; if(ent.isDirectory()) visit(child); else if(ent.isFile()) out.push(child.replaceAll('\\','/')); else if(ent.isSymbolicLink()) fail(`V1.2 audit BLOCKED: symbolic links are not permitted in compared source trees: ${child}`); else fail(`V1.2 audit BLOCKED: unsupported filesystem entry: ${child}`); }} visit(''); return out; }
 function sha256(file){const h=crypto.createHash('sha256');h.update(fs.readFileSync(file));return h.digest('hex');}
-function treeSha256(root,files){const h=crypto.createHash('sha256');for(const rel of files){h.update(Buffer.from(rel));h.update(Buffer.from([0]));h.update(Buffer.from(sha256(path.join(root,rel))));h.update(Buffer.from([10]));}return h.digest('hex');}
+function treeSha256(root,files){const h=crypto.createHash('sha256');for(const rel of files){h.update(Buffer.from(rel,'utf8'));h.update(Buffer.from([0]));h.update(Buffer.from(sha256(path.join(root,rel)),'ascii'));h.update(Buffer.from([10]));}return h.digest('hex');}
 function readJson(file,label){try{return JSON.parse(fs.readFileSync(file,'utf8'));}catch(e){fail(`${label} is not valid JSON: ${e.message}`);}}
 function critical(rel){return CRITICAL_PATH_PATTERNS.some(r=>r.test(rel));}
 
@@ -48,7 +50,7 @@ if(bf.length)fail(`V1.2 audit BLOCKED: comparison base is not the certified V1.1
 const baseFiles=walk(base);
 const baseTreeSha256=treeSha256(base,baseFiles);
 if(baseTreeSha256!==expectedBaseTreeSha256){
-  fail(`V1.2 audit BLOCKED: certified V1.1.1 materialized base tree SHA-256 mismatch.\n expected: ${expectedBaseTreeSha256}\n actual:   ${baseTreeSha256}\nRecover the exact certified V1.1.1 artifact and independently verify its materialized tree before comparison.`);
+  fail(`V1.2 audit BLOCKED: certified V1.1.1 materialized base tree SHA-256 mismatch.\n expected: ${expectedBaseTreeSha256}\n actual:   ${baseTreeSha256}\n algorithm: ${TREE_HASH_ALGORITHM}\nRecover the exact certified V1.1.1 artifact and independently verify its materialized tree before comparison.`);
 }
 
 const pkg=readJson(path.join(candidate,'package.json'),'candidate package.json');
@@ -91,6 +93,7 @@ if(fs.existsSync(deletionAllowlistPath)){
 const unexplainedDeleted=deleted.filter(p=>!allow.has(p)),staleAllowlist=[...allow.keys()].filter(p=>!deleted.includes(p)),criticalDeleted=deleted.filter(critical),criticalModified=modified.map(x=>x.path).filter(critical);
 const report={
   schemaVersion:4,
+  treeHashAlgorithm:TREE_HASH_ALGORITHM,
   status:unexplainedDeleted.length||staleAllowlist.length?'BLOCKED':'PASS',
   releaseReady:manifest.releaseReady,
   base:{root:path.resolve(base),fileCount:baseFiles.length,version:basePkg.version,releaseReady:baseManifest.releaseReady,treeSha256:baseTreeSha256,expectedTreeSha256:expectedBaseTreeSha256,provenanceVerified:true},
@@ -103,7 +106,7 @@ const report={
   staleAllowlist,
   criticalDeleted,
   criticalModified,
-  note:'PASS means only that an externally supplied certified-base tree identity matched the materialized V1.1.1 tree, the exact candidate snapshot and dependency-lock provenance matched, and file-level deletion provenance passed. It is NOT V1.2 release certification.'
+  note:'PASS means only that an externally supplied certified-base tree identity matched the materialized V1.1.1 tree using the recorded deterministic tree-hash algorithm, the exact candidate snapshot and dependency-lock provenance matched, and file-level deletion provenance passed. It is NOT V1.2 release certification.'
 };
 const text=JSON.stringify(report,null,2)+'\n';
 if(jsonOut){fs.mkdirSync(path.dirname(path.resolve(jsonOut)),{recursive:true});fs.writeFileSync(jsonOut,text,'utf8');}
