@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "product": "Cosmic Transcriber Web",
+  "version": "1.1.1",
+  "certification": {
+    "workflowRunId": 31997529015,
+    "branch": "ci/1.1.1",
+    "headSha": "725327e6af5f15ebf7ba3da39674d8ff12b85229",
+    "allGreenJobId": 95296530187,
+    "allGreenConclusion": "success",
+    "jobs": {
+      "resolveLock": { "id": 95291763011, "conclusion": "success" },
+      "linuxWorkerIntegrationCoreBrowsers": { "id": 95291943617, "conclusion": "success" },
+      "macosWebkitRealSafari": { "id": 95291943588, "conclusion": "success" },
+      "windowsPrivateToolchainBrandedBrowsersCertifiedZip": { "id": 95291943653, "conclusion": "success" }
+    }
+  },
+  "certifiedArtifact": {
+    "artifactId": 9277847563,
+    "name": "CosmicTranscriberWeb-1.1.1-certified",
+    "githubArtifactDigestSha256": "8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c",
+    "artifactWrapperSizeBytes": 5546116,
+    "innerCertifiedZip": "CosmicTranscriberWeb-1.1.1-source.zip",
+    "innerCertifiedZipSizeBytes": 7648984,
+    "innerCertifiedZipSha256": "a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df"
+  },
+  "reviewedReleaseInputs": {
+    "artifactId": 9277321472,
+    "name": "reviewed-release-inputs-1.1.1",
+    "githubArtifactDigestSha256": "857795f20d0cf33de597658ce20ba846e0db3f64d6dd98ac12e0b49c37c9b0f8",
+    "packageLockSha256": "564a05c3d4982eada023007c9fe3474f2cdda1f4051b15eb37f6722b90628f93",
+    "packageLockByteIdenticalToCertifiedZip": true
+  },
+  "independentZipAudit": {
+    "allGreenLogResult": "PASS",
+    "canonicalStoredUtf8Entries": 154,
+    "sha256SumsRows": 153,
+    "freshLocalSha256SumMismatches": 0,
+    "freshLocalSha256SumCoverageMissing": 0,
+    "freshLocalSha256SumCoverageExtra": 0,
+    "manifestProduct": "Cosmic Transcriber Web",
+    "manifestVersion": "1.1.1",
+    "manifestReleaseReady": true
+  },
+  "materializedCertifiedSource": {
+    "treeHashAlgorithm": "sha256-path-utf8-nul-filehash-ascii-lf-codeunit-sort-v1",
+    "fileCount": 154,
+    "treeSha256": "a67ba4aee35bf533c122f322418ac3fd4bf68601a1ae320deecb35318ffb5300"
+  },
+  "releaseEngineeringUse": {
+    "approvedAsV12RegressionBase": true,
+    "note": "This evidence anchors only the certified V1.1.1 comparison baseline. It does not certify V1.2."
+  }
+}
