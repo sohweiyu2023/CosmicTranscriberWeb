@@ -98,6 +98,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          tier='${{ steps.plan.outputs.tier }}'
           required=(package.json package-lock.json app.js wrangler.toml RELEASE_MANIFEST.json scripts/validate.mjs tests)
           missing=()
           for p in "${required[@]}"; do [[ -e "$p" ]] || missing+=("$p"); done
@@ -105,7 +106,11 @@ jobs:
           if (( ${#missing[@]} > 0 )); then
             printf 'Application source is not synchronized; product gates are NOT RUN. Missing:\n' >&2
             printf ' - %s\n' "${missing[@]}" >&2
-            printf 'Fast release-tooling feedback may pass, but this is not product validation or certification.\n' >&2
+            if [[ "$tier" != 'F0' ]]; then
+              printf 'Fast-development BLOCKED: tier %s change requires product validation, but the application source is unavailable.\n' "$tier" >&2
+              exit 1
+            fi
+            printf 'F0 release-tooling/docs feedback may pass, but this is not product validation or certification.\n' >&2
             exit 0
           fi
 
@@ -118,7 +123,6 @@ jobs:
           }
           NODE
 
-          tier='${{ steps.plan.outputs.tier }}'
           if [[ "$tier" != 'F0' ]]; then
             printf 'Fast-development BLOCKED: application source is present and tier %s requires product gate execution.\n' "$tier" >&2
             printf 'Wire the exact V1.2 product test commands into this workflow before accepting a green runtime-change result.\n' >&2
