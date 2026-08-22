@@ -40,7 +40,7 @@ function treeSha256(root, files) {
 }
 function run(args) { return spawnSync(process.execPath, args, { encoding: 'utf8', env: process.env }); }
 let passed = 0;
-const total = 14;
+const total = 15;
 function pass(label) { passed += 1; console.log(`PASS: ${label}`); }
 function expectExit(result, code, label) {
   if (result.status !== code) {
@@ -146,6 +146,10 @@ try {
   write(path.join(candidate, 'RELEASE_MANIFEST.json'), JSON.stringify({ product: 'Cosmic Transcriber Web', version: '1.2.0', releaseReady: true }));
   expectExit(run([auditTool, '--base', base, '--expected-base-tree-sha256', CERTIFIED_BASE_TREE_SHA256, '--candidate', candidate]), 1, 'regression audit rejects V1.2 development candidate with releaseReady:true');
 
+  if (passed !== total) {
+    console.error(`SELF-TEST FAIL: accounting mismatch: ${passed}/${total} checks recorded`);
+    process.exit(1);
+  }
   console.log(`V1.2 provenance tooling self-test: ${passed}/${total} PASS`);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
