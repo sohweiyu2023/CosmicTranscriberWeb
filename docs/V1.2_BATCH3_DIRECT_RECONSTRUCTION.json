@@ -1,0 +1,48 @@
+{
+  "schema": "cosmic-v12-direct-reconstruction-1",
+  "batch": 3,
+  "purpose": "Directly reconstruct the canonical V1.2 Batch 3 development tree from the exact certified V1.1.1 source without depending on intermediate Batch 1/2 replay chains.",
+  "baseBranchHeadObserved": "82d4aac7d6e09f1cc225a0f051bb2228b8162104",
+  "certifiedV111": {
+    "artifactId": 9277847563,
+    "actionsWrapperSha256": "8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c",
+    "sourceZipSha256": "a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df",
+    "materializedTreeSha256": "a67ba4aee35bf533c122f322418ac3fd4bf68601a1ae320deecb35318ffb5300"
+  },
+  "candidate": {
+    "version": "1.2.0",
+    "releaseReady": false,
+    "packageLockSha256": "1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c",
+    "fileCount": 169,
+    "treeHashAlgorithm": "sha256-path-utf8-nul-filehash-ascii-lf-codeunit-sort-v1",
+    "treeSha256": "badaa131abbd50a1346654787852809423cfe0c4545373ef276e35a5173424a2"
+  },
+  "overlay": {
+    "pathCount": 41,
+    "tarGzSha256": "4b39b2534983df947b33ed155f73691115630ef0bce48104a61e05535d7835aa",
+    "base64Sha256": "8c013b23ac596ffc593fbd97b7c69d62b35ef6a696878ed68c5032b5458d5c7c",
+    "partSha256": [
+      "45a455b92465a3bfabcfe2c0700024a319fe05859ea7a85440f51d2e4a45a1ac",
+      "b2a11e20ee0e716adc28af5b01e6e5d751b3eb54c4277e0f13d524ceb2837420",
+      "6a37d6752584d39509837460ea99bbe01e902104ee84dcd0cd3f4dac90252654",
+      "fd2fdbd1caf06c5c0bcddd3112c6a6bf25e28c4762158565faeab2734673c9cb",
+      "8393e91ec9f6929fbd1e8c638ac5b747ffc6641709855d910e54286e72394a8e",
+      "899461bc506668cd146b69a9049d6bb75f7773f312a3417b76e4647ea32c876f",
+      "50a95111420718832baa7d1485222509208636a263e156e4bcbd59950caca2ad"
+    ]
+  },
+  "freshLocalValidation": {
+    "runtime": {"node": "v22.16.0", "npm": "10.9.2"},
+    "versionConsistency": "PASS",
+    "syntaxFiles": 98,
+    "moduleLinkage": 30,
+    "staticSafeguards": {"pass": 220, "total": 220},
+    "functionalNode": {"pass": 123, "total": 123, "fail": 0, "skipped": 0, "cancelled": 0},
+    "mutation": {"pass": 316, "total": 316},
+    "realFormatFixtures": {"pass": 9, "total": 9},
+    "repeatedFixtureGenerationDeterministic": {"pass": 9, "total": 9},
+    "legacyMp3FixturesPreservedByDefault": true
+  },
+  "notCertification": true,
+  "productionV111Changed": false
+}
