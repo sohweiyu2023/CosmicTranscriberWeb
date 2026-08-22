@@ -100,7 +100,8 @@ jobs:
           fi
 
           printf '\nSource identity is plausible, but certification is still BLOCKED.\n' >&2
-          printf 'Required next: exact certified V1.1.1 base provenance; schema-v3 whole-tree regression audit;\n' >&2
-          printf 'whole-tree-bound critical-change review; complete Node 26.7.0/npm 12.0.2 functional/static/mutation,\n' >&2
-          printf 'nine-format, Worker/integration/browser/platform, Windows, fresh-ZIP and staging acceptance gates.\n' >&2
+          printf 'Required next: recover exact certified V1.1.1 artifact/hash evidence and independently record its materialized tree SHA-256;\n' >&2
+          printf 'then run the schema-v4 whole-tree regression audit with --expected-base-tree-sha256 and the schema-v4 critical-change review;\n' >&2
+          printf 'then complete Node 26.7.0/npm 12.0.2 functional/static/mutation, nine-format, Worker/integration/browser/platform,\n' >&2
+          printf 'Windows, fresh-ZIP and staging acceptance gates.\n' >&2
           exit 1
