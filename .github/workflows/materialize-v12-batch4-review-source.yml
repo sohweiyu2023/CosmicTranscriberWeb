@@ -1,0 +1,162 @@
+name: Materialize V1.2 Batch 4 review source
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/materialize-v12-batch4-review-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: cosmic-v12-materialize-batch4-review-source
+  cancel-in-progress: false
+
+env:
+  V12_ROOT: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+  TARGET_BRANCH: dev/v1.2.0-product-batch4-review
+
+jobs:
+  materialize:
+    name: Reconstruct and publish non-certifying Batch 4 review tree
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041 # v6.4.0
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+
+      - name: Pin exact npm and verify reconstruction tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          bash -n tools/v12-reconstruct-through-batch4.sh
+          printf '%s  %s\n' \
+            'f63b1bc3d806aa2e1f19cdd944860bddde7032ff598af9f6f04e80c33b3e8844' \
+            tools/v12-reconstruct-through-batch4.sh | sha256sum -c -
+
+      - name: Refuse to overwrite an existing review branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "refs/heads/$TARGET_BRANCH" >/dev/null 2>&1; then
+            echo "Target review branch already exists; refusing to overwrite it: $TARGET_BRANCH" >&2
+            exit 1
+          fi
+
+      - name: Reconstruct exact V1.2 through Batch 4
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/v12-reconstruct-through-batch4.sh "$V12_ROOT"
+
+      - name: Dependency-free review-tree validation
+        working-directory: ${{ runner.temp }}/v12-materialize/CosmicTranscriberWeb-1.2.0-dev
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('./package.json').version")" = '1.2.0'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            package-lock.json | sha256sum -c -
+          npm run validate
+          npm run audit:secrets
+
+      - name: Strip generated state and compute deterministic review-tree identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$V12_ROOT/node_modules" "$V12_ROOT/dist" "$V12_ROOT/coverage" \
+            "$V12_ROOT/.wrangler" "$V12_ROOT/evidence" "$V12_ROOT/test-results" \
+            "$V12_ROOT/playwright-report" "$V12_ROOT/blob-report" "$V12_ROOT/.git"
+          test "$(node -p "require('$V12_ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          node - "$V12_ROOT" "$RUNNER_TEMP/v12-review-tree.json" <<'NODE'
+          const fs=require('node:fs');
+          const path=require('node:path');
+          const crypto=require('node:crypto');
+          const root=path.resolve(process.argv[2]);
+          const out=process.argv[3];
+          const files=[];
+          const walk=(dir)=>{
+            for(const ent of fs.readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){
+              const abs=path.join(dir,ent.name);
+              const rel=path.relative(root,abs).split(path.sep).join('/');
+              if(ent.isDirectory()) walk(abs);
+              else if(ent.isFile()) files.push(rel);
+              else throw new Error(`Unsupported filesystem entry in review tree: ${rel}`);
+            }
+          };
+          walk(root);
+          const h=crypto.createHash('sha256');
+          for(const rel of files){
+            const b=fs.readFileSync(path.join(root,...rel.split('/')));
+            h.update(Buffer.from(rel,'utf8')); h.update(Buffer.from([0]));
+            h.update(String(b.length)); h.update(Buffer.from([0])); h.update(b);
+          }
+          fs.writeFileSync(out,JSON.stringify({schema:'cosmic-v12-review-tree-1',fileCount:files.length,sha256:h.digest('hex')},null,2)+'\n');
+          NODE
+          cat "$RUNNER_TEMP/v12-review-tree.json"
+
+      - name: Publish isolated non-certifying review branch
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REVIEW_SHA=$(node -p "require('$RUNNER_TEMP/v12-review-tree.json').sha256")
+          REVIEW_COUNT=$(node -p "require('$RUNNER_TEMP/v12-review-tree.json').fileCount")
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --orphan v12-batch4-review-materialized
+          git rm -rf .
+          git clean -fdx
+          (cd "$V12_ROOT" && tar -cf - .) | tar -xf -
+          cat > V1.2_REVIEW_SOURCE_PROVENANCE.json <<EOF
+          {
+            "schema": "cosmic-v12-materialized-review-source-1",
+            "version": "1.2.0",
+            "batch": 4,
+            "sourceShellCommit": "$SOURCE_SHA",
+            "reviewTreeSha256BeforeProvenanceFile": "$REVIEW_SHA",
+            "reviewTreeFileCountBeforeProvenanceFile": $REVIEW_COUNT,
+            "releaseReady": false,
+            "v12Certified": false,
+            "productionV111Touched": false,
+            "stagingTouched": false,
+            "purpose": "Review-only materialization of the hash-pinned Batch 4 reconstructed source. This branch is not a release candidate and must not be deployed or packaged as certified."
+          }
+          EOF
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./V1.2_REVIEW_SOURCE_PROVENANCE.json').v12Certified")" = 'false'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Materialize V1.2 Batch 4 review source'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+
+      - name: Development-only boundary
+        shell: bash
+        run: |
+          {
+            echo '## V1.2 Batch 4 review-source materialization'
+            echo
+            echo "- Review branch: \`$TARGET_BRANCH\`"
+            echo '- Reconstructed from the exact hash-pinned V1.1.1 + V1.2 Batch 1-4 chain: **yes**'
+            echo '- Dependency-free validation / secret audit: **passed if this job reached here**'
+            echo '- releaseReady: **false**'
+            echo '- V1.2 certified: **no**'
+            echo '- Production V1.1.1 changed: **no**'
+            echo '- Staging changed: **no**'
+            echo '- Release ZIP produced: **no**'
+          } >> "$GITHUB_STEP_SUMMARY"
