@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 const planner = new URL('./v12-fast-gate-plan.mjs', import.meta.url);
 let passed = 0;
-const total = 11;
+const total = 14;
 
 function run(args) {
   return spawnSync(process.execPath, [planner.pathname, ...args], { encoding: 'utf8' });
@@ -48,6 +48,15 @@ expect('cross-subsystem change escalates F3', p.recommendedTier === 'F3' && p.br
 
 p = parsed(['.github/workflows/deploy-production.yml']);
 expect('deployment workflow is not hidden by workflow F0 rule', p.recommendedTier === 'F2' && p.areas.includes('deployment'));
+
+p = parsed(['.github/workflows/certify.yml']);
+expect('certification workflow is release-control F3', p.recommendedTier === 'F3' && p.areas.includes('release-gate-control') && p.requiredChecks.some((x)=>x.id === 'mandatory-release-gates-preserved'));
+
+p = parsed(['RELEASE_MANIFEST.json']);
+expect('release manifest is release-integrity F3', p.recommendedTier === 'F3' && p.areas.includes('release-manifest') && p.requiredChecks.some((x)=>x.id === 'release-manifest-invariants'));
+
+p = parsed(['.github/workflows/dev-fast.yml']);
+expect('ordinary fast-feedback workflow stays F0', p.recommendedTier === 'F0' && p.areas.includes('provenance-tooling'));
 
 p = parsed(['app.js']);
 expect('monolithic shared runtime is F3', p.recommendedTier === 'F3' && p.certificationEligible === false);
