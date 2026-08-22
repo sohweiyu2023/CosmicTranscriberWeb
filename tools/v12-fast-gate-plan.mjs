@@ -51,7 +51,7 @@ const RULES = [
   { tier: 'F1', area: 'local-runtime', re: /^src\//i },
   { tier: 'F1', area: 'tests-runtime', re: /^(?:tests\/|test\/)/i },
   { tier: 'F1', area: 'browser-ui', re: /(?:playwright|browser|queue|progress|download|\.html$|\.css$)/i },
-  { tier: 'F0', area: 'provenance-tooling', re: /^(?:tools\/v12-|docs\/V1\.2_|\.github\/workflows\/)/i },
+  { tier: 'F0', area: 'provenance-tooling', re: /^(?:tools\/(?:test-)?v12-|docs\/V1\.2_|\.github\/workflows\/)/i },
   { tier: 'F0', area: 'docs', re: /\.(?:md|txt)$/i }
 ];
 
