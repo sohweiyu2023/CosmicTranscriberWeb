@@ -1,0 +1,233 @@
+name: Reconstruct V1.2 Batch 3 multiformat checkpoint
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/reconstruct-v12-dev-source-batch3.yml'
+      - 'docs/V1.2_BATCH3_DIRECT_RECONSTRUCTION.json'
+      - 'tools/v12-batch3-multiformat.patch.gz.b64'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cosmic-v12-reconstruct-batch3-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  V12_ROOT: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+
+jobs:
+  reconstruct-v12-batch3:
+    name: Batch 3 exact Node/npm + Worker/integration/Chromium gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+
+      - name: Pin exact npm and verify toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+
+      - name: Recover exact certified V1.1.1 source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v111-wrapper" "$RUNNER_TEMP/v12-work"
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
+            > "$RUNNER_TEMP/v111-wrapper/artifact.zip"
+          printf '%s  %s\n' \
+            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
+            "$RUNNER_TEMP/v111-wrapper/artifact.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/artifact.zip" -d "$RUNNER_TEMP/v111-wrapper/extracted"
+          test -f "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          printf '%s  %s\n' \
+            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
+            "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" -d "$RUNNER_TEMP/v12-work"
+          node tools/v12-verify-certified-base.mjs \
+            --base "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.1.1" \
+            --certified-zip "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          mv "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.1.1" "$V12_ROOT"
+
+      - name: Materialize reviewed V1.2 Batch 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const source = fs.readFileSync('.github/workflows/reconstruct-v12-dev-source.yml', 'utf8');
+          const marker = "<<'V12_RECONSTRUCTION_B64'\n";
+          const startMarker = source.indexOf(marker);
+          if (startMarker < 0) throw new Error('Batch 1 reconstruction payload start marker missing');
+          const start = startMarker + marker.length;
+          const end = source.indexOf('\n          V12_RECONSTRUCTION_B64', start);
+          if (end < 0) throw new Error('Batch 1 reconstruction payload end marker missing');
+          const payload = source.slice(start, end)
+            .split(/\r?\n/)
+            .map((line) => line.replace(/^ {10}/, ''))
+            .join('')
+            .trim();
+          if (!/^[A-Za-z0-9+/=]+$/.test(payload)) throw new Error('Batch 1 payload is not canonical base64');
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'v12-reconstruct.gz'), Buffer.from(payload, 'base64'));
+          NODE
+          gzip -dc "$RUNNER_TEMP/v12-reconstruct.gz" > "$RUNNER_TEMP/v12-reconstruct.mjs"
+          node --check "$RUNNER_TEMP/v12-reconstruct.mjs"
+          node "$RUNNER_TEMP/v12-reconstruct.mjs" --root "$V12_ROOT"
+          test "$(node -p "require('$V12_ROOT/package.json').version")" = '1.2.0'
+          test "$(node -p "require('$V12_ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$V12_ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Apply reviewed Batch 2 prebilling overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 'd54a1d66f24253990d68fc5403ce5d4151b16e20027fc9eeaf96a26d96da70b6' 'tools/v12-batch2-prebilling-overlay.b64/part-00' | sha256sum -c -
+          printf '%s  %s\n' '7d89ff720501e35061f286193620d256884cf4b30b2ff5cf990a0b999fef8222' 'tools/v12-batch2-prebilling-overlay.b64/part-01' | sha256sum -c -
+          printf '%s  %s\n' '7f3e13e4d166a08e57f87f72e5beeff1a074701bdf32eb775810842028a2b360' 'tools/v12-batch2-prebilling-overlay.b64/part-02' | sha256sum -c -
+          printf '%s  %s\n' 'c458a6f0ada0493970425ef0e14f1bcf9e266d40d006e93863d1e26fce371067' 'tools/v12-batch2-prebilling-overlay.b64/part-03' | sha256sum -c -
+          printf '%s  %s\n' 'c05568e26440a1d2fcfcea7157f4b8617bc6d44851ed7ffd52d5f52d3260f8fc' 'tools/v12-batch2-prebilling-overlay.b64/part-04' | sha256sum -c -
+          printf '%s  %s\n' '445ff76bfbb682a9a54793c67d7c03a53b9491b5b84da745acaf0529fa144107' 'tools/v12-batch2-prebilling-overlay.b64/part-05' | sha256sum -c -
+          cat tools/v12-batch2-prebilling-overlay.b64/part-* > "$RUNNER_TEMP/v12-batch2-overlay.b64"
+          printf '%s  %s\n' '14fd386b383a3e3f59eae4e912be864ce6c6b566057d1b8139ace04601c53d93' "$RUNNER_TEMP/v12-batch2-overlay.b64" | sha256sum -c -
+          base64 -d "$RUNNER_TEMP/v12-batch2-overlay.b64" > "$RUNNER_TEMP/v12-batch2-overlay.tar.gz"
+          printf '%s  %s\n' '32c3f00a7cc5268f9f82b1e6b259347ece54e5a3273b56555974363f2e4ce05c' "$RUNNER_TEMP/v12-batch2-overlay.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/v12-batch2-overlay.tar.gz" -C "$V12_ROOT" --no-same-owner --no-same-permissions
+
+      - name: Apply reviewed Batch 3 multiformat/checkpoint patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' \
+            'f8c7c17180964d12692ba01d2ea57f57af3ac129a8c985bebd986b30332927bd' \
+            'tools/v12-batch3-multiformat.patch.gz.b64' | sha256sum -c -
+          base64 -d tools/v12-batch3-multiformat.patch.gz.b64 > "$RUNNER_TEMP/v12-batch3.patch.gz"
+          printf '%s  %s\n' \
+            'c661993dc410684d7ca9bbe6c591fc3801308e6a0b0d5a77311c3ee2632f466c' \
+            "$RUNNER_TEMP/v12-batch3.patch.gz" | sha256sum -c -
+          gzip -dc "$RUNNER_TEMP/v12-batch3.patch.gz" > "$RUNNER_TEMP/v12-batch3.patch"
+          printf '%s  %s\n' \
+            'abdb0e1040bef4ef7e87f615b14d90840c3c2fdfa68c296170346742617352dd' \
+            "$RUNNER_TEMP/v12-batch3.patch" | sha256sum -c -
+          cd "$V12_ROOT"
+          git apply --check "$RUNNER_TEMP/v12-batch3.patch"
+          git apply "$RUNNER_TEMP/v12-batch3.patch"
+          node scripts/generate-test-fixtures.mjs
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            package-lock.json | sha256sum -c -
+
+      - name: Verify nine real formats and fixture determinism
+        shell: bash
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          set -euo pipefail
+          npm run fixtures:verify
+          A="$RUNNER_TEMP/fixture-gen-a"
+          B="$RUNNER_TEMP/fixture-gen-b"
+          FIXTURE_OUT_DIR="$A" node scripts/generate-test-fixtures.mjs
+          FIXTURE_OUT_DIR="$B" node scripts/generate-test-fixtures.mjs
+          for ext in mp3 flac mp4 mpeg mpga m4a ogg wav webm; do
+            cmp "$A/format-sample.$ext" "$B/format-sample.$ext"
+          done
+          echo 'Repeated nine-format fixture generation deterministic: 9/9 PASS'
+
+      - name: Dependency-free focused and aggregate gates
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          node --test tests/node/audio-formats.test.mjs tests/node/openai.test.mjs tests/node/validation.test.mjs tests/node/real-audio-fixtures.test.mjs
+          npm run validate
+          npm run audit:secrets
+
+      - name: Install exact reviewed dependency graph
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm ci
+
+      - name: Verify dependency policy and npm audit
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run deps:install-scripts:verify && npm audit
+
+      - name: Worker Vitest
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:worker
+
+      - name: Whole-Worker integration
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:integration
+
+      - name: Build inspection
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run build:inspect
+
+      - name: Install Chromium only for focused checkpoint regression
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: node scripts/playwright-invoke.mjs install --with-deps chromium
+
+      - name: Chromium WAV completed-checkpoint no-duplicate-dispatch regression
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          npm run build
+          node scripts/playwright-invoke.mjs test tests/e2e/app.spec.js \
+            --project=chromium \
+            --grep 'completed WAV checkpoint ignores every MP3-only control and does not dispatch twice' \
+            --workers=1
+
+      - name: Strip generated dependency/build state before preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$V12_ROOT/node_modules" "$V12_ROOT/dist" "$V12_ROOT/coverage" \
+            "$V12_ROOT/.wrangler" "$V12_ROOT/evidence" "$V12_ROOT/test-results" \
+            "$V12_ROOT/playwright-report" "$V12_ROOT/blob-report"
+          test "$(node -p "require('$V12_ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$V12_ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Preserve reconstructed Batch 3 development source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.2.0-dev-reconstructed-batch3-multiformat
+          path: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Development-only boundary
+        shell: bash
+        run: |
+          {
+            echo '## V1.2 Batch 3 multiformat/checkpoint development checkpoint'
+            echo
+            echo '- Exact Node 26.7.0 / npm 12.0.2: **verified in this run**'
+            echo '- Nine real formats verified: **yes**'
+            echo '- Worker Vitest: **passed if this job reached this step**'
+            echo '- Whole-Worker integration: **passed if this job reached this step**'
+            echo '- Chromium WAV no-duplicate-dispatch regression: **passed if this job reached this step**'
+            echo '- releaseReady: **false**'
+            echo '- V1.2 release certified: **no**'
+            echo '- Production V1.1.1 changed: **no**'
+            echo '- Full F4 browser/Windows/macOS/staging matrix complete: **no**'
+          } >> "$GITHUB_STEP_SUMMARY"
