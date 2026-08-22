@@ -22,38 +22,34 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          fetch-depth: 2
+          fetch-depth: 1
 
-      - name: Collect changed files
+      - name: Collect exact changed files
         id: changes
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
           out='.v12-fast-changed-files.txt'
-          : > "$out"
-
-          if [[ "${{ github.event_name }}" == 'pull_request' ]]; then
-            base='${{ github.event.pull_request.base.sha }}'
-            if [[ -n "$base" ]] && git cat-file -e "$base^{commit}" 2>/dev/null; then
-              git diff --name-only "$base" '${{ github.sha }}' > "$out"
-            else
-              git ls-files > "$out"
-            fi
-          elif [[ "${{ github.event_name }}" == 'push' ]]; then
-            before='${{ github.event.before }}'
-            zeros='0000000000000000000000000000000000000000'
-            if [[ -n "$before" && "$before" != "$zeros" ]] && git cat-file -e "$before^{commit}" 2>/dev/null; then
-              git diff --name-only "$before" '${{ github.sha }}' > "$out"
-            else
-              git ls-files > "$out"
-            fi
-          else
-            git ls-files > "$out"
+          compare=''
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            compare="$PR_BASE_SHA"
+          elif [[ "$EVENT_NAME" == 'push' ]]; then
+            compare="$PUSH_BEFORE_SHA"
           fi
 
-          sort -u "$out" -o "$out"
+          args=(--event "$EVENT_NAME" --head "$HEAD_SHA" --out "$out" --json)
+          if [[ -n "$compare" ]]; then args+=(--compare "$compare"); fi
+          node tools/v12-fast-changed-files.mjs "${args[@]}" > .v12-fast-change-detection.json
+          cat .v12-fast-change-detection.json
+
           if [[ ! -s "$out" ]]; then
-            printf '%s\n' 'docs/V1.2_FAST_DEVELOPMENT_MODE.md' > "$out"
+            printf '%s\n' '.github/workflows/dev-fast.yml' > "$out"
+            printf 'No changed paths detected; using an F0 workflow sentinel for planning.\n'
           fi
           printf 'Fast-development changed files:\n'
           sed 's/^/ - /' "$out"
@@ -64,10 +60,13 @@ jobs:
           set -euo pipefail
           node --check tools/v12-fast-gate-plan.mjs
           node --check tools/test-v12-fast-gate-plan.mjs
+          node --check tools/v12-fast-changed-files.mjs
+          node --check tools/test-v12-fast-changed-files.mjs
           node --check tools/v12-regression-audit.mjs
           node --check tools/v12-critical-change-review.mjs
           node --check tools/test-v12-provenance-tools.mjs
           node tools/test-v12-fast-gate-plan.mjs
+          node tools/test-v12-fast-changed-files.mjs
           node tools/test-v12-provenance-tools.mjs
 
       - name: Build risk-based gate plan
