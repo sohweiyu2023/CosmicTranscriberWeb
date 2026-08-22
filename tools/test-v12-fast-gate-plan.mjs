@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 const planner = new URL('./v12-fast-gate-plan.mjs', import.meta.url);
 let passed = 0;
-const total = 8;
+const total = 11;
 
 function run(args) {
   return spawnSync(process.execPath, [planner.pathname, ...args], { encoding: 'utf8' });
@@ -28,6 +28,12 @@ function parsed(args) {
 let p = parsed(['docs/V1.2_FAST_DEVELOPMENT_MODE.md']);
 expect('docs stay F0', p.recommendedTier === 'F0');
 
+p = parsed(['docs/V1.2_BILLING_CHECKPOINT_FORMAT_DEPLOYMENT.md']);
+expect('critical-word docs stay F0', p.recommendedTier === 'F0' && !p.areas.includes('billing') && !p.requiredChecks.some((x)=>x.id === 'billing-checkpoint-targeted'));
+
+p = parsed(['tools/v12-fast-billing-notes.mjs']);
+expect('fast release tooling stays F0 despite critical words', p.recommendedTier === 'F0' && p.areas.includes('provenance-tooling'));
+
 p = parsed(['tests/checkpoint-billing.test.js']);
 expect('billing/checkpoint escalates F2', p.recommendedTier === 'F2' && p.requiredChecks.some((x)=>x.id === 'billing-checkpoint-targeted'));
 
@@ -39,6 +45,9 @@ expect('dependency change escalates F3', p.recommendedTier === 'F3' && p.require
 
 p = parsed(['scripts/deploy-production.mjs', 'tests/checkpoint.test.js', 'tests/auth-session.test.js']);
 expect('cross-subsystem change escalates F3', p.recommendedTier === 'F3' && p.broadBoundary === true);
+
+p = parsed(['.github/workflows/deploy-production.yml']);
+expect('deployment workflow is not hidden by workflow F0 rule', p.recommendedTier === 'F2' && p.areas.includes('deployment'));
 
 p = parsed(['app.js']);
 expect('monolithic shared runtime is F3', p.recommendedTier === 'F3' && p.certificationEligible === false);
