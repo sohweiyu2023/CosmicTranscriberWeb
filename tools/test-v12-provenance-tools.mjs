@@ -147,7 +147,7 @@ try {
   const unsafeReady = run([auditTool, '--base', base, '--candidate', candidate]);
   expectExit(unsafeReady, 1, 'regression audit rejects development candidate with releaseReady:true');
 
-  console.log('V1.2 provenance tooling self-test: 7/7 PASS');
+  console.log('V1.2 provenance tooling self-test: 8/8 PASS');
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
