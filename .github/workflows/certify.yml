@@ -15,9 +15,8 @@ permissions:
 # V1.2 source is synchronized, CI must fail closed rather than emit evidence
 # that could be mistaken for release certification.
 #
-# This guard is deliberately NOT a certification workflow. Even when an exact
-# source tree is synchronized and the provenance checks below pass, this job
-# exits non-zero until the reviewed V1.2 certification matrix is restored.
+# Fast Development Mode changes when expensive gates run, never whether the
+# mandatory release gates run. This guard is deliberately NOT certification.
 
 jobs:
   source-provenance-guard:
@@ -26,15 +25,29 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Validate fail-closed audit tooling
+      - name: Validate fail-closed audit and fast-mode tooling
         shell: bash
         run: |
           set -euo pipefail
           node --check tools/v12-regression-audit.mjs
           node --check tools/v12-critical-change-review.mjs
           node --check tools/test-v12-provenance-tools.mjs
+          node --check tools/v12-fast-gate-plan.mjs
           node tools/test-v12-provenance-tools.mjs
-          printf 'V1.2 dependency-free provenance tooling self-test: PASS\n'
+
+          tier="$(node tools/v12-fast-gate-plan.mjs --json docs/V1.2_FAST_DEVELOPMENT_MODE.md | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).recommendedTier))")"
+          [[ "$tier" == F0 ]] || { echo "Fast-mode planner expected F0 for docs; got $tier" >&2; exit 1; }
+
+          tier="$(node tools/v12-fast-gate-plan.mjs --json tests/checkpoint-billing.test.js | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).recommendedTier))")"
+          [[ "$tier" == F2 ]] || { echo "Fast-mode planner expected F2 for billing/checkpoint; got $tier" >&2; exit 1; }
+
+          tier="$(node tools/v12-fast-gate-plan.mjs --json package-lock.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).recommendedTier))")"
+          [[ "$tier" == F3 ]] || { echo "Fast-mode planner expected F3 for dependency changes; got $tier" >&2; exit 1; }
+
+          tier="$(node tools/v12-fast-gate-plan.mjs --json scripts/deploy-production.mjs tests/checkpoint.test.js docs/notes.md | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).recommendedTier))")"
+          [[ "$tier" == F3 ]] || { echo "Fast-mode planner expected F3 for cross-subsystem change; got $tier" >&2; exit 1; }
+
+          printf 'V1.2 dependency-free provenance and fast-mode tooling self-tests: PASS\n'
 
       - name: Validate source identity, then refuse certification
         shell: bash
@@ -67,9 +80,6 @@ jobs:
             exit 1
           fi
 
-          # Presence alone is insufficient: a stale 1.0.x/1.1.x tree could
-          # otherwise satisfy the marker list. Use Node's built-in JSON parser
-          # so this check has no npm/dependency prerequisite.
           node <<'NODE'
           const fs = require('node:fs');
 
@@ -86,25 +96,16 @@ jobs:
           const manifest = readJson('RELEASE_MANIFEST.json');
           const failures = [];
 
-          if (pkg.version !== '1.2.0') {
-            failures.push(`package.json version must be 1.2.0; found ${JSON.stringify(pkg.version)}`);
-          }
-          if (manifest.product !== 'Cosmic Transcriber Web') {
-            failures.push(`RELEASE_MANIFEST.json product mismatch: ${JSON.stringify(manifest.product)}`);
-          }
-          if (manifest.version !== '1.2.0') {
-            failures.push(`RELEASE_MANIFEST.json version must be 1.2.0; found ${JSON.stringify(manifest.version)}`);
-          }
-          if (manifest.releaseReady !== false) {
-            failures.push(`development candidate must have releaseReady:false; found ${JSON.stringify(manifest.releaseReady)}`);
-          }
+          if (pkg.version !== '1.2.0') failures.push(`package.json version must be 1.2.0; found ${JSON.stringify(pkg.version)}`);
+          if (manifest.product !== 'Cosmic Transcriber Web') failures.push(`RELEASE_MANIFEST.json product mismatch: ${JSON.stringify(manifest.product)}`);
+          if (manifest.version !== '1.2.0') failures.push(`RELEASE_MANIFEST.json version must be 1.2.0; found ${JSON.stringify(manifest.version)}`);
+          if (manifest.releaseReady !== false) failures.push(`development candidate must have releaseReady:false; found ${JSON.stringify(manifest.releaseReady)}`);
 
           if (failures.length) {
             console.error('V1.2 provenance BLOCKED: synchronized tree has stale or unsafe identity:');
             for (const failure of failures) console.error(` - ${failure}`);
             process.exit(1);
           }
-
           console.error('V1.2 source identity markers PASS: package/manifest both identify 1.2.0 and releaseReady:false.');
           NODE
 
