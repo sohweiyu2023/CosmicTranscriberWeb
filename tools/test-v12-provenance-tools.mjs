@@ -45,6 +45,8 @@ function treeSha256(root, files) {
 function run(args) {
   return spawnSync(process.execPath, args, { encoding: 'utf8', env: process.env });
 }
+let passed = 0;
+const total = 11;
 function expectExit(result, code, label) {
   if (result.status !== code) {
     console.error(`SELF-TEST FAIL: ${label}: expected exit ${code}, got ${result.status}`);
@@ -52,6 +54,16 @@ function expectExit(result, code, label) {
     console.error(result.stderr);
     process.exit(1);
   }
+  passed += 1;
+  console.log(`PASS: ${label}`);
+}
+function expectText(label, text, needle) {
+  if (!text.includes(needle)) {
+    console.error(`SELF-TEST FAIL: ${label}: missing ${JSON.stringify(needle)}`);
+    console.error(text);
+    process.exit(1);
+  }
+  passed += 1;
   console.log(`PASS: ${label}`);
 }
 
@@ -75,17 +87,21 @@ try {
   write(path.join(candidate, 'tests', 'smoke.test.js'), 'export const ok = true;\n');
   write(path.join(candidate, 'README.md'), 'candidate snapshot\n');
 
-  // The real regression auditor intentionally pins the reviewed V1.2 lock SHA.
-  // A synthetic candidate must therefore fail before it can claim PASS; there is
-  // deliberately no self-test escape hatch for dependency-lock provenance.
-  const syntheticAudit = run([auditTool, '--base', base, '--candidate', candidate]);
+  const baseFiles = walk(base);
+  const baseTree = treeSha256(base, baseFiles);
+
+  const missingBaseBinding = run([auditTool, '--base', base, '--candidate', candidate]);
+  expectExit(missingBaseBinding, 2, 'regression audit requires an explicit certified-base tree SHA-256');
+
+  const wrongBaseBinding = run([auditTool, '--base', base, '--expected-base-tree-sha256', '0'.repeat(64), '--candidate', candidate]);
+  expectExit(wrongBaseBinding, 1, 'regression audit rejects a mismatched certified-base tree SHA-256');
+
+  // The real auditor intentionally pins the reviewed V1.2 lock SHA. A synthetic
+  // candidate therefore still fails after certified-base provenance passes;
+  // there is deliberately no self-test escape hatch for dependency provenance.
+  const syntheticAudit = run([auditTool, '--base', base, '--expected-base-tree-sha256', baseTree, '--candidate', candidate]);
   expectExit(syntheticAudit, 1, 'regression audit rejects synthetic/unreviewed package-lock provenance');
-  if (!syntheticAudit.stderr.includes('package-lock.json does not match the reviewed development candidate')) {
-    console.error('SELF-TEST FAIL: synthetic lock rejection did not identify dependency provenance');
-    console.error(syntheticAudit.stderr);
-    process.exit(1);
-  }
-  console.log('PASS: dependency-lock provenance rejection is explicit');
+  expectText('dependency-lock provenance rejection is explicit', syntheticAudit.stderr, 'package-lock.json does not match the reviewed development candidate');
 
   const candidateFiles = walk(candidate);
   const basePackageSha = sha256(path.join(base, 'package.json'));
@@ -99,9 +115,9 @@ try {
     'wrangler.toml'
   ];
   const report = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     status: 'PASS',
-    base: { root: path.resolve(base), fileCount: walk(base).length, version: '1.1.1', releaseReady: true, treeSha256: treeSha256(base, walk(base)) },
+    base: { root: path.resolve(base), fileCount: baseFiles.length, version: '1.1.1', releaseReady: true, treeSha256: baseTree, expectedTreeSha256: baseTree, provenanceVerified: true },
     candidate: { root: path.resolve(candidate), fileCount: candidateFiles.length, version: '1.2.0', packageLockSha256: sha256(path.join(candidate, 'package-lock.json')), treeSha256: treeSha256(candidate, candidateFiles) },
     added,
     modified: [{ path: 'package.json', baseSha256: basePackageSha, candidateSha256: candidatePackageSha }]
@@ -119,17 +135,19 @@ try {
   fs.writeFileSync(reviewPath, JSON.stringify(review, null, 2), 'utf8');
 
   const reviewPass = run([reviewTool, '--audit', evidence, '--candidate', candidate, '--review', reviewPath]);
-  expectExit(reviewPass, 0, 'critical-change review accepts unchanged schema-v3 audited candidate');
+  expectExit(reviewPass, 0, 'critical-change review accepts unchanged schema-v4 audited candidate with certified-base binding');
+
+  const forgedReport = structuredClone(report);
+  forgedReport.base.provenanceVerified = false;
+  fs.writeFileSync(evidence, JSON.stringify(forgedReport, null, 2), 'utf8');
+  const forgedBase = run([reviewTool, '--audit', evidence, '--candidate', candidate, '--review', reviewPath]);
+  expectExit(forgedBase, 1, 'critical-change review rejects audit without certified-base provenance verification');
+  fs.writeFileSync(evidence, JSON.stringify(report, null, 2), 'utf8');
 
   write(path.join(candidate, 'README.md'), 'non-critical file changed after audit\n');
   const staleWholeTree = run([reviewTool, '--audit', evidence, '--candidate', candidate, '--review', reviewPath]);
   expectExit(staleWholeTree, 1, 'critical-change review rejects non-critical post-audit tree mutation');
-  if (!staleWholeTree.stderr.includes('candidate tree changed after regression audit')) {
-    console.error('SELF-TEST FAIL: stale whole-tree rejection did not identify the expected cause');
-    console.error(staleWholeTree.stderr);
-    process.exit(1);
-  }
-  console.log('PASS: stale whole-tree rejection is explicit');
+  expectText('stale whole-tree rejection is explicit', staleWholeTree.stderr, 'candidate tree changed after regression audit');
 
   write(path.join(candidate, 'README.md'), 'candidate snapshot\n');
   const wrongRoot = path.join(temp, 'candidate-copy');
@@ -140,14 +158,14 @@ try {
   const badBase = path.join(temp, 'bad-base');
   fs.cpSync(base, badBase, { recursive: true });
   write(path.join(badBase, 'package.json'), JSON.stringify({ version: '1.1.0' }));
-  const wrongBase = run([auditTool, '--base', badBase, '--candidate', candidate]);
+  const wrongBase = run([auditTool, '--base', badBase, '--expected-base-tree-sha256', baseTree, '--candidate', candidate]);
   expectExit(wrongBase, 1, 'regression audit rejects non-certified-version comparison base');
 
   write(path.join(candidate, 'RELEASE_MANIFEST.json'), JSON.stringify({ product: 'Cosmic Transcriber Web', version: '1.2.0', releaseReady: true }));
-  const unsafeReady = run([auditTool, '--base', base, '--candidate', candidate]);
+  const unsafeReady = run([auditTool, '--base', base, '--expected-base-tree-sha256', baseTree, '--candidate', candidate]);
   expectExit(unsafeReady, 1, 'regression audit rejects development candidate with releaseReady:true');
 
-  console.log('V1.2 provenance tooling self-test: 8/8 PASS');
+  console.log(`V1.2 provenance tooling self-test: ${passed}/${total} PASS`);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
