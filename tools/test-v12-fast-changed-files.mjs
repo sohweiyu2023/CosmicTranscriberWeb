@@ -2,9 +2,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const collector = new URL('./v12-fast-changed-files.mjs', import.meta.url);
+const collector = fileURLToPath(new URL('./v12-fast-changed-files.mjs', import.meta.url));
 let passed = 0;
 const total = 5;
 function exec(cmd, args, cwd, allowFailure = false) {
@@ -19,7 +20,7 @@ function expect(name, condition, detail = '') {
   console.log(`PASS ${name}`);
 }
 function run(cwd, args) {
-  const r = exec(process.execPath, [collector.pathname, '--json', ...args], cwd, true);
+  const r = exec(process.execPath, [collector, '--json', ...args], cwd, true);
   return { ...r, parsed: r.status === 0 ? JSON.parse(r.stdout) : null };
 }
 
