@@ -111,6 +111,20 @@ printf '%s  %s\n' '1db1bf82af027129e77a03a633e0696c59e9fab3d41187689279767ece904
   node --check scripts/mutation-suite.mjs
 )
 
+# Batch 4 whole-Worker proof for fake MPEG sync: zero upstream hits and reusable attempt.
+printf '%s  %s\n' '9663b40ba4fb2e3dd627decb0b4fe43bc52ba031a035c943129a13edb2702126' 'tools/v12-batch4-mpeg-integration-proof.patch.gz.b64' | sha256sum -c -
+base64 -d tools/v12-batch4-mpeg-integration-proof.patch.gz.b64 > "$RUN_TEMP/v12-batch4-proof.patch.gz"
+printf '%s  %s\n' 'b04657206e6cc00c2c32f51ce52ae394367d79a7295a614ceb9e296ef6a1a716' "$RUN_TEMP/v12-batch4-proof.patch.gz" | sha256sum -c -
+gzip -dc "$RUN_TEMP/v12-batch4-proof.patch.gz" > "$RUN_TEMP/v12-batch4-proof.patch"
+printf '%s  %s\n' 'bfe4eb7a5f80b92dd143591b7bdf8f81a1a9ba2dbcf3a5da9d90f5941851731f' "$RUN_TEMP/v12-batch4-proof.patch" | sha256sum -c -
+(
+  cd "$ROOT"
+  git apply --check "$RUN_TEMP/v12-batch4-proof.patch"
+  git apply "$RUN_TEMP/v12-batch4-proof.patch"
+  node --check tests/integration/worker.test.js
+  node --check scripts/audit-lib.mjs
+)
+
 test "$(node -p "require('$ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
 printf '%s  %s\n' "$LOCK_SHA" "$ROOT/package-lock.json" | sha256sum -c -
 echo "V1.2 reconstruction through Batch 4 complete at: $ROOT"
