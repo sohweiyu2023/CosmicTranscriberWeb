@@ -32,7 +32,7 @@ p = parsed(['tests/checkpoint-billing.test.js']);
 expect('billing/checkpoint escalates F2', p.recommendedTier === 'F2' && p.requiredChecks.some((x)=>x.id === 'billing-checkpoint-targeted'));
 
 p = parsed(['src/audio/m4a-parser.js']);
-expect('format runtime reaches coherent F3 checkpoint', p.recommendedTier === 'F3' && p.requiredChecks.some((x)=>x.id === 'nine-format-targeted'));
+expect('local format runtime stays focused F2', p.recommendedTier === 'F2' && p.requiredChecks.some((x)=>x.id === 'nine-format-targeted'));
 
 p = parsed(['package-lock.json']);
 expect('dependency change escalates F3', p.recommendedTier === 'F3' && p.requiredChecks.some((x)=>x.id === 'dependency-lock-provenance'));
