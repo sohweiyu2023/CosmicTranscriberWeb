@@ -1,0 +1,201 @@
+name: Reconstruct V1.2 Batch 2 prebilling validation
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/reconstruct-v12-dev-source-batch2.yml'
+      - 'docs/V1.2_BATCH2_PREBILLING_OVERLAY.json'
+      - 'tools/v12-batch2-prebilling-overlay.b64/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cosmic-v12-reconstruct-batch2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reconstruct-v12-batch2:
+    name: Reconstruct V1.2 Batch 2 + Worker/integration gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+
+      - name: Pin exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+
+      - name: Verify exact Node/npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v26.7.0"
+          test "$(npm --version)" = "12.0.2"
+
+      - name: Recover exact certified V1.1.1 source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v111-wrapper" "$RUNNER_TEMP/v12-work"
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
+            > "$RUNNER_TEMP/v111-wrapper/artifact.zip"
+          printf '%s  %s\n' \
+            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
+            "$RUNNER_TEMP/v111-wrapper/artifact.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/artifact.zip" -d "$RUNNER_TEMP/v111-wrapper/extracted"
+          test -f "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          printf '%s  %s\n' \
+            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
+            "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" -d "$RUNNER_TEMP/v12-work"
+          node tools/v12-verify-certified-base.mjs \
+            --base "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.1.1" \
+            --certified-zip "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          mv "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.1.1" "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev"
+
+      - name: Materialize reviewed V1.2 reconstruction Batch 1
+        shell: bash
+        env:
+          ROOT: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const source = fs.readFileSync('.github/workflows/reconstruct-v12-dev-source.yml', 'utf8');
+          const marker = "<<'V12_RECONSTRUCTION_B64'\n";
+          const startMarker = source.indexOf(marker);
+          if (startMarker < 0) throw new Error('Batch 1 reconstruction payload start marker missing');
+          const start = startMarker + marker.length;
+          const endMarker = '\n          V12_RECONSTRUCTION_B64';
+          const end = source.indexOf(endMarker, start);
+          if (end < 0) throw new Error('Batch 1 reconstruction payload end marker missing');
+          const payload = source.slice(start, end)
+            .split(/\r?\n/)
+            .map((line) => line.replace(/^ {10}/, ''))
+            .join('')
+            .trim();
+          if (!/^[A-Za-z0-9+/=]+$/.test(payload)) throw new Error('Batch 1 payload is not canonical base64 text');
+          const gz = Buffer.from(payload, 'base64');
+          if (gz.length < 1024) throw new Error('Batch 1 payload decoded unexpectedly small');
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'v12-reconstruct.gz'), gz);
+          NODE
+          gzip -dc "$RUNNER_TEMP/v12-reconstruct.gz" > "$RUNNER_TEMP/v12-reconstruct.mjs"
+          node --check "$RUNNER_TEMP/v12-reconstruct.mjs"
+          node "$RUNNER_TEMP/v12-reconstruct.mjs" --root "$ROOT"
+          test "$(node -p "require('$ROOT/package.json').version")" = '1.2.0'
+          test "$(node -p "require('$ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Verify and apply Batch 2 prebilling overlay
+        shell: bash
+        env:
+          ROOT: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 'd54a1d66f24253990d68fc5403ce5d4151b16e20027fc9eeaf96a26d96da70b6' 'tools/v12-batch2-prebilling-overlay.b64/part-00' | sha256sum -c -
+          printf '%s  %s\n' '7d89ff720501e35061f286193620d256884cf4b30b2ff5cf990a0b999fef8222' 'tools/v12-batch2-prebilling-overlay.b64/part-01' | sha256sum -c -
+          printf '%s  %s\n' '7f3e13e4d166a08e57f87f72e5beeff1a074701bdf32eb775810842028a2b360' 'tools/v12-batch2-prebilling-overlay.b64/part-02' | sha256sum -c -
+          printf '%s  %s\n' 'c458a6f0ada0493970425ef0e14f1bcf9e266d40d006e93863d1e26fce371067' 'tools/v12-batch2-prebilling-overlay.b64/part-03' | sha256sum -c -
+          printf '%s  %s\n' 'c05568e26440a1d2fcfcea7157f4b8617bc6d44851ed7ffd52d5f52d3260f8fc' 'tools/v12-batch2-prebilling-overlay.b64/part-04' | sha256sum -c -
+          printf '%s  %s\n' '445ff76bfbb682a9a54793c67d7c03a53b9491b5b84da745acaf0529fa144107' 'tools/v12-batch2-prebilling-overlay.b64/part-05' | sha256sum -c -
+          cat tools/v12-batch2-prebilling-overlay.b64/part-* > "$RUNNER_TEMP/v12-batch2-overlay.b64"
+          printf '%s  %s\n' \
+            '14fd386b383a3e3f59eae4e912be864ce6c6b566057d1b8139ace04601c53d93' \
+            "$RUNNER_TEMP/v12-batch2-overlay.b64" | sha256sum -c -
+          base64 -d "$RUNNER_TEMP/v12-batch2-overlay.b64" > "$RUNNER_TEMP/v12-batch2-overlay.tar.gz"
+          printf '%s  %s\n' \
+            '32c3f00a7cc5268f9f82b1e6b259347ece54e5a3273b56555974363f2e4ce05c' \
+            "$RUNNER_TEMP/v12-batch2-overlay.tar.gz" | sha256sum -c -
+          cat > "$RUNNER_TEMP/v12-batch2-expected.txt" <<'EXPECTED'
+          src/audio-formats.js
+          src/index.js
+          tests/integration/worker.test.js
+          tests/node/audio-formats.test.mjs
+          tests/node/openai.test.mjs
+          EXPECTED
+          tar -tzf "$RUNNER_TEMP/v12-batch2-overlay.tar.gz" | LC_ALL=C sort > "$RUNNER_TEMP/v12-batch2-actual.txt"
+          diff -u "$RUNNER_TEMP/v12-batch2-expected.txt" "$RUNNER_TEMP/v12-batch2-actual.txt"
+          tar -xzf "$RUNNER_TEMP/v12-batch2-overlay.tar.gz" -C "$ROOT" --no-same-owner --no-same-permissions
+          test "$(node -p "require('$ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Run dependency-free focused regressions before install
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: node --test tests/node/audio-formats.test.mjs tests/node/openai.test.mjs tests/node/validation.test.mjs
+
+      - name: Install exact reviewed dependency graph
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm ci
+
+      - name: Verify dependency install-script policy and audit
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run deps:install-scripts:verify && npm audit
+
+      - name: Run full validation
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run validate
+
+      - name: Run Worker Vitest
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:worker
+
+      - name: Run whole-Worker integration including prebilling rejection proof
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:integration
+
+      - name: Build inspection
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run build:inspect
+
+      - name: Strip generated/dependency state before preservation
+        shell: bash
+        env:
+          ROOT: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          set -euo pipefail
+          rm -rf "$ROOT/node_modules" "$ROOT/dist" "$ROOT/coverage" "$ROOT/.wrangler" "$ROOT/evidence" "$ROOT/test-results" "$ROOT/playwright-report" "$ROOT/blob-report"
+          test "$(node -p "require('$ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Preserve reconstructed Batch 2 development source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.2.0-dev-reconstructed-batch2-prebilling
+          path: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Record development-only boundary
+        shell: bash
+        run: |
+          {
+            echo '## V1.2 Batch 2 prebilling format validation preserved'
+            echo
+            echo '- Exact certified V1.1.1 base verified: **yes**'
+            echo '- Batch 1 reconstruction replayed: **yes**'
+            echo '- Batch 2 overlay SHA-256 verified: **yes**'
+            echo '- releaseReady: **false**'
+            echo '- V1.2 release certified: **no**'
+            echo '- Production V1.1.1 changed: **no**'
+            echo '- Full browser/Windows/macOS/staging release matrix complete: **no**'
+          } >> "$GITHUB_STEP_SUMMARY"

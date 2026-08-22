@@ -1,0 +1,36 @@
+{
+  "schema": "cosmic-v12-reconstruction-overlay-1",
+  "batch": 2,
+  "purpose": "Worker-side bounded MP4/M4A ISO-BMFF ftyp validation before paid dispatch, with byte-exact stream replay and adversarial zero-dispatch regression coverage.",
+  "baseBranchHead": "f622473131ec7e710ceda4b57587521eb299bc62",
+  "certifiedV111": {
+    "artifactId": 9277847563,
+    "actionsWrapperSha256": "8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c",
+    "sourceZipSha256": "a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df",
+    "certificationHead": "725327e6af5f15ebf7ba3da39674d8ff12b85229"
+  },
+  "batch1PackageLockSha256": "1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c",
+  "overlay": {
+    "encoding": "base64-concatenated-ordered-parts",
+    "base64Sha256": "14fd386b383a3e3f59eae4e912be864ce6c6b566057d1b8139ace04601c53d93",
+    "tarGzSha256": "32c3f00a7cc5268f9f82b1e6b259347ece54e5a3273b56555974363f2e4ce05c",
+    "tarGzBytes": 12953,
+    "parts": [
+      {"path":"tools/v12-batch2-prebilling-overlay.b64/part-00","bytes":3400,"sha256":"d54a1d66f24253990d68fc5403ce5d4151b16e20027fc9eeaf96a26d96da70b6"},
+      {"path":"tools/v12-batch2-prebilling-overlay.b64/part-01","bytes":3400,"sha256":"7d89ff720501e35061f286193620d256884cf4b30b2ff5cf990a0b999fef8222"},
+      {"path":"tools/v12-batch2-prebilling-overlay.b64/part-02","bytes":3400,"sha256":"7f3e13e4d166a08e57f87f72e5beeff1a074701bdf32eb775810842028a2b360"},
+      {"path":"tools/v12-batch2-prebilling-overlay.b64/part-03","bytes":3400,"sha256":"c458a6f0ada0493970425ef0e14f1bcf9e266d40d006e93863d1e26fce371067"},
+      {"path":"tools/v12-batch2-prebilling-overlay.b64/part-04","bytes":3400,"sha256":"c05568e26440a1d2fcfcea7157f4b8617bc6d44851ed7ffd52d5f52d3260f8fc"},
+      {"path":"tools/v12-batch2-prebilling-overlay.b64/part-05","bytes":272,"sha256":"445ff76bfbb682a9a54793c67d7c03a53b9491b5b84da745acaf0529fa144107"}
+    ],
+    "files": [
+      "src/audio-formats.js",
+      "src/index.js",
+      "tests/node/audio-formats.test.mjs",
+      "tests/node/openai.test.mjs",
+      "tests/integration/worker.test.js"
+    ]
+  },
+  "releaseReady": false,
+  "productionV111Touched": false
+}
