@@ -112,15 +112,6 @@ jobs:
             --grep 'completed WAV checkpoint ignores every MP3-only control and does not dispatch twice' \
             --workers=1
 
-      - name: Emit exact non-certifying Batch 4 CI receipt
-        shell: bash
-        run: |
-          set -euo pipefail
-          node tools/v12-batch4-ci-receipt.mjs "$V12_ROOT" "$BATCH4_RECEIPT"
-          test -s "$BATCH4_RECEIPT"
-          test "$(node -p "require('$BATCH4_RECEIPT').candidate.releaseReady")" = 'false'
-          test "$(node -p "require('$BATCH4_RECEIPT').certification.v12Certified")" = 'false'
-
       - name: Strip generated/dependency state before preservation
         shell: bash
         run: |
@@ -132,6 +123,17 @@ jobs:
           printf '%s  %s\n' \
             '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
             "$V12_ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Emit exact non-certifying Batch 4 CI receipt bound to preserved source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/v12-batch4-ci-receipt.mjs "$V12_ROOT" "$BATCH4_RECEIPT"
+          test -s "$BATCH4_RECEIPT"
+          test "$(node -p "require('$BATCH4_RECEIPT').candidate.releaseReady")" = 'false'
+          test "$(node -p "require('$BATCH4_RECEIPT').certification.v12Certified")" = 'false'
+          test "$(node -p "require('$BATCH4_RECEIPT').candidate.preservedSourceFileCount > 0")" = 'true'
+          test "$(node -p "/^[0-9a-f]{64}$/.test(require('$BATCH4_RECEIPT').candidate.preservedSourceTreeSha256)")" = 'true'
 
       - name: Preserve non-certified Batch 4 development source and CI receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -155,7 +157,7 @@ jobs:
             echo '- MPEG-family malformed prebilling boundary: **passed if validation/Worker gates reached here**'
             echo '- Worker Vitest / whole-Worker integration: **passed if this job reached here**'
             echo '- WAV no-second-dispatch Chromium regression: **passed if this job reached here**'
-            echo '- Machine-readable Batch 4 CI receipt: **uploaded with the development artifact**'
+            echo '- Machine-readable Batch 4 CI receipt: **uploaded and bound to the preserved reconstructed source tree**'
             echo '- releaseReady: **false**'
             echo '- V1.2 release certified: **no**'
             echo '- Production/staging changed: **no**'
