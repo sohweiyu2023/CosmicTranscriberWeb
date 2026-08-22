@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const EXPECTED_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
@@ -16,14 +17,31 @@ function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+function readNpmVersion() {
+  const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const result = spawnSync(command, ['--version'], {
+    encoding: 'utf8',
+    shell: false,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) {
+    fail(`unable to execute npm --version${result.error ? `: ${result.error.message}` : ''}`);
+    return null;
+  }
+  const version = result.stdout.trim();
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    fail(`unexpected npm --version output: ${JSON.stringify(version)}`);
+    return null;
+  }
+  return version;
+}
+
 const root = path.resolve(process.argv[2] ?? process.cwd());
 const output = path.resolve(process.argv[3] ?? path.join(root, 'evidence', 'V1.2_BATCH4_CI_RECEIPT.json'));
 
 const requiredEnv = ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA', 'GITHUB_REF_NAME', 'GITHUB_WORKFLOW'];
 for (const key of requiredEnv) {
-  if (!process.env[key]) {
-    fail(`missing ${key}`);
-  }
+  if (!process.env[key]) fail(`missing ${key}`);
 }
 if (process.exitCode) process.exit();
 
@@ -36,7 +54,7 @@ const [manifestRaw, lockBytes, packageRaw] = await Promise.all([
 const manifest = JSON.parse(manifestRaw);
 const pkg = JSON.parse(packageRaw);
 const lockSha256 = sha256(lockBytes);
-const npmVersion = process.env.npm_config_user_agent?.match(/\bnpm\/(\d+\.\d+\.\d+)\b/)?.[1] ?? null;
+const npmVersion = readNpmVersion();
 
 if (manifest.releaseReady !== false) fail('RELEASE_MANIFEST.json must remain releaseReady:false');
 if (pkg.version !== '1.2.0') fail(`expected package version 1.2.0, got ${pkg.version}`);
@@ -81,6 +99,6 @@ const receipt = {
   },
 };
 
-await import('node:fs/promises').then(({ mkdir }) => mkdir(path.dirname(output), { recursive: true }));
+await mkdir(path.dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
 console.log(`Wrote non-certifying Batch 4 CI receipt: ${output}`);
