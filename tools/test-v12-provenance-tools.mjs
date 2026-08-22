@@ -8,8 +8,12 @@ import { spawnSync } from 'node:child_process';
 const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const auditTool = path.join(repoRoot, 'tools', 'v12-regression-audit.mjs');
 const reviewTool = path.join(repoRoot, 'tools', 'v12-critical-change-review.mjs');
-const IGNORE_DIRS = new Set(['.git', 'node_modules', '.wrangler', 'dist', 'coverage', 'evidence']);
+const TREE_HASH_ALGORITHM = 'sha256-path-utf8-nul-filehash-ascii-lf-codeunit-sort-v1';
+const IGNORE_ROOT_DIRS = new Set(['.git', 'node_modules', '.wrangler', 'dist', 'coverage', 'evidence']);
 
+function compareNames(a, b) {
+  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
 function sha256(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
@@ -21,8 +25,8 @@ function walk(root) {
   const out = [];
   function visit(rel) {
     const abs = path.join(root, rel);
-    for (const ent of fs.readdirSync(abs, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (IGNORE_DIRS.has(ent.name)) continue;
+    for (const ent of fs.readdirSync(abs, { withFileTypes: true }).sort(compareNames)) {
+      if (!rel && IGNORE_ROOT_DIRS.has(ent.name)) continue;
       const child = rel ? `${rel}/${ent.name}` : ent.name;
       if (ent.isDirectory()) visit(child);
       else if (ent.isFile()) out.push(child.replaceAll('\\', '/'));
@@ -46,7 +50,11 @@ function run(args) {
   return spawnSync(process.execPath, args, { encoding: 'utf8', env: process.env });
 }
 let passed = 0;
-const total = 11;
+const total = 13;
+function pass(label) {
+  passed += 1;
+  console.log(`PASS: ${label}`);
+}
 function expectExit(result, code, label) {
   if (result.status !== code) {
     console.error(`SELF-TEST FAIL: ${label}: expected exit ${code}, got ${result.status}`);
@@ -54,8 +62,7 @@ function expectExit(result, code, label) {
     console.error(result.stderr);
     process.exit(1);
   }
-  passed += 1;
-  console.log(`PASS: ${label}`);
+  pass(label);
 }
 function expectText(label, text, needle) {
   if (!text.includes(needle)) {
@@ -63,8 +70,14 @@ function expectText(label, text, needle) {
     console.error(text);
     process.exit(1);
   }
-  passed += 1;
-  console.log(`PASS: ${label}`);
+  pass(label);
+}
+function expect(label, condition) {
+  if (!condition) {
+    console.error(`SELF-TEST FAIL: ${label}`);
+    process.exit(1);
+  }
+  pass(label);
 }
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'cosmic-v12-prov-'));
@@ -86,6 +99,8 @@ try {
   write(path.join(candidate, 'scripts', 'validate.mjs'), 'console.log("validate");\n');
   write(path.join(candidate, 'tests', 'smoke.test.js'), 'export const ok = true;\n');
   write(path.join(candidate, 'README.md'), 'candidate snapshot\n');
+  write(path.join(candidate, 'dist', 'generated.txt'), 'ignored root build output\n');
+  write(path.join(candidate, 'src', 'dist', 'nested-source.txt'), 'must remain provenance-visible\n');
 
   const baseFiles = walk(base);
   const baseTree = treeSha256(base, baseFiles);
@@ -96,14 +111,13 @@ try {
   const wrongBaseBinding = run([auditTool, '--base', base, '--expected-base-tree-sha256', '0'.repeat(64), '--candidate', candidate]);
   expectExit(wrongBaseBinding, 1, 'regression audit rejects a mismatched certified-base tree SHA-256');
 
-  // The real auditor intentionally pins the reviewed V1.2 lock SHA. A synthetic
-  // candidate therefore still fails after certified-base provenance passes;
-  // there is deliberately no self-test escape hatch for dependency provenance.
   const syntheticAudit = run([auditTool, '--base', base, '--expected-base-tree-sha256', baseTree, '--candidate', candidate]);
   expectExit(syntheticAudit, 1, 'regression audit rejects synthetic/unreviewed package-lock provenance');
   expectText('dependency-lock provenance rejection is explicit', syntheticAudit.stderr, 'package-lock.json does not match the reviewed development candidate');
 
   const candidateFiles = walk(candidate);
+  expect('tree walk ignores generated root dist but includes nested source named dist', !candidateFiles.includes('dist/generated.txt') && candidateFiles.includes('src/dist/nested-source.txt'));
+
   const basePackageSha = sha256(path.join(base, 'package.json'));
   const candidatePackageSha = sha256(path.join(candidate, 'package.json'));
   const added = [
@@ -111,11 +125,13 @@ try {
     'app.js',
     'package-lock.json',
     'scripts/validate.mjs',
+    'src/dist/nested-source.txt',
     'tests/smoke.test.js',
     'wrangler.toml'
   ];
   const report = {
     schemaVersion: 4,
+    treeHashAlgorithm: TREE_HASH_ALGORITHM,
     status: 'PASS',
     base: { root: path.resolve(base), fileCount: baseFiles.length, version: '1.1.1', releaseReady: true, treeSha256: baseTree, expectedTreeSha256: baseTree, provenanceVerified: true },
     candidate: { root: path.resolve(candidate), fileCount: candidateFiles.length, version: '1.2.0', packageLockSha256: sha256(path.join(candidate, 'package-lock.json')), treeSha256: treeSha256(candidate, candidateFiles) },
@@ -136,6 +152,12 @@ try {
 
   const reviewPass = run([reviewTool, '--audit', evidence, '--candidate', candidate, '--review', reviewPath]);
   expectExit(reviewPass, 0, 'critical-change review accepts unchanged schema-v4 audited candidate with certified-base binding');
+
+  const wrongAlgorithmReport = structuredClone(report);
+  wrongAlgorithmReport.treeHashAlgorithm = 'locale-dependent-v0';
+  fs.writeFileSync(evidence, JSON.stringify(wrongAlgorithmReport, null, 2), 'utf8');
+  const wrongAlgorithm = run([reviewTool, '--audit', evidence, '--candidate', candidate, '--review', reviewPath]);
+  expectExit(wrongAlgorithm, 1, 'critical-change review rejects unknown tree-hash algorithm');
 
   const forgedReport = structuredClone(report);
   forgedReport.base.provenanceVerified = false;
