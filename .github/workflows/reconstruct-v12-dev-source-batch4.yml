@@ -7,6 +7,7 @@ on:
       - '.github/workflows/reconstruct-v12-dev-source-batch4.yml'
       - 'tools/v12-reconstruct-through-batch4.sh'
       - 'tools/v12-batch4-mpeg-trust-boundary.patch.gz.b64'
+      - 'tools/v12-batch4-mpeg-integration-proof.patch.gz.b64'
       - 'docs/V1.2_BATCH4_MPEG_TRUST_BOUNDARY.json'
   workflow_dispatch:
 
@@ -42,7 +43,7 @@ jobs:
           test "$(npm --version)" = '12.0.2'
           bash -n tools/v12-reconstruct-through-batch4.sh
           printf '%s  %s\n' \
-            'e940f959bd0c9883ba3e0ea82b6d97ca52249d85a0dc934a578576fc318d5a17' \
+            'f63b1bc3d806aa2e1f19cdd944860bddde7032ff598af9f6f04e80c33b3e8844' \
             tools/v12-reconstruct-through-batch4.sh | sha256sum -c -
 
       - name: Reconstruct hash-pinned V1.2 through Batch 4
