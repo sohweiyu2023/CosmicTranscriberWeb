@@ -65,9 +65,12 @@ jobs:
           node --check tools/v12-regression-audit.mjs
           node --check tools/v12-critical-change-review.mjs
           node --check tools/test-v12-provenance-tools.mjs
+          node --check tools/v12-certification-readiness.mjs
+          node --check tools/test-v12-certification-readiness.mjs
           node tools/test-v12-fast-gate-plan.mjs
           node tools/test-v12-fast-changed-files.mjs
           node tools/test-v12-provenance-tools.mjs
+          node tools/test-v12-certification-readiness.mjs
 
       - name: Build risk-based gate plan
         id: plan
