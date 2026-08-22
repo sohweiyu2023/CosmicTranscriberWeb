@@ -1,0 +1,138 @@
+name: Reconstruct and preserve V1.2 development source
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/reconstruct-v12-dev-source.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cosmic-v12-reconstruct-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reconstruct-v12:
+    name: Reconstruct V1.2 dev source + focused runtime gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+
+      - name: Pin exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+
+      - name: Verify exact Node/npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v26.7.0"
+          test "$(npm --version)" = "12.0.2"
+
+      - name: Recover exact certified V1.1.1 source
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v111-wrapper" "$RUNNER_TEMP/v12-work"
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
+            > "$RUNNER_TEMP/v111-wrapper/artifact.zip"
+          printf '%s  %s\n' \
+            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
+            "$RUNNER_TEMP/v111-wrapper/artifact.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/artifact.zip" -d "$RUNNER_TEMP/v111-wrapper/extracted"
+          test -f "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          printf '%s  %s\n' \
+            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
+            "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" -d "$RUNNER_TEMP/v12-work"
+          node tools/v12-verify-certified-base.mjs \
+            --base "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.1.1" \
+            --certified-zip "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          mv "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.1.1" "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev"
+
+      - name: Materialize reviewed V1.2 reconstruction Batch 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/v12-reconstruct.gz.b64" <<'V12_RECONSTRUCTION_B64'
+          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
+          V12_RECONSTRUCTION_B64
+          base64 -d "$RUNNER_TEMP/v12-reconstruct.gz.b64" | gzip -dc > "$RUNNER_TEMP/v12-reconstruct.mjs"
+          node --check "$RUNNER_TEMP/v12-reconstruct.mjs"
+          node "$RUNNER_TEMP/v12-reconstruct.mjs" --root "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev"
+          test "$(node -p "require('$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev/package.json').version")" = '1.2.0'
+          test "$(node -p "require('$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev/package-lock.json" | sha256sum -c -
+
+      - name: Install exact reviewed dependency graph
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm ci
+
+      - name: Verify dependency install-script policy and audit
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run deps:install-scripts:verify && npm audit
+
+      - name: Run dependency-free functional/static/mutation validation
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run validate
+
+      - name: Run Worker Vitest
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:worker
+
+      - name: Run whole-Worker integration
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:integration
+
+      - name: Build inspection
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run build:inspect
+
+      - name: Strip generated/dependency state before preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/v12-work/CosmicTranscriberWeb-1.2.0-dev"
+          rm -rf "$ROOT/node_modules" "$ROOT/dist" "$ROOT/coverage" "$ROOT/.wrangler" "$ROOT/evidence" "$ROOT/test-results" "$ROOT/playwright-report" "$ROOT/blob-report"
+          test "$(node -p "require('$ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Preserve reconstructed development source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.2.0-dev-reconstructed-batch1
+          path: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Record development-only boundary
+        shell: bash
+        run: |
+          {
+            echo '## V1.2 reconstructed development source preserved'
+            echo
+            echo '- Exact certified V1.1.1 base verified: **yes**'
+            echo '- Reviewed V1.2 lock SHA-256 reproduced: **yes**'
+            echo '- releaseReady: **false**'
+            echo '- V1.2 release certified: **no**'
+            echo '- Production V1.1.1 changed: **no**'
+            echo '- Browser/Windows/macOS/staging release matrix complete: **no**'
+          } >> "$GITHUB_STEP_SUMMARY"
