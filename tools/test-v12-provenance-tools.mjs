@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const auditTool = path.join(repoRoot, 'tools', 'v12-regression-audit.mjs');
 const reviewTool = path.join(repoRoot, 'tools', 'v12-critical-change-review.mjs');
 const TREE_HASH_ALGORITHM = 'sha256-path-utf8-nul-filehash-ascii-lf-codeunit-sort-v1';
@@ -22,7 +23,7 @@ function walk(root) {
   function visit(rel) {
     for (const ent of fs.readdirSync(path.join(root, rel), { withFileTypes: true }).sort(compareNames)) {
       if (!rel && IGNORE_ROOT_DIRS.has(ent.name)) continue;
-      const child = rel ? `${rel}/${ent.name}` : ent.name;
+      const child = rel ? `${rel}/${ent.name}`: ent.name;
       if (ent.isDirectory()) visit(child);
       else if (ent.isFile()) out.push(child.replaceAll('\\', '/'));
       else throw new Error(`unsupported synthetic tree entry: ${child}`);
