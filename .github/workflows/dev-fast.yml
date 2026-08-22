@@ -1,0 +1,128 @@
+name: Cosmic Transcriber Web 1.2.0 Fast Development
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Fast-development feedback only. This workflow can never certify or deploy V1.2.
+# Full F4 certification remains a separate all-green release boundary.
+concurrency:
+  group: v12-fast-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast-feedback:
+    name: Risk-based fast feedback (non-certifying)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 2
+
+      - name: Collect changed files
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          out='.v12-fast-changed-files.txt'
+          : > "$out"
+
+          if [[ "${{ github.event_name }}" == 'pull_request' ]]; then
+            base='${{ github.event.pull_request.base.sha }}'
+            if [[ -n "$base" ]] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+              git diff --name-only "$base" '${{ github.sha }}' > "$out"
+            else
+              git ls-files > "$out"
+            fi
+          elif [[ "${{ github.event_name }}" == 'push' ]]; then
+            before='${{ github.event.before }}'
+            zeros='0000000000000000000000000000000000000000'
+            if [[ -n "$before" && "$before" != "$zeros" ]] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+              git diff --name-only "$before" '${{ github.sha }}' > "$out"
+            else
+              git ls-files > "$out"
+            fi
+          else
+            git ls-files > "$out"
+          fi
+
+          sort -u "$out" -o "$out"
+          if [[ ! -s "$out" ]]; then
+            printf '%s\n' 'docs/V1.2_FAST_DEVELOPMENT_MODE.md' > "$out"
+          fi
+          printf 'Fast-development changed files:\n'
+          sed 's/^/ - /' "$out"
+
+      - name: Validate dependency-free fast/provenance tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/v12-fast-gate-plan.mjs
+          node --check tools/test-v12-fast-gate-plan.mjs
+          node --check tools/v12-regression-audit.mjs
+          node --check tools/v12-critical-change-review.mjs
+          node --check tools/test-v12-provenance-tools.mjs
+          node tools/test-v12-fast-gate-plan.mjs
+          node tools/test-v12-provenance-tools.mjs
+
+      - name: Build risk-based gate plan
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/v12-fast-gate-plan.mjs --json --files-from .v12-fast-changed-files.txt > .v12-fast-plan.json
+          cat .v12-fast-plan.json
+
+          tier="$(node -e "const p=require('./.v12-fast-plan.json');process.stdout.write(p.recommendedTier)")"
+          areas="$(node -e "const p=require('./.v12-fast-plan.json');process.stdout.write(p.areas.join(', '))")"
+          printf 'tier=%s\n' "$tier" >> "$GITHUB_OUTPUT"
+
+          {
+            echo '## V1.2 Fast Development Plan'
+            echo
+            echo "- Recommended tier: **$tier**"
+            echo "- Areas: ${areas:-none}"
+            echo '- Certification eligible: **no**'
+            echo '- Production V1.1.1: **untouched**'
+            echo
+            echo '### Required checks'
+            node -e "const p=require('./.v12-fast-plan.json'); for (const c of p.requiredChecks) console.log('- '+c.id+': '+c.reason)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce source-aware fast-mode boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(package.json package-lock.json app.js wrangler.toml RELEASE_MANIFEST.json scripts/validate.mjs tests)
+          missing=()
+          for p in "${required[@]}"; do [[ -e "$p" ]] || missing+=("$p"); done
+
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Application source is not synchronized; product gates are NOT RUN. Missing:\n' >&2
+            printf ' - %s\n' "${missing[@]}" >&2
+            printf 'Fast release-tooling feedback may pass, but this is not product validation or certification.\n' >&2
+            exit 0
+          fi
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const manifest = JSON.parse(fs.readFileSync('RELEASE_MANIFEST.json','utf8'));
+          if (manifest.releaseReady !== false) {
+            console.error(`Fast-development BLOCKED: releaseReady must remain false; found ${JSON.stringify(manifest.releaseReady)}`);
+            process.exit(1);
+          }
+          NODE
+
+          tier='${{ steps.plan.outputs.tier }}'
+          if [[ "$tier" != 'F0' ]]; then
+            printf 'Fast-development BLOCKED: application source is present and tier %s requires product gate execution.\n' "$tier" >&2
+            printf 'Wire the exact V1.2 product test commands into this workflow before accepting a green runtime-change result.\n' >&2
+            exit 1
+          fi
+
+          printf 'F0 release-tooling/docs change PASS. This is not V1.2 certification.\n'
