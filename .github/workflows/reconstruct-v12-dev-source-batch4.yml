@@ -66,7 +66,13 @@ jobs:
 
       - name: Install exact reviewed dependency graph
         working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
-        run: npm ci
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            package-lock.json | sha256sum -c -
 
       - name: Verify dependency policy and npm audit
         working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
@@ -125,6 +131,7 @@ jobs:
             echo '## V1.2 Batch 4 MPEG trust-boundary checkpoint'
             echo
             echo '- Exact Node 26.7.0 / npm 12.0.2: **verified in this run**'
+            echo '- Post-npm-ci package-lock SHA-256: **verified in this run**'
             echo '- MPEG-family malformed prebilling boundary: **passed if validation/Worker gates reached here**'
             echo '- Worker Vitest / whole-Worker integration: **passed if this job reached here**'
             echo '- WAV no-second-dispatch Chromium regression: **passed if this job reached here**'
