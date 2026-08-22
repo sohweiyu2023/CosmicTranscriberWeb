@@ -47,7 +47,8 @@ const RULES = [
   { tier: 'F2', area: 'format-dispatch', re: /(?:format|mime|multipart|transcrib|upload|audio|worker|mp3|wav|m4a|mp4|ogg|flac|webm|aac)/i },
   { tier: 'F2', area: 'deployment', re: /(?:deploy|wrangler|rollback|configure|migration|d1)/i },
   { tier: 'F3', area: 'dependency', re: /(?:^|\/)(?:package-lock\.json|package\.json)$/i },
-  { tier: 'F3', area: 'shared-runtime', re: /^(?:app\.js|src\/|worker\/)/i },
+  { tier: 'F3', area: 'shared-runtime', re: /^(?:app\.js|worker\/|src\/(?:shared|core|common|lib)\/)/i },
+  { tier: 'F1', area: 'local-runtime', re: /^src\//i },
   { tier: 'F1', area: 'tests-runtime', re: /^(?:tests\/|test\/)/i },
   { tier: 'F1', area: 'browser-ui', re: /(?:playwright|browser|queue|progress|download|\.html$|\.css$)/i },
   { tier: 'F0', area: 'provenance-tooling', re: /^(?:tools\/v12-|docs\/V1\.2_|\.github\/workflows\/)/i },
@@ -73,7 +74,7 @@ for (const changedPath of files) {
   classified.push({ path: changedPath, tier: fileTier, areas: [...new Set(fileAreas)].sort() });
 }
 
-const boundaryAreas = [...areas].filter((area) => !['tests-runtime','browser-ui','provenance-tooling','docs'].includes(area));
+const boundaryAreas = [...areas].filter((area) => !['local-runtime','tests-runtime','browser-ui','provenance-tooling','docs'].includes(area));
 const broadBoundary = boundaryAreas.length >= 3;
 if (broadBoundary && rank[tier] < rank.F3) tier = 'F3';
 
