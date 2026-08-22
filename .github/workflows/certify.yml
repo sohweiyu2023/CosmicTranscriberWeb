@@ -32,8 +32,11 @@ jobs:
           node --check tools/test-v12-provenance-tools.mjs
           node --check tools/v12-fast-gate-plan.mjs
           node --check tools/test-v12-fast-gate-plan.mjs
+          node --check tools/v12-fast-changed-files.mjs
+          node --check tools/test-v12-fast-changed-files.mjs
           node tools/test-v12-provenance-tools.mjs
           node tools/test-v12-fast-gate-plan.mjs
+          node tools/test-v12-fast-changed-files.mjs
           printf 'V1.2 dependency-free provenance and fast-mode tooling self-tests: PASS\n'
 
       - name: Validate source identity, then refuse certification
