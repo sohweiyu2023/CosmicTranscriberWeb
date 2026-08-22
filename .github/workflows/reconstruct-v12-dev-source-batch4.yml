@@ -1,0 +1,134 @@
+name: Reconstruct V1.2 Batch 4 MPEG trust boundary
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/reconstruct-v12-dev-source-batch4.yml'
+      - 'tools/v12-reconstruct-through-batch4.sh'
+      - 'tools/v12-batch4-mpeg-trust-boundary.patch.gz.b64'
+      - 'docs/V1.2_BATCH4_MPEG_TRUST_BOUNDARY.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cosmic-v12-reconstruct-batch4-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  V12_ROOT: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+
+jobs:
+  batch4:
+    name: Batch4 exact Node/npm + Worker/integration checkpoint gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+
+      - name: Pin exact npm and verify reconstruction script
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          bash -n tools/v12-reconstruct-through-batch4.sh
+          printf '%s  %s\n' \
+            'e940f959bd0c9883ba3e0ea82b6d97ca52249d85a0dc934a578576fc318d5a17' \
+            tools/v12-reconstruct-through-batch4.sh | sha256sum -c -
+
+      - name: Reconstruct hash-pinned V1.2 through Batch 4
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/v12-reconstruct-through-batch4.sh "$V12_ROOT"
+
+      - name: Focused MPEG trust-boundary and nine-format gates
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          node --test tests/node/audio-formats.test.mjs tests/node/real-audio-fixtures.test.mjs
+          npm run fixtures:verify
+
+      - name: Dependency-free aggregate validation
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          npm run validate
+          npm run audit:secrets
+
+      - name: Install exact reviewed dependency graph
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm ci
+
+      - name: Verify dependency policy and npm audit
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run deps:install-scripts:verify && npm audit
+
+      - name: Worker Vitest
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:worker
+
+      - name: Whole-Worker integration
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run test:integration
+
+      - name: Build inspection
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: npm run build:inspect
+
+      - name: Install Chromium and retain checkpoint billing regression at F3
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: node scripts/playwright-invoke.mjs install --with-deps chromium
+
+      - name: WAV completed-checkpoint no-second-dispatch regression
+        working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+        run: |
+          npm run build
+          node scripts/playwright-invoke.mjs test tests/e2e/app.spec.js \
+            --project=chromium \
+            --grep 'completed WAV checkpoint ignores every MP3-only control and does not dispatch twice' \
+            --workers=1
+
+      - name: Strip generated/dependency state before preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$V12_ROOT/node_modules" "$V12_ROOT/dist" "$V12_ROOT/coverage" \
+            "$V12_ROOT/.wrangler" "$V12_ROOT/evidence" "$V12_ROOT/test-results" \
+            "$V12_ROOT/playwright-report" "$V12_ROOT/blob-report"
+          test "$(node -p "require('$V12_ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$V12_ROOT/package-lock.json" | sha256sum -c -
+
+      - name: Preserve non-certified Batch 4 development source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.2.0-dev-batch4-mpeg-trust-boundary
+          path: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Development-only boundary
+        shell: bash
+        run: |
+          {
+            echo '## V1.2 Batch 4 MPEG trust-boundary checkpoint'
+            echo
+            echo '- Exact Node 26.7.0 / npm 12.0.2: **verified in this run**'
+            echo '- MPEG-family malformed prebilling boundary: **passed if validation/Worker gates reached here**'
+            echo '- Worker Vitest / whole-Worker integration: **passed if this job reached here**'
+            echo '- WAV no-second-dispatch Chromium regression: **passed if this job reached here**'
+            echo '- releaseReady: **false**'
+            echo '- V1.2 release certified: **no**'
+            echo '- Production/staging changed: **no**'
+            echo '- Full F4 Windows/macOS/real-Safari/staging matrix complete: **no**'
+          } >> "$GITHUB_STEP_SUMMARY"
