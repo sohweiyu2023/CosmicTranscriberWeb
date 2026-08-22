@@ -12,9 +12,8 @@ permissions:
 # IMPORTANT:
 # This branch currently contains only the CI/documentation shell, not the
 # complete CosmicTranscriberWeb-1.2.0-dev application source. Until the exact
-# V1.2 source is synchronized, certification must fail closed.
-# Fast Development Mode changes feedback cadence only; it never substitutes
-# for the complete F4 release matrix.
+# V1.2 source and executable F4 release matrix are synchronized, certification
+# must fail closed. Fast Development Mode never substitutes for F4.
 
 jobs:
   source-provenance-guard:
@@ -34,74 +33,34 @@ jobs:
           node --check tools/test-v12-fast-gate-plan.mjs
           node --check tools/v12-fast-changed-files.mjs
           node --check tools/test-v12-fast-changed-files.mjs
+          node --check tools/v12-certification-readiness.mjs
+          node --check tools/test-v12-certification-readiness.mjs
           node tools/test-v12-provenance-tools.mjs
           node tools/test-v12-fast-gate-plan.mjs
           node tools/test-v12-fast-changed-files.mjs
+          node tools/test-v12-certification-readiness.mjs
           printf 'V1.2 dependency-free provenance and fast-mode tooling self-tests: PASS\n'
 
-      - name: Validate source identity, then refuse certification
+      - name: Check exact V1.2 source readiness
         shell: bash
         run: |
           set -euo pipefail
-
-          required=(
-            package.json
-            package-lock.json
-            app.js
-            wrangler.toml
-            RELEASE_MANIFEST.json
-            scripts/validate.mjs
-            tests
-          )
-
-          missing=()
-          for p in "${required[@]}"; do
-            [[ -e "$p" ]] || missing+=("$p")
-          done
-
-          if (( ${#missing[@]} > 0 )); then
-            printf 'V1.2 certification BLOCKED: exact application source is not synchronized.\n' >&2
-            printf 'Missing required source markers:\n' >&2
-            printf ' - %s\n' "${missing[@]}" >&2
-            printf 'Production V1.1.1 must remain untouched; releaseReady must remain false.\n' >&2
+          node tools/v12-certification-readiness.mjs --root . --json > .v12-certification-readiness.json || {
+            cat .v12-certification-readiness.json >&2
+            printf '\nV1.2 certification BLOCKED before product execution.\n' >&2
+            printf 'Production V1.1.1 remains untouched; releaseReady remains false.\n' >&2
             exit 1
-          fi
-
-          node <<'NODE'
-          const fs = require('node:fs');
-          function readJson(file) {
-            try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-            catch (error) {
-              console.error(`V1.2 provenance BLOCKED: ${file} is invalid JSON: ${error.message}`);
-              process.exit(1);
-            }
           }
-          const pkg = readJson('package.json');
-          const manifest = readJson('RELEASE_MANIFEST.json');
-          const failures = [];
-          if (pkg.version !== '1.2.0') failures.push(`package.json version=${JSON.stringify(pkg.version)}`);
-          if (manifest.product !== 'Cosmic Transcriber Web') failures.push(`manifest product=${JSON.stringify(manifest.product)}`);
-          if (manifest.version !== '1.2.0') failures.push(`manifest version=${JSON.stringify(manifest.version)}`);
-          if (manifest.releaseReady !== false) failures.push(`manifest releaseReady=${JSON.stringify(manifest.releaseReady)} (must remain false)`);
-          if (failures.length) {
-            console.error('V1.2 provenance BLOCKED: unsafe/stale candidate identity:');
-            for (const failure of failures) console.error(` - ${failure}`);
-            process.exit(1);
-          }
-          console.error('V1.2 source identity markers PASS.');
-          NODE
+          cat .v12-certification-readiness.json
 
-          expected_lock_sha='1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c'
-          actual_lock_sha="$(sha256sum package-lock.json | awk '{print $1}')"
-          if [[ "$actual_lock_sha" != "$expected_lock_sha" ]]; then
-            printf 'V1.2 provenance BLOCKED: package-lock.json mismatch.\n expected: %s\n actual:   %s\n' "$expected_lock_sha" "$actual_lock_sha" >&2
-            printf 'Never bless a dependency refresh implicitly.\n' >&2
-            exit 1
-          fi
-
-          printf '\nSource identity is plausible, but certification is still BLOCKED.\n' >&2
-          printf 'Required next: recover exact certified V1.1.1 artifact/hash evidence and independently record its materialized tree SHA-256;\n' >&2
-          printf 'then run the schema-v4 whole-tree regression audit with --expected-base-tree-sha256 and the schema-v4 critical-change review;\n' >&2
-          printf 'then complete Node 26.7.0/npm 12.0.2 functional/static/mutation, nine-format, Worker/integration/browser/platform,\n' >&2
-          printf 'Windows, fresh-ZIP and staging acceptance gates.\n' >&2
+      - name: Refuse certification until executable F4 matrix is wired
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'V1.2 source identity/readiness markers passed, but certification is still BLOCKED.\n' >&2
+          printf 'The exact certified V1.1.1 baseline provenance is already recovered and hard-pinned in the schema-v5 tools.\n' >&2
+          printf 'Required next: materialize that exact certified V1.1.1 source tree, run schema-v5 regression audit and critical-change review,\n' >&2
+          printf 'then execute the complete Node 26.7.0/npm 12.0.2 functional/static/mutation, nine-format, Worker/integration/browser/platform,\n' >&2
+          printf 'Windows, Safari/macOS, package-integrity, fresh-ZIP, rollback and staging-acceptance gates.\n' >&2
+          printf 'This guard intentionally exits non-zero until those executable F4 gates are wired and genuinely pass.\n' >&2
           exit 1
