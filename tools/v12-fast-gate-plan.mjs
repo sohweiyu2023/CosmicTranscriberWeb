@@ -46,6 +46,8 @@ const SOURCE_NEUTRAL_RULES = [
 ];
 
 const RULES = [
+  { tier: 'F3', area: 'release-gate-control', re: /^(?:\.github\/workflows\/(?:certif(?:y|ication)|release(?:[-_.].*)?)\.ya?ml|scripts?\/(?:certif(?:y|ication)|release)(?:[-_.\/].*)?)/i },
+  { tier: 'F3', area: 'release-manifest', re: /^RELEASE_MANIFEST\.json$/i },
   { tier: 'F2', area: 'billing', re: /(?:billing|paid|dispatch|retry|ambiguous|charge)/i },
   { tier: 'F2', area: 'auth-session', re: /(?:auth|access|session|byok|key|crypto|encrypt|secret)/i },
   { tier: 'F2', area: 'checkpoint', re: /(?:checkpoint|resume|cancel)/i },
@@ -92,6 +94,15 @@ add('changed-file-review', 'Review the exact changed paths before continuing.');
 add('release-ready-false', 'Preserve V1.2 releaseReady:false; fast-mode PASS is never release certification.');
 
 if (areas.has('provenance-tooling')) add('provenance-self-tests', 'Syntax-check and execute dependency-free V1.2 provenance/fast-mode tooling self-tests.');
+if (areas.has('release-gate-control')) {
+  add('release-gate-topology-review', 'Review the certification/release workflow or script as mandatory release-control code; preserve every required gate and fail-closed dependency/order relationship.');
+  add('mandatory-release-gates-preserved', 'Prove no mandatory security, billing, mutation, Worker, integration, browser, Windows, Safari, package-integrity, provenance, rollback, fresh-ZIP or staging-acceptance gate was removed, weakened, skipped or relabeled.');
+  add('production-block', 'Do not deploy V1.2 to production in fast mode.');
+}
+if (areas.has('release-manifest')) {
+  add('release-manifest-invariants', 'Validate release metadata against the exact candidate and preserve releaseReady:false until the complete F4 policy and staging acceptance pass.');
+  add('release-package-integrity', 'Revalidate manifest/package-integrity and provenance bindings before any release-candidate packaging step.');
+}
 if (areas.has('billing') || areas.has('checkpoint')) {
   add('billing-checkpoint-targeted', 'Run targeted paid-dispatch/checkpoint/retry tests, including exact checkpoint reuse and no unnecessary second paid transcription.');
   add('billing-static-security', 'Run relevant billing/checkpoint static-security safeguards.');
@@ -130,7 +141,7 @@ const guidance = {
 };
 
 const result = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   mode: 'V1.2_FAST_DEVELOPMENT',
   recommendedTier: tier,
   guidance: guidance[tier],
