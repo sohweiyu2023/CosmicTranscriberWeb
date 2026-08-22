@@ -7,6 +7,8 @@ import path from 'node:path';
 const EXPECTED_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
 const EXPECTED_NODE = 'v26.7.0';
 const EXPECTED_NPM = '12.0.2';
+const EXPECTED_WORKFLOW = 'Reconstruct V1.2 Batch 4 MPEG trust boundary';
+const EXPECTED_REF_NAME = 'dev/v1.2.0-ci-source-20260821';
 
 function fail(message) {
   console.error(`Batch 4 CI receipt refused: ${message}`);
@@ -36,6 +38,20 @@ function readNpmVersion() {
   return version;
 }
 
+function readPositiveSafeInteger(name) {
+  const raw = process.env[name] ?? '';
+  if (!/^[1-9]\d*$/.test(raw)) {
+    fail(`${name} must be a positive decimal integer`);
+    return null;
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    fail(`${name} is outside the safe integer range`);
+    return null;
+  }
+  return value;
+}
+
 const root = path.resolve(process.argv[2] ?? process.cwd());
 const output = path.resolve(process.argv[3] ?? path.join(root, 'evidence', 'V1.2_BATCH4_CI_RECEIPT.json'));
 
@@ -43,6 +59,17 @@ const requiredEnv = ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_SHA', 'GITHU
 for (const key of requiredEnv) {
   if (!process.env[key]) fail(`missing ${key}`);
 }
+if (process.exitCode) process.exit();
+
+const runId = readPositiveSafeInteger('GITHUB_RUN_ID');
+const runAttempt = readPositiveSafeInteger('GITHUB_RUN_ATTEMPT');
+const githubSha = process.env.GITHUB_SHA;
+const refName = process.env.GITHUB_REF_NAME;
+const workflow = process.env.GITHUB_WORKFLOW;
+
+if (!/^[0-9a-f]{40}$/i.test(githubSha)) fail(`unexpected GITHUB_SHA: ${JSON.stringify(githubSha)}`);
+if (refName !== EXPECTED_REF_NAME) fail(`expected GITHUB_REF_NAME ${EXPECTED_REF_NAME}, got ${JSON.stringify(refName)}`);
+if (workflow !== EXPECTED_WORKFLOW) fail(`expected GITHUB_WORKFLOW ${EXPECTED_WORKFLOW}, got ${JSON.stringify(workflow)}`);
 if (process.exitCode) process.exit();
 
 const [manifestRaw, lockBytes, packageRaw] = await Promise.all([
@@ -75,11 +102,11 @@ const receipt = {
     npm: npmVersion,
   },
   github: {
-    workflow: process.env.GITHUB_WORKFLOW,
-    runId: Number(process.env.GITHUB_RUN_ID),
-    runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
-    sha: process.env.GITHUB_SHA,
-    refName: process.env.GITHUB_REF_NAME,
+    workflow,
+    runId,
+    runAttempt,
+    sha: githubSha,
+    refName,
   },
   gates: {
     focusedMpegAndNineFormat: 'passed-before-receipt-step',
