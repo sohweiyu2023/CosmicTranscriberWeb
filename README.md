@@ -18,6 +18,12 @@ Audio is prepared in the browser, sent through a tightly scoped Cloudflare Worke
 - Windows Chrome/Edge and macOS Safari/Chrome as primary browser targets
 - Automated security, mutation, Worker, integration, browser, Windows, macOS and real-Safari release gates
 
+## Development mode
+
+V1.2 uses **Fast Development Mode**: risk-based F0–F3 feedback during iteration, followed by an unchanged full F4 release-certification boundary. Fast mode reduces redundant test work but never weakens billing, security, provenance, browser/platform, staging, or fresh-ZIP release requirements.
+
+The non-certifying fast-feedback workflow is `.github/workflows/dev-fast.yml`; the deliberately fail-closed release guard is `.github/workflows/certify.yml`. See `docs/V1.2_FAST_DEVELOPMENT_MODE.md` for the operating rules.
+
 ## Status
 
-**Pre-release certification is in progress.** Audit/source candidates remain deliberately non-deployable until the complete release test matrix passes. A user-facing release ZIP is only produced after all defined release gates are green.
+**Pre-release certification is in progress.** Audit/source candidates remain deliberately non-deployable until the complete release test matrix passes. V1.2 remains `releaseReady:false`, production V1.1.1 remains untouched, and a user-facing certified release ZIP is only produced after all defined F4 release gates are green.
