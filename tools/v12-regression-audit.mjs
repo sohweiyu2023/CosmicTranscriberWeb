@@ -9,9 +9,25 @@ const base = arg('--base');
 const candidate = arg('--candidate');
 const expectedBaseTreeSha256 = arg('--expected-base-tree-sha256');
 const jsonOut = arg('--json');
+
+const CERTIFIED_V111 = Object.freeze({
+  version: '1.1.1',
+  certificationRunId: 31997529015,
+  certificationHeadSha: '725327e6af5f15ebf7ba3da39674d8ff12b85229',
+  certifiedArtifactId: 9277847563,
+  certifiedArtifactDigestSha256: '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c',
+  certifiedZipSha256: 'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df',
+  reviewedLockSha256: '564a05c3d4982eada023007c9fe3474f2cdda1f4051b15eb37f6722b90628f93',
+  materializedTreeSha256: 'a67ba4aee35bf533c122f322418ac3fd4bf68601a1ae320deecb35318ffb5300'
+});
+
 if (!base || !candidate || typeof expectedBaseTreeSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(expectedBaseTreeSha256)) {
   console.error('Usage: node tools/v12-regression-audit.mjs --base <certified-v1.1.1-dir> --expected-base-tree-sha256 <verified-64-lowercase-hex> --candidate <v1.2-dir> [--json <output.json>]');
   process.exit(2);
+}
+if (expectedBaseTreeSha256 !== CERTIFIED_V111.materializedTreeSha256) {
+  console.error(`V1.2 audit BLOCKED: supplied V1.1.1 base tree SHA-256 is not the recovered certified baseline.\n approved: ${CERTIFIED_V111.materializedTreeSha256}\n supplied: ${expectedBaseTreeSha256}`);
+  process.exit(1);
 }
 
 const EXPECTED_CANDIDATE_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
@@ -41,17 +57,11 @@ requireDirs(candidate,REQUIRED_CANDIDATE_DIRS,'V1.2 audit candidate');
 const basePkg=readJson(path.join(base,'package.json'),'base package.json');
 const baseManifest=readJson(path.join(base,'RELEASE_MANIFEST.json'),'base RELEASE_MANIFEST.json');
 const bf=[];
-if(basePkg.version!=='1.1.1')bf.push(`package.json version=${JSON.stringify(basePkg.version)}`);
+if(basePkg.version!==CERTIFIED_V111.version)bf.push(`package.json version=${JSON.stringify(basePkg.version)}`);
 if(baseManifest.product!=='Cosmic Transcriber Web')bf.push(`manifest product=${JSON.stringify(baseManifest.product)}`);
-if(baseManifest.version!=='1.1.1')bf.push(`manifest version=${JSON.stringify(baseManifest.version)}`);
+if(baseManifest.version!==CERTIFIED_V111.version)bf.push(`manifest version=${JSON.stringify(baseManifest.version)}`);
 if(baseManifest.releaseReady!==true)bf.push(`manifest releaseReady=${JSON.stringify(baseManifest.releaseReady)} (certified comparison base must be true)`);
 if(bf.length)fail(`V1.2 audit BLOCKED: comparison base is not the certified V1.1.1 identity:\n - ${bf.join('\n - ')}`);
-
-const baseFiles=walk(base);
-const baseTreeSha256=treeSha256(base,baseFiles);
-if(baseTreeSha256!==expectedBaseTreeSha256){
-  fail(`V1.2 audit BLOCKED: certified V1.1.1 materialized base tree SHA-256 mismatch.\n expected: ${expectedBaseTreeSha256}\n actual:   ${baseTreeSha256}\n algorithm: ${TREE_HASH_ALGORITHM}\nRecover the exact certified V1.1.1 artifact and independently verify its materialized tree before comparison.`);
-}
 
 const pkg=readJson(path.join(candidate,'package.json'),'candidate package.json');
 const manifest=readJson(path.join(candidate,'RELEASE_MANIFEST.json'),'candidate RELEASE_MANIFEST.json');
@@ -64,6 +74,12 @@ if(cf.length)fail(`V1.2 audit BLOCKED: unsafe/stale candidate identity:\n - ${cf
 
 const candidateLockSha256=sha256(path.join(candidate,'package-lock.json'));
 if(candidateLockSha256!==EXPECTED_CANDIDATE_LOCK_SHA256)fail(`V1.2 audit BLOCKED: candidate package-lock.json does not match the reviewed development candidate.\n expected: ${EXPECTED_CANDIDATE_LOCK_SHA256}\n actual:   ${candidateLockSha256}`);
+
+const baseFiles=walk(base);
+const baseTreeSha256=treeSha256(base,baseFiles);
+if(baseTreeSha256!==CERTIFIED_V111.materializedTreeSha256){
+  fail(`V1.2 audit BLOCKED: materialized V1.1.1 tree is not byte-identical to the recovered certified baseline.\n certified: ${CERTIFIED_V111.materializedTreeSha256}\n actual:    ${baseTreeSha256}\n algorithm: ${TREE_HASH_ALGORITHM}`);
+}
 
 const candFiles=walk(candidate);
 const candidateTreeSha256=treeSha256(candidate,candFiles);
@@ -92,11 +108,12 @@ if(fs.existsSync(deletionAllowlistPath)){
 
 const unexplainedDeleted=deleted.filter(p=>!allow.has(p)),staleAllowlist=[...allow.keys()].filter(p=>!deleted.includes(p)),criticalDeleted=deleted.filter(critical),criticalModified=modified.map(x=>x.path).filter(critical);
 const report={
-  schemaVersion:4,
+  schemaVersion:5,
   treeHashAlgorithm:TREE_HASH_ALGORITHM,
   status:unexplainedDeleted.length||staleAllowlist.length?'BLOCKED':'PASS',
   releaseReady:manifest.releaseReady,
-  base:{root:path.resolve(base),fileCount:baseFiles.length,version:basePkg.version,releaseReady:baseManifest.releaseReady,treeSha256:baseTreeSha256,expectedTreeSha256:expectedBaseTreeSha256,provenanceVerified:true},
+  certifiedBaseline:{...CERTIFIED_V111},
+  base:{root:path.resolve(base),fileCount:baseFiles.length,version:basePkg.version,releaseReady:baseManifest.releaseReady,treeSha256:baseTreeSha256,expectedTreeSha256:CERTIFIED_V111.materializedTreeSha256,provenanceVerified:true},
   candidate:{root:path.resolve(candidate),fileCount:candFiles.length,version:pkg.version,packageLockSha256:candidateLockSha256,treeSha256:candidateTreeSha256},
   counts:{added:added.length,modified:modified.length,deleted:deleted.length,unchanged:unchanged.length,unexplainedDeleted:unexplainedDeleted.length,staleAllowlist:staleAllowlist.length,criticalDeleted:criticalDeleted.length,criticalModified:criticalModified.length},
   added,
@@ -106,11 +123,11 @@ const report={
   staleAllowlist,
   criticalDeleted,
   criticalModified,
-  note:'PASS means only that an externally supplied certified-base tree identity matched the materialized V1.1.1 tree using the recorded deterministic tree-hash algorithm, the exact candidate snapshot and dependency-lock provenance matched, and file-level deletion provenance passed. It is NOT V1.2 release certification.'
+  note:'PASS means only that the materialized V1.1.1 base matches the hard-pinned recovered all-green certified baseline, the exact V1.2 candidate snapshot and reviewed dependency-lock provenance match, and file-level deletion provenance passed. It is NOT V1.2 release certification.'
 };
 const text=JSON.stringify(report,null,2)+'\n';
 if(jsonOut){fs.mkdirSync(path.dirname(path.resolve(jsonOut)),{recursive:true});fs.writeFileSync(jsonOut,text,'utf8');}
 console.log(text.trimEnd());
 if(staleAllowlist.length)fail(`V1.2 audit BLOCKED: stale deletion allowlist entries: ${staleAllowlist.join(', ')}`);
 if(unexplainedDeleted.length)fail(`V1.2 audit BLOCKED: unexplained deletions: ${unexplainedDeleted.join(', ')}`);
-console.error('V1.2 file-level regression audit PASS with certified-base tree binding (not release certification).');
+console.error('V1.2 file-level regression audit PASS against hard-pinned certified V1.1.1 baseline (not release certification).');
