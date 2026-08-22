@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -9,6 +10,8 @@ const EXPECTED_NODE = 'v26.7.0';
 const EXPECTED_NPM = '12.0.2';
 const EXPECTED_WORKFLOW = 'Reconstruct V1.2 Batch 4 MPEG trust boundary';
 const EXPECTED_REF_NAME = 'dev/v1.2.0-ci-source-20260821';
+const TREE_HASH_ALGORITHM = 'sha256-path-utf8-nul-filehash-ascii-lf-codeunit-sort-v1';
+const IGNORE_ROOT_DIRS = new Set(['.git']);
 
 function fail(message) {
   console.error(`Batch 4 CI receipt refused: ${message}`);
@@ -52,6 +55,38 @@ function readPositiveSafeInteger(name) {
   return value;
 }
 
+function compareNames(a, b) {
+  return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+}
+
+function walkCandidateTree(root) {
+  const files = [];
+  function visit(rel) {
+    const abs = path.join(root, rel);
+    for (const ent of fs.readdirSync(abs, { withFileTypes: true }).sort(compareNames)) {
+      if (!rel && IGNORE_ROOT_DIRS.has(ent.name)) continue;
+      const child = rel ? `${rel}/${ent.name}` : ent.name;
+      if (ent.isDirectory()) visit(child);
+      else if (ent.isFile()) files.push(child.replaceAll('\\', '/'));
+      else if (ent.isSymbolicLink()) fail(`symbolic links are not permitted in preserved candidate source: ${child}`);
+      else fail(`unsupported filesystem entry in preserved candidate source: ${child}`);
+    }
+  }
+  visit('');
+  return files;
+}
+
+function candidateTreeSha256(root, files) {
+  const h = createHash('sha256');
+  for (const rel of files) {
+    h.update(Buffer.from(rel, 'utf8'));
+    h.update(Buffer.from([0]));
+    h.update(Buffer.from(sha256(fs.readFileSync(path.join(root, rel))), 'ascii'));
+    h.update(Buffer.from([10]));
+  }
+  return h.digest('hex');
+}
+
 const root = path.resolve(process.argv[2] ?? process.cwd());
 const output = path.resolve(process.argv[3] ?? path.join(root, 'evidence', 'V1.2_BATCH4_CI_RECEIPT.json'));
 
@@ -90,12 +125,27 @@ if (npmVersion !== EXPECTED_NPM) fail(`expected npm ${EXPECTED_NPM}, got ${npmVe
 if (lockSha256 !== EXPECTED_LOCK_SHA256) fail(`package-lock SHA-256 mismatch: ${lockSha256}`);
 if (process.exitCode) process.exit();
 
+const forbiddenGeneratedRoots = ['node_modules', 'dist', 'coverage', 'evidence', 'test-results', 'playwright-report', 'blob-report', '.wrangler'];
+for (const name of forbiddenGeneratedRoots) {
+  if (fs.existsSync(path.join(root, name))) fail(`generated/dependency state must be stripped before receipt generation: ${name}`);
+}
+if (process.exitCode) process.exit();
+
+const candidateFiles = walkCandidateTree(root);
+if (process.exitCode) process.exit();
+if (candidateFiles.length === 0) fail('preserved candidate source tree is empty');
+const candidateTreeHash = candidateTreeSha256(root, candidateFiles);
+if (process.exitCode) process.exit();
+
 const receipt = {
-  schema: 'cosmic-v12-batch4-ci-receipt-1',
+  schema: 'cosmic-v12-batch4-ci-receipt-2',
   candidate: {
     version: pkg.version,
     releaseReady: false,
     packageLockSha256: lockSha256,
+    preservedSourceFileCount: candidateFiles.length,
+    preservedSourceTreeHashAlgorithm: TREE_HASH_ALGORITHM,
+    preservedSourceTreeSha256: candidateTreeHash,
   },
   runtime: {
     node: process.version,
@@ -128,4 +178,4 @@ const receipt = {
 
 await mkdir(path.dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
-console.log(`Wrote non-certifying Batch 4 CI receipt: ${output}`);
+console.log(`Wrote non-certifying Batch 4 CI receipt bound to preserved candidate tree ${candidateTreeHash}: ${output}`);
