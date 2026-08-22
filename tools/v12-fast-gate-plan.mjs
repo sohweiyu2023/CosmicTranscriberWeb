@@ -40,6 +40,11 @@ for (const p of files) {
   }
 }
 
+const SOURCE_NEUTRAL_RULES = [
+  { tier: 'F0', area: 'docs', re: /^docs\//i },
+  { tier: 'F0', area: 'provenance-tooling', re: /^tools\/(?:test-v12-|v12-(?:fast|regression-audit|critical-change-review))/i }
+];
+
 const RULES = [
   { tier: 'F2', area: 'billing', re: /(?:billing|paid|dispatch|retry|ambiguous|charge)/i },
   { tier: 'F2', area: 'auth-session', re: /(?:auth|access|session|byok|key|crypto|encrypt|secret)/i },
@@ -51,7 +56,7 @@ const RULES = [
   { tier: 'F1', area: 'local-runtime', re: /^src\//i },
   { tier: 'F1', area: 'tests-runtime', re: /^(?:tests\/|test\/)/i },
   { tier: 'F1', area: 'browser-ui', re: /(?:playwright|browser|queue|progress|download|\.html$|\.css$)/i },
-  { tier: 'F0', area: 'provenance-tooling', re: /^(?:tools\/(?:test-)?v12-|docs\/V1\.2_|\.github\/workflows\/)/i },
+  { tier: 'F0', area: 'provenance-tooling', re: /^\.github\/workflows\//i },
   { tier: 'F0', area: 'docs', re: /\.(?:md|txt)$/i }
 ];
 
@@ -61,7 +66,8 @@ const areas = new Set();
 const classified = [];
 
 for (const changedPath of files) {
-  const hits = RULES.filter((rule) => rule.re.test(changedPath));
+  const neutralHit = SOURCE_NEUTRAL_RULES.find((rule) => rule.re.test(changedPath));
+  const hits = neutralHit ? [neutralHit] : RULES.filter((rule) => rule.re.test(changedPath));
   if (!hits.length) hits.push({ tier: 'F1', area: 'uncategorized-runtime-or-tooling' });
   let fileTier = 'F0';
   const fileAreas = [];
@@ -124,7 +130,7 @@ const guidance = {
 };
 
 const result = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   mode: 'V1.2_FAST_DEVELOPMENT',
   recommendedTier: tier,
   guidance: guidance[tier],
