@@ -1,0 +1,79 @@
+name: Preserve exact V1.1.1 certified regression base
+
+on:
+  push:
+    branches: ['dev/v1.2.0-ci-source-20260821']
+    paths:
+      - '.github/workflows/preserve-v111-certified-base.yml'
+      - 'tools/v12-verify-certified-base.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  preserve-certified-base:
+    name: Verify and preserve exact certified V1.1.1 base
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download exact historical certified artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v111-wrapper" "$RUNNER_TEMP/v111-source"
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
+            > "$RUNNER_TEMP/v111-wrapper/artifact.zip"
+          printf '%s  %s\n' \
+            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
+            "$RUNNER_TEMP/v111-wrapper/artifact.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/artifact.zip" -d "$RUNNER_TEMP/v111-wrapper/extracted"
+          test "$(find "$RUNNER_TEMP/v111-wrapper/extracted" -maxdepth 1 -type f | wc -l)" -eq 1
+          test -f "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          printf '%s  %s\n' \
+            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
+            "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" -d "$RUNNER_TEMP/v111-source"
+
+      - name: Verify materialized source tree identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/v12-verify-certified-base.mjs
+          node tools/v12-verify-certified-base.mjs \
+            --base "$RUNNER_TEMP/v111-source/CosmicTranscriberWeb-1.1.1" \
+            --certified-zip "$RUNNER_TEMP/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip" \
+            --json "$RUNNER_TEMP/v111-verification.json"
+          cat "$RUNNER_TEMP/v111-verification.json"
+
+      - name: Preserve verified certified ZIP and verification evidence
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: CosmicTranscriberWeb-1.1.1-certified-base-preserved
+          path: |
+            ${{ runner.temp }}/v111-wrapper/extracted/CosmicTranscriberWeb-1.1.1-source.zip
+            ${{ runner.temp }}/v111-verification.json
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Record non-certification boundary
+        shell: bash
+        run: |
+          {
+            echo '## Certified V1.1.1 regression base preserved'
+            echo
+            echo '- Historical Actions artifact digest: verified'
+            echo '- Inner certified ZIP SHA-256: verified'
+            echo '- Materialized 154-file tree SHA-256: verified'
+            echo '- V1.2 certified: **no**'
+            echo '- V1.2 releaseReady may change: **no**'
+            echo '- Production V1.1.1 changed: **no**'
+          } >> "$GITHUB_STEP_SUMMARY"
