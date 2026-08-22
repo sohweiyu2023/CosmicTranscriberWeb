@@ -191,3 +191,5 @@ jobs:
             echo '- Staging changed: **no**'
             echo '- Release ZIP produced: **no**'
           } >> "$GITHUB_STEP_SUMMARY"
+
+# 2026-08-23: semantics-neutral retrigger for review-source materialization.
