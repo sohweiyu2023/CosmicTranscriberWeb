@@ -7,6 +7,8 @@ on:
       - '.github/workflows/reconstruct-v12-dev-source-batch3.yml'
       - 'docs/V1.2_BATCH3_DIRECT_RECONSTRUCTION.json'
       - 'tools/v12-batch3-multiformat.patch.gz.b64'
+      - 'tools/v12-batch3-prebilling-hardening.mjs'
+      - 'tools/test-v12-batch3-prebilling-hardening.mjs'
   workflow_dispatch:
 
 permissions:
@@ -139,6 +141,20 @@ jobs:
             '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
             package-lock.json | sha256sum -c -
 
+      - name: Self-test and apply Batch 3 prebilling hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/v12-batch3-prebilling-hardening.mjs
+          node --check tools/test-v12-batch3-prebilling-hardening.mjs
+          node tools/test-v12-batch3-prebilling-hardening.mjs --root "$V12_ROOT"
+          node tools/v12-batch3-prebilling-hardening.mjs --root "$V12_ROOT"
+          node tools/v12-batch3-prebilling-hardening.mjs --root "$V12_ROOT"
+          test "$(node -p "require('$V12_ROOT/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            "$V12_ROOT/package-lock.json" | sha256sum -c -
+
       - name: Verify nine real formats and fixture determinism
         shell: bash
         working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
@@ -173,7 +189,7 @@ jobs:
         working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
         run: npm run test:worker
 
-      - name: Whole-Worker integration
+      - name: Whole-Worker integration including zero-paid-dispatch direct-format regressions
         working-directory: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
         run: npm run test:integration
 
@@ -209,7 +225,7 @@ jobs:
       - name: Preserve reconstructed Batch 3 development source
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: CosmicTranscriberWeb-1.2.0-dev-reconstructed-batch3-multiformat
+          name: CosmicTranscriberWeb-1.2.0-dev-reconstructed-batch3-prebilling-hardened
           path: ${{ runner.temp }}/v12-work/CosmicTranscriberWeb-1.2.0-dev
           retention-days: 90
           if-no-files-found: error
@@ -219,10 +235,12 @@ jobs:
         shell: bash
         run: |
           {
-            echo '## V1.2 Batch 3 multiformat/checkpoint development checkpoint'
+            echo '## V1.2 Batch 3 multiformat/checkpoint + prebilling hardening checkpoint'
             echo
             echo '- Exact Node 26.7.0 / npm 12.0.2: **verified in this run**'
             echo '- Nine real formats verified: **yes**'
+            echo '- Additive prebilling-hardening self-test: **8/8 passed if this job reached this step**'
+            echo '- Zero-paid-dispatch Worker integration regressions: **passed if this job reached this step**'
             echo '- Worker Vitest: **passed if this job reached this step**'
             echo '- Whole-Worker integration: **passed if this job reached this step**'
             echo '- Chromium WAV no-duplicate-dispatch regression: **passed if this job reached this step**'
