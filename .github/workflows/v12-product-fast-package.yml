@@ -12,6 +12,7 @@ on:
       - 'product/v12-deps-latest.patch.gz.b64'
       - 'product/v12-deps-policy.patch'
       - 'product/v12-staging-boundary.patch.gz.b64'
+      - 'tools/apply-v12-staging-boundary-conflicts.mjs'
   workflow_dispatch:
 
 permissions:
@@ -107,13 +108,26 @@ jobs:
             git config core.autocrlf false
             git config core.eol lf
             git apply --check $patchPath
+            if ($LASTEXITCODE -ne 0) { throw 'product patch check failed' }
             git apply $patchPath
+            if ($LASTEXITCODE -ne 0) { throw 'product patch apply failed' }
             git apply --check $depsPatch
+            if ($LASTEXITCODE -ne 0) { throw 'dependency patch check failed' }
             git apply $depsPatch
+            if ($LASTEXITCODE -ne 0) { throw 'dependency patch apply failed' }
             git apply --check $policyPatch
+            if ($LASTEXITCODE -ne 0) { throw 'dependency policy patch check failed' }
             git apply $policyPatch
+            if ($LASTEXITCODE -ne 0) { throw 'dependency policy patch apply failed' }
             git apply --check $boundaryPatch
-            git apply $boundaryPatch
+            if ($LASTEXITCODE -eq 0) {
+              git apply $boundaryPatch
+              if ($LASTEXITCODE -ne 0) { throw 'staging-boundary patch apply failed' }
+            } else {
+              git apply --reject --whitespace=nowarn $boundaryPatch | Out-Host
+              node "$env:GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" $candidate
+              if ($LASTEXITCODE -ne 0) { throw 'reviewed staging-boundary conflict resolution failed' }
+            }
             if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
             if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'editable candidate must remain releaseReady:false' }
             if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
