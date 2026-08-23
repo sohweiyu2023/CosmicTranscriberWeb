@@ -25,7 +25,18 @@ try {
   write(temp, 'scripts/validate.mjs', '');
   fs.mkdirSync(path.join(temp, 'tests'));
   r = run(temp);
-  expect('unreviewed dependency lock blocks readiness', r.status === 1 && JSON.parse(r.stdout).failures.some(x => x.includes('package-lock.json SHA-256 mismatch')));
+  let parsed = JSON.parse(r.stdout);
+  expect('unreviewed dependency lock blocks readiness', r.status === 1 && parsed.failures.some(x => x.includes('package-lock.json SHA-256 mismatch')));
+  expect('empty application source blocks readiness', parsed.failures.some(x => x.includes('app.js is empty/whitespace-only')) && parsed.failures.some(x => x.includes('wrangler.toml is empty/whitespace-only')) && parsed.failures.some(x => x.includes('scripts/validate.mjs is empty/whitespace-only')));
+  expect('empty test directory blocks readiness', parsed.failures.some(x => x.includes('placeholder test directories')) && parsed.sourceShape.nonemptyTestSources === 0);
+
+  write(temp, 'app.js', 'export const app = true;\n');
+  write(temp, 'wrangler.toml', 'name = "cosmic-transcriber-v12-test"\n');
+  write(temp, 'scripts/validate.mjs', 'console.log("validate");\n');
+  write(temp, 'tests/node/smoke.test.mjs', 'console.log("test");\n');
+  r = run(temp);
+  parsed = JSON.parse(r.stdout);
+  expect('non-empty source shape is reported deterministically', parsed.sourceShape.nonemptySourceFiles === 3 && parsed.sourceShape.nonemptyTestSources === 1 && !parsed.failures.some(x => x.includes('placeholder')));
 
   write(temp, 'RELEASE_MANIFEST.json', JSON.stringify({ product: 'Cosmic Transcriber Web', version: '1.2.0', releaseReady: true }));
   r = run(temp);
@@ -35,11 +46,11 @@ try {
   r = run(temp);
   expect('invalid manifest JSON fails closed', r.status === 1 && JSON.parse(r.stdout).failures.some(x => x.includes('invalid JSON')));
 
-  const parsed = JSON.parse(r.stdout);
+  parsed = JSON.parse(r.stdout);
   expect('recovered V1.1.1 baseline identity is emitted', parsed.certifiedBaseline.materializedTreeSha256 === 'a67ba4aee35bf533c122f322418ac3fd4bf68601a1ae320deecb35318ffb5300');
   expect('tool never claims certification', parsed.releaseCertified === false && parsed.releaseReadyMayChange === false);
 
-  console.log(`V1.2 certification-readiness self-test: ${passed}/6 PASS`);
+  console.log(`V1.2 certification-readiness self-test: ${passed}/9 PASS`);
 } finally {
   fs.rmSync(temp, { recursive: true, force: true });
 }
