@@ -209,6 +209,8 @@ jobs:
           Push-Location $candidate
           try {
             git init -q
+            git config core.autocrlf false
+            git config core.eol lf
             git apply --check $patchPath
             git apply $patchPath
             if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
