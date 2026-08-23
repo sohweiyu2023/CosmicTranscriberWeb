@@ -10,6 +10,7 @@ on:
       - 'product/v12-fast.patch.gz.b64/**'
       - 'product/v12-deps-latest.patch.gz.b64'
       - 'product/v12-deps-policy.patch'
+      - 'product/v12-staging-boundary.patch.gz.b64'
   pull_request:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - 'product/v12-fast.patch.gz.b64/**'
       - 'product/v12-deps-latest.patch.gz.b64'
       - 'product/v12-deps-policy.patch'
+      - 'product/v12-staging-boundary.patch.gz.b64'
   workflow_dispatch:
 
 permissions:
@@ -105,6 +107,11 @@ jobs:
             '9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d' \
             product/v12-deps-policy.patch | sha256sum -c -
 
+          git show "$GITHUB_SHA:product/v12-staging-boundary.patch.gz.b64" > "$ROOT/v12-staging-boundary.b64"
+          test "$(git hash-object "$ROOT/v12-staging-boundary.b64")" = 'abc8ce1089c20a7320fc006e701b1f7a58d1aa0c'
+          base64 -d "$ROOT/v12-staging-boundary.b64" > "$ROOT/v12-staging-boundary.patch.gz"
+          gzip -dc "$ROOT/v12-staging-boundary.patch.gz" > "$ROOT/v12-staging-boundary.patch"
+
           cd "$CANDIDATE"
           git init -q
           git apply --check "$ROOT/v12-fast.patch"
@@ -113,6 +120,8 @@ jobs:
           git apply "$ROOT/v12-deps.patch"
           git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
           git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
+          git apply --check "$ROOT/v12-staging-boundary.patch"
+          git apply "$ROOT/v12-staging-boundary.patch"
 
           test "$(node -p "require('./package.json').version")" = '1.2.0'
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
