@@ -1,0 +1,2 @@
+Trigger authoritative V1.2 materialization after Actions permissions were enabled.
+No product code change.
