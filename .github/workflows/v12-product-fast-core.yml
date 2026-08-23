@@ -71,6 +71,7 @@ jobs:
           unzip -q "$CERT_ZIP" -d "$ROOT/unzip"
           CANDIDATE="$ROOT/unzip/CosmicTranscriberWeb-1.1.1"
           test -f "$CANDIDATE/package.json"
+          chmod -R u+rwX "$CANDIDATE"
 
           cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12-fast.b64"
           printf '%s  %s\n' \
