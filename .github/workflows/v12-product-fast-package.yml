@@ -11,6 +11,7 @@ on:
       - 'product/v12-fast.patch.gz.b64/**'
       - 'product/v12-deps-latest.patch.gz.b64'
       - 'product/v12-deps-policy.patch'
+      - 'product/v12-staging-boundary.patch.gz.b64'
   workflow_dispatch:
 
 permissions:
@@ -27,6 +28,7 @@ env:
   V12_DEPS_GZIP_SHA256: cd9982981e83c08ada74b63dabd6cd2383e64b241fbae5762a69de17c0c5b864
   V12_DEPS_PATCH_SHA256: 38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926
   V12_DEPS_POLICY_SHA256: 9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d
+  V12_BOUNDARY_BLOB_SHA: abc8ce1089c20a7320fc006e701b1f7a58d1aa0c
   V12_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
 
 jobs:
@@ -73,13 +75,7 @@ jobs:
           if ((Get-FileHash $gzipPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_GZIP_SHA256) { throw 'gzip hash mismatch' }
           $patchPath = Join-Path $root 'v12.patch'
           $input = [IO.File]::OpenRead($gzipPath)
-          try {
-            $gz = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
-            try {
-              $out = [IO.File]::Create($patchPath)
-              try { $gz.CopyTo($out) } finally { $out.Dispose() }
-            } finally { $gz.Dispose() }
-          } finally { $input.Dispose() }
+          try { $gz = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress); try { $out = [IO.File]::Create($patchPath); try { $gz.CopyTo($out) } finally { $out.Dispose() } } finally { $gz.Dispose() } } finally { $input.Dispose() }
           if ((Get-FileHash $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_PATCH_SHA256) { throw 'patch hash mismatch' }
 
           $depsB64 = 'product/v12-deps-latest.patch.gz.b64'
@@ -89,19 +85,21 @@ jobs:
           if ((Get-FileHash $depsGzip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_GZIP_SHA256) { throw 'dependency gzip hash mismatch' }
           $depsPatch = Join-Path $root 'v12-deps.patch'
           $depsInput = [IO.File]::OpenRead($depsGzip)
-          try {
-            $depsGz = [IO.Compression.GZipStream]::new($depsInput, [IO.Compression.CompressionMode]::Decompress)
-            try {
-              $depsOut = [IO.File]::Create($depsPatch)
-              try { $depsGz.CopyTo($depsOut) } finally { $depsOut.Dispose() }
-            } finally { $depsGz.Dispose() }
-          } finally { $depsInput.Dispose() }
+          try { $depsGz = [IO.Compression.GZipStream]::new($depsInput, [IO.Compression.CompressionMode]::Decompress); try { $depsOut = [IO.File]::Create($depsPatch); try { $depsGz.CopyTo($depsOut) } finally { $depsOut.Dispose() } } finally { $depsGz.Dispose() } } finally { $depsInput.Dispose() }
           if ((Get-FileHash $depsPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_PATCH_SHA256) { throw 'dependency patch hash mismatch' }
           $policyPatchSource = (Resolve-Path 'product/v12-deps-policy.patch').Path
           $policyPatch = Join-Path $root 'v12-deps-policy.patch'
           $policyText = [IO.File]::ReadAllText($policyPatchSource).Replace("`r`n", "`n")
           [IO.File]::WriteAllText($policyPatch, $policyText, [Text.UTF8Encoding]::new($false))
           if ((Get-FileHash $policyPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_POLICY_SHA256) { throw 'dependency policy patch hash mismatch' }
+
+          $boundaryBlob = (git rev-parse "$($env:GITHUB_SHA):product/v12-staging-boundary.patch.gz.b64").Trim()
+          if ($boundaryBlob -ne $env:V12_BOUNDARY_BLOB_SHA) { throw 'staging-boundary overlay blob mismatch' }
+          $boundaryGzip = Join-Path $root 'v12-staging-boundary.patch.gz'
+          [IO.File]::WriteAllBytes($boundaryGzip, [Convert]::FromBase64String([IO.File]::ReadAllText((Resolve-Path 'product/v12-staging-boundary.patch.gz.b64'))))
+          $boundaryPatch = Join-Path $root 'v12-staging-boundary.patch'
+          $boundaryInput = [IO.File]::OpenRead($boundaryGzip)
+          try { $boundaryGz = [IO.Compression.GZipStream]::new($boundaryInput, [IO.Compression.CompressionMode]::Decompress); try { $boundaryOut = [IO.File]::Create($boundaryPatch); try { $boundaryGz.CopyTo($boundaryOut) } finally { $boundaryOut.Dispose() } } finally { $boundaryGz.Dispose() } } finally { $boundaryInput.Dispose() }
 
           Push-Location $candidate
           try {
@@ -114,6 +112,8 @@ jobs:
             git apply $depsPatch
             git apply --check $policyPatch
             git apply $policyPatch
+            git apply --check $boundaryPatch
+            git apply $boundaryPatch
             if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
             if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'editable candidate must remain releaseReady:false' }
             if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
@@ -138,7 +138,7 @@ jobs:
           & (Get-Command ffprobe -ErrorAction Stop).Source -version | Select-Object -First 1 | Write-Host
           if ($LASTEXITCODE -ne 0) { throw 'ffprobe self-check failed' }
           node scripts/generate-test-fixtures.mjs
-      - name: Run complete Windows release certification and fresh ZIP revalidation
+      - name: Run complete Windows staging certification and fresh ZIP revalidation
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -163,5 +163,5 @@ jobs:
       - name: Reassert production block
         shell: pwsh
         run: |
-          Write-Host "Local package gate passed only if all previous steps are green."
-          Write-Host "Staging acceptance is still mandatory before any final/user-facing production release."
+          Write-Host "Package gate passed only if all previous steps are green."
+          Write-Host "Staging candidate remains releaseReady:false; production is blocked until staging acceptance and final certification."
