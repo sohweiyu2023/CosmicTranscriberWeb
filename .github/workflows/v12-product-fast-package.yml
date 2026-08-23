@@ -9,6 +9,8 @@ on:
       - '.github/workflows/v12-product-fast-platform.yml'
       - '.github/workflows/v12-product-fast-core.yml'
       - 'product/v12-fast.patch.gz.b64/**'
+      - 'product/v12-deps-latest.patch.gz.b64'
+      - 'product/v12-deps-policy.patch'
   workflow_dispatch:
 
 permissions:
@@ -21,7 +23,11 @@ env:
   V12_B64_SHA256: ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee
   V12_GZIP_SHA256: 2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d
   V12_PATCH_SHA256: b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b
-  V12_LOCK_SHA256: 1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c
+  V12_DEPS_B64_SHA256: b4782f44a0a2aca1d4e2ddc3397f9aab9ede0058feec8bfa093a2785d020b4bf
+  V12_DEPS_GZIP_SHA256: cd9982981e83c08ada74b63dabd6cd2383e64b241fbae5762a69de17c0c5b864
+  V12_DEPS_PATCH_SHA256: 38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926
+  V12_DEPS_POLICY_SHA256: 9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d
+  V12_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
 
 jobs:
   windows-release-package:
@@ -75,6 +81,25 @@ jobs:
             } finally { $gz.Dispose() }
           } finally { $input.Dispose() }
           if ((Get-FileHash $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_PATCH_SHA256) { throw 'patch hash mismatch' }
+
+          $depsB64 = 'product/v12-deps-latest.patch.gz.b64'
+          if ((Get-FileHash $depsB64 -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_B64_SHA256) { throw 'dependency base64 hash mismatch' }
+          $depsGzip = Join-Path $root 'v12-deps.patch.gz'
+          [IO.File]::WriteAllBytes($depsGzip, [Convert]::FromBase64String([IO.File]::ReadAllText((Resolve-Path $depsB64))))
+          if ((Get-FileHash $depsGzip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_GZIP_SHA256) { throw 'dependency gzip hash mismatch' }
+          $depsPatch = Join-Path $root 'v12-deps.patch'
+          $depsInput = [IO.File]::OpenRead($depsGzip)
+          try {
+            $depsGz = [IO.Compression.GZipStream]::new($depsInput, [IO.Compression.CompressionMode]::Decompress)
+            try {
+              $depsOut = [IO.File]::Create($depsPatch)
+              try { $depsGz.CopyTo($depsOut) } finally { $depsOut.Dispose() }
+            } finally { $depsGz.Dispose() }
+          } finally { $depsInput.Dispose() }
+          if ((Get-FileHash $depsPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_PATCH_SHA256) { throw 'dependency patch hash mismatch' }
+          $policyPatch = (Resolve-Path 'product/v12-deps-policy.patch').Path
+          if ((Get-FileHash $policyPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_POLICY_SHA256) { throw 'dependency policy patch hash mismatch' }
+
           Push-Location $candidate
           try {
             git init -q
@@ -82,6 +107,10 @@ jobs:
             git config core.eol lf
             git apply --check $patchPath
             git apply $patchPath
+            git apply --check $depsPatch
+            git apply $depsPatch
+            git apply --check $policyPatch
+            git apply $policyPatch
             if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
             if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'editable candidate must remain releaseReady:false' }
             if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
@@ -96,6 +125,7 @@ jobs:
           npm ci
           npm run deps:install-scripts:verify
           npm audit
+          npm outdated --depth=0
           if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
             choco install ffmpeg -y --no-progress
             if ($LASTEXITCODE -ne 0) { throw "ffmpeg install failed: $LASTEXITCODE" }
