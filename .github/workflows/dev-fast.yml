@@ -118,14 +118,13 @@ jobs:
             exit 0
           fi
 
-          node <<'NODE'
-          const fs = require('node:fs');
-          const manifest = JSON.parse(fs.readFileSync('RELEASE_MANIFEST.json','utf8'));
-          if (manifest.releaseReady !== false) {
-            console.error(`Fast-development BLOCKED: releaseReady must remain false; found ${JSON.stringify(manifest.releaseReady)}`);
-            process.exit(1);
-          }
-          NODE
+          readiness='.v12-certification-readiness.json'
+          if ! node tools/v12-certification-readiness.mjs --root . --json > "$readiness"; then
+            cat "$readiness" >&2
+            printf 'Fast-development BLOCKED: nominal source paths exist but the hardened provenance-readiness gate rejected the tree.\n' >&2
+            exit 1
+          fi
+          cat "$readiness"
 
           if [[ "$tier" != 'F0' ]]; then
             printf 'Fast-development BLOCKED: application source is present and tier %s requires product gate execution.\n' "$tier" >&2
