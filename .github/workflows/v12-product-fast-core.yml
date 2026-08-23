@@ -8,6 +8,8 @@ on:
     paths:
       - '.github/workflows/v12-product-fast-core.yml'
       - 'product/v12-fast.patch.gz.b64/**'
+      - 'product/v12-deps-latest.patch.gz.b64'
+      - 'product/v12-deps-policy.patch'
   pull_request:
     branches:
       - main
@@ -15,6 +17,8 @@ on:
     paths:
       - '.github/workflows/v12-product-fast-core.yml'
       - 'product/v12-fast.patch.gz.b64/**'
+      - 'product/v12-deps-latest.patch.gz.b64'
+      - 'product/v12-deps-policy.patch'
   workflow_dispatch:
 
 permissions:
@@ -86,15 +90,34 @@ jobs:
             'b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b' \
             "$ROOT/v12-fast.patch" | sha256sum -c -
 
+          printf '%s  %s\n' \
+            'b4782f44a0a2aca1d4e2ddc3397f9aab9ede0058feec8bfa093a2785d020b4bf' \
+            product/v12-deps-latest.patch.gz.b64 | sha256sum -c -
+          base64 -d product/v12-deps-latest.patch.gz.b64 > "$ROOT/v12-deps.patch.gz"
+          printf '%s  %s\n' \
+            'cd9982981e83c08ada74b63dabd6cd2383e64b241fbae5762a69de17c0c5b864' \
+            "$ROOT/v12-deps.patch.gz" | sha256sum -c -
+          gzip -dc "$ROOT/v12-deps.patch.gz" > "$ROOT/v12-deps.patch"
+          printf '%s  %s\n' \
+            '38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926' \
+            "$ROOT/v12-deps.patch" | sha256sum -c -
+          printf '%s  %s\n' \
+            'fad0a68b3274b88d3385628f49dc9a45afd67776082a10f218ba5b682b9ea742' \
+            product/v12-deps-policy.patch | sha256sum -c -
+
           cd "$CANDIDATE"
           git init -q
           git apply --check "$ROOT/v12-fast.patch"
           git apply "$ROOT/v12-fast.patch"
+          git apply --check "$ROOT/v12-deps.patch"
+          git apply "$ROOT/v12-deps.patch"
+          git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
+          git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
 
           test "$(node -p "require('./package.json').version")" = '1.2.0'
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
           printf '%s  %s\n' \
-            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            '145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e' \
             package-lock.json | sha256sum -c -
           echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
 
@@ -106,6 +129,7 @@ jobs:
           npm ci
           npm run deps:install-scripts:verify
           npm audit
+          npm outdated --depth=0
 
       - name: Provision media validation fixtures
         shell: bash
@@ -151,6 +175,6 @@ jobs:
           cd "$CANDIDATE"
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
           printf '%s  %s\n' \
-            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            '145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e' \
             package-lock.json | sha256sum -c -
           echo 'V1.2 exact-runtime core product gate PASS; releaseReady remains false.'
