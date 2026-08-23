@@ -102,7 +102,7 @@ jobs:
             '38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926' \
             "$ROOT/v12-deps.patch" | sha256sum -c -
           printf '%s  %s\n' \
-            'fad0a68b3274b88d3385628f49dc9a45afd67776082a10f218ba5b682b9ea742' \
+            '9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d' \
             product/v12-deps-policy.patch | sha256sum -c -
 
           cd "$CANDIDATE"
