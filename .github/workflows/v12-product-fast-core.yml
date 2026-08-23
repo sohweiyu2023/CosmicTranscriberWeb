@@ -34,156 +34,87 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
       - name: Set up exact Node 26.7.0
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 26.7.0
-
       - name: Install exact npm 12.0.2
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-
       - name: Verify exact runtime
         shell: bash
         run: |
           set -euo pipefail
           test "$(node --version)" = 'v26.7.0'
           test "$(npm --version)" = '12.0.2'
-
       - name: Reconstruct authoritative V1.2 product candidate
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          WRAP="$RUNNER_TEMP/v111"
-          ROOT="$RUNNER_TEMP/v12-product"
-          mkdir -p "$WRAP" "$ROOT"
-
-          gh api \
-            -H 'Accept: application/vnd.github+json' \
-            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
-            > "$WRAP/artifact.zip"
-          printf '%s  %s\n' \
-            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
-            "$WRAP/artifact.zip" | sha256sum -c -
-
+          WRAP="$RUNNER_TEMP/v111"; ROOT="$RUNNER_TEMP/v12-product"; mkdir -p "$WRAP" "$ROOT"
+          gh api -H 'Accept: application/vnd.github+json' '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' > "$WRAP/artifact.zip"
+          printf '%s  %s\n' '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' "$WRAP/artifact.zip" | sha256sum -c -
           unzip -q "$WRAP/artifact.zip" -d "$WRAP/extracted"
-          CERT_ZIP="$WRAP/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
-          test -f "$CERT_ZIP"
-          printf '%s  %s\n' \
-            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
-            "$CERT_ZIP" | sha256sum -c -
+          CERT_ZIP="$WRAP/extracted/CosmicTranscriberWeb-1.1.1-source.zip"; test -f "$CERT_ZIP"
+          printf '%s  %s\n' 'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' "$CERT_ZIP" | sha256sum -c -
           unzip -q "$CERT_ZIP" -d "$ROOT/unzip"
-          CANDIDATE="$ROOT/unzip/CosmicTranscriberWeb-1.1.1"
-          test -f "$CANDIDATE/package.json"
-          chmod -R u+rwX "$CANDIDATE"
-
+          CANDIDATE="$ROOT/unzip/CosmicTranscriberWeb-1.1.1"; test -f "$CANDIDATE/package.json"; chmod -R u+rwX "$CANDIDATE"
           cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12-fast.b64"
-          printf '%s  %s\n' \
-            'ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee' \
-            "$ROOT/v12-fast.b64" | sha256sum -c -
+          printf '%s  %s\n' 'ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee' "$ROOT/v12-fast.b64" | sha256sum -c -
           base64 -d "$ROOT/v12-fast.b64" > "$ROOT/v12-fast.patch.gz"
-          printf '%s  %s\n' \
-            '2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d' \
-            "$ROOT/v12-fast.patch.gz" | sha256sum -c -
+          printf '%s  %s\n' '2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d' "$ROOT/v12-fast.patch.gz" | sha256sum -c -
           gzip -dc "$ROOT/v12-fast.patch.gz" > "$ROOT/v12-fast.patch"
-          printf '%s  %s\n' \
-            'b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b' \
-            "$ROOT/v12-fast.patch" | sha256sum -c -
-
-          printf '%s  %s\n' \
-            'b4782f44a0a2aca1d4e2ddc3397f9aab9ede0058feec8bfa093a2785d020b4bf' \
-            product/v12-deps-latest.patch.gz.b64 | sha256sum -c -
+          printf '%s  %s\n' 'b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b' "$ROOT/v12-fast.patch" | sha256sum -c -
+          printf '%s  %s\n' 'b4782f44a0a2aca1d4e2ddc3397f9aab9ede0058feec8bfa093a2785d020b4bf' product/v12-deps-latest.patch.gz.b64 | sha256sum -c -
           base64 -d product/v12-deps-latest.patch.gz.b64 > "$ROOT/v12-deps.patch.gz"
-          printf '%s  %s\n' \
-            'cd9982981e83c08ada74b63dabd6cd2383e64b241fbae5762a69de17c0c5b864' \
-            "$ROOT/v12-deps.patch.gz" | sha256sum -c -
+          printf '%s  %s\n' 'cd9982981e83c08ada74b63dabd6cd2383e64b241fbae5762a69de17c0c5b864' "$ROOT/v12-deps.patch.gz" | sha256sum -c -
           gzip -dc "$ROOT/v12-deps.patch.gz" > "$ROOT/v12-deps.patch"
-          printf '%s  %s\n' \
-            '38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926' \
-            "$ROOT/v12-deps.patch" | sha256sum -c -
-          printf '%s  %s\n' \
-            '9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d' \
-            product/v12-deps-policy.patch | sha256sum -c -
-
-          git show "$GITHUB_SHA:product/v12-staging-boundary.patch.gz.b64" > "$ROOT/v12-staging-boundary.b64"
-          test "$(git hash-object "$ROOT/v12-staging-boundary.b64")" = 'abc8ce1089c20a7320fc006e701b1f7a58d1aa0c'
-          base64 -d "$ROOT/v12-staging-boundary.b64" > "$ROOT/v12-staging-boundary.patch.gz"
+          printf '%s  %s\n' '38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926' "$ROOT/v12-deps.patch" | sha256sum -c -
+          printf '%s  %s\n' '9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d' product/v12-deps-policy.patch | sha256sum -c -
+          test "$(git rev-parse "$GITHUB_SHA:product/v12-staging-boundary.patch.gz.b64")" = 'abc8ce1089c20a7320fc006e701b1f7a58d1aa0c'
+          base64 -d product/v12-staging-boundary.patch.gz.b64 > "$ROOT/v12-staging-boundary.patch.gz"
           gzip -dc "$ROOT/v12-staging-boundary.patch.gz" > "$ROOT/v12-staging-boundary.patch"
-
-          cd "$CANDIDATE"
-          git init -q
-          git apply --check "$ROOT/v12-fast.patch"
-          git apply "$ROOT/v12-fast.patch"
-          git apply --check "$ROOT/v12-deps.patch"
-          git apply "$ROOT/v12-deps.patch"
-          git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
-          git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
-          git apply --check "$ROOT/v12-staging-boundary.patch"
+          cd "$CANDIDATE"; git init -q
+          git apply --check "$ROOT/v12-fast.patch"; git apply "$ROOT/v12-fast.patch"
+          git apply --check "$ROOT/v12-deps.patch"; git apply "$ROOT/v12-deps.patch"
+          git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"; git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
+          if ! git apply --check "$ROOT/v12-staging-boundary.patch"; then
+            echo '--- staging-boundary rejected hunks ---'
+            git apply --reject --whitespace=nowarn "$ROOT/v12-staging-boundary.patch" || true
+            find . -name '*.rej' -type f -print -exec cat {} \;
+            exit 1
+          fi
           git apply "$ROOT/v12-staging-boundary.patch"
-
           test "$(node -p "require('./package.json').version")" = '1.2.0'
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
-          printf '%s  %s\n' \
-            '145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e' \
-            package-lock.json | sha256sum -c -
+          printf '%s  %s\n' '145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e' package-lock.json | sha256sum -c -
           echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
-
       - name: Install dependencies and enforce dependency policy
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm ci
-          npm run deps:install-scripts:verify
-          npm audit
-          npm outdated --depth=0
-
+          set -euo pipefail; cd "$CANDIDATE"; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
       - name: Provision media validation fixtures
         shell: bash
         run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          cd "$CANDIDATE"
-          node scripts/generate-test-fixtures.mjs
-
+          set -euo pipefail; sudo apt-get update; sudo apt-get install -y --no-install-recommends ffmpeg; cd "$CANDIDATE"; node scripts/generate-test-fixtures.mjs
       - name: Run aggregate validation
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run validate
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run validate
       - name: Run Worker tests
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run test:worker
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run test:worker
       - name: Run whole-Worker integration
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run test:integration
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run test:integration
       - name: Inspect build
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run build:inspect
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run build:inspect
       - name: Reassert non-release state
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
-          printf '%s  %s\n' \
-            '145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e' \
-            package-lock.json | sha256sum -c -
-          echo 'V1.2 exact-runtime core product gate PASS; releaseReady remains false.'
+          set -euo pipefail; cd "$CANDIDATE"; test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'; printf '%s  %s\n' '145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e' package-lock.json | sha256sum -c -; echo 'V1.2 exact-runtime core product gate PASS; releaseReady remains false.'
