@@ -97,7 +97,10 @@ jobs:
             } finally { $depsGz.Dispose() }
           } finally { $depsInput.Dispose() }
           if ((Get-FileHash $depsPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_PATCH_SHA256) { throw 'dependency patch hash mismatch' }
-          $policyPatch = (Resolve-Path 'product/v12-deps-policy.patch').Path
+          $policyPatchSource = (Resolve-Path 'product/v12-deps-policy.patch').Path
+          $policyPatch = Join-Path $root 'v12-deps-policy.patch'
+          $policyText = [IO.File]::ReadAllText($policyPatchSource).Replace("`r`n", "`n")
+          [IO.File]::WriteAllText($policyPatch, $policyText, [Text.UTF8Encoding]::new($false))
           if ((Get-FileHash $policyPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_POLICY_SHA256) { throw 'dependency policy patch hash mismatch' }
 
           Push-Location $candidate
