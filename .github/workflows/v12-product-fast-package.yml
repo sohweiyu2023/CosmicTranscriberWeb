@@ -1,0 +1,134 @@
+name: V1.2 Product Fast Package
+
+on:
+  pull_request:
+    branches:
+      - dev/v1.2.0-validation-base
+    paths:
+      - '.github/workflows/v12-product-fast-package.yml'
+      - '.github/workflows/v12-product-fast-platform.yml'
+      - '.github/workflows/v12-product-fast-core.yml'
+      - 'product/v12-fast.patch.gz.b64/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  V111_WRAPPER_SHA256: 8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c
+  V111_SOURCE_SHA256: a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df
+  V12_B64_SHA256: ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee
+  V12_GZIP_SHA256: 2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d
+  V12_PATCH_SHA256: b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b
+  V12_LOCK_SHA256: 1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c
+
+jobs:
+  windows-release-package:
+    name: Windows complete release + fresh ZIP round-trip
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm
+        shell: pwsh
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Reconstruct exact V1.2 candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((node --version).Trim() -ne 'v26.7.0') { throw 'Node version mismatch' }
+          if ((npm --version).Trim() -ne '12.0.2') { throw 'npm version mismatch' }
+          $root = Join-Path $env:RUNNER_TEMP 'v12-release'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $wrapper = Join-Path $root 'wrapper.zip'
+          $download = Start-Process -FilePath 'gh' -ArgumentList @('api', '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip') -RedirectStandardOutput $wrapper -NoNewWindow -Wait -PassThru
+          if ($download.ExitCode -ne 0) { throw "gh artifact download failed: $($download.ExitCode)" }
+          if ((Get-FileHash $wrapper -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V111_WRAPPER_SHA256) { throw 'wrapper hash mismatch' }
+          $wrapperDir = Join-Path $root 'wrapper'
+          Expand-Archive -LiteralPath $wrapper -DestinationPath $wrapperDir -Force
+          $cert = Join-Path $wrapperDir 'CosmicTranscriberWeb-1.1.1-source.zip'
+          if ((Get-FileHash $cert -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V111_SOURCE_SHA256) { throw 'certified source hash mismatch' }
+          $sourceDir = Join-Path $root 'source'
+          Expand-Archive -LiteralPath $cert -DestinationPath $sourceDir -Force
+          $candidate = Join-Path $sourceDir 'CosmicTranscriberWeb-1.1.1'
+          $parts = Get-ChildItem 'product/v12-fast.patch.gz.b64/part-*' | Sort-Object Name
+          $b64 = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join ''
+          $b64Path = Join-Path $root 'v12.b64'
+          [IO.File]::WriteAllText($b64Path, $b64, [Text.UTF8Encoding]::new($false))
+          if ((Get-FileHash $b64Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_B64_SHA256) { throw 'base64 hash mismatch' }
+          $gzipPath = Join-Path $root 'v12.patch.gz'
+          [IO.File]::WriteAllBytes($gzipPath, [Convert]::FromBase64String($b64))
+          if ((Get-FileHash $gzipPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_GZIP_SHA256) { throw 'gzip hash mismatch' }
+          $patchPath = Join-Path $root 'v12.patch'
+          $input = [IO.File]::OpenRead($gzipPath)
+          try {
+            $gz = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
+            try {
+              $out = [IO.File]::Create($patchPath)
+              try { $gz.CopyTo($out) } finally { $out.Dispose() }
+            } finally { $gz.Dispose() }
+          } finally { $input.Dispose() }
+          if ((Get-FileHash $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_PATCH_SHA256) { throw 'patch hash mismatch' }
+          Push-Location $candidate
+          try {
+            git init -q
+            git config core.autocrlf false
+            git config core.eol lf
+            git apply --check $patchPath
+            git apply $patchPath
+            if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
+            if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'editable candidate must remain releaseReady:false' }
+            if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
+          } finally { Pop-Location }
+          "CANDIDATE=$candidate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SOURCE_PARENT=$sourceDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Provision release prerequisites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:CANDIDATE
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "ffmpeg install failed: $LASTEXITCODE" }
+          }
+          & (Get-Command ffmpeg -ErrorAction Stop).Source -version | Select-Object -First 1 | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw 'ffmpeg self-check failed' }
+          & (Get-Command ffprobe -ErrorAction Stop).Source -version | Select-Object -First 1 | Write-Host
+          if ($LASTEXITCODE -ne 0) { throw 'ffprobe self-check failed' }
+          node scripts/generate-test-fixtures.mjs
+      - name: Run complete Windows release certification and fresh ZIP revalidation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location $env:CANDIDATE
+          & pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
+          if ($LASTEXITCODE -ne 0) { throw "RELEASE-WINDOWS.ps1 failed: $LASTEXITCODE" }
+          if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'editable candidate was mutated to releaseReady:true' }
+          if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'release changed reviewed lockfile' }
+          $zip = Join-Path $env:SOURCE_PARENT 'CosmicTranscriberWeb-1.2.0-source.zip'
+          if (-not (Test-Path $zip)) { throw "staging-candidate ZIP missing: $zip" }
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "V12_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "V12_ZIP_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "V1.2 staging-candidate ZIP SHA-256: $hash"
+      - name: Upload locally certified staging candidate - not final production release
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: CosmicTranscriberWeb-1.2.0-staging-candidate-NOT-FINAL
+          path: ${{ env.V12_ZIP }}
+          if-no-files-found: error
+          retention-days: 7
+      - name: Reassert production block
+        shell: pwsh
+        run: |
+          Write-Host "Local package gate passed only if all previous steps are green."
+          Write-Host "Staging acceptance is still mandatory before any final/user-facing production release."
