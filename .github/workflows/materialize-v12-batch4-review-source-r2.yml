@@ -3,8 +3,6 @@ name: Materialize authoritative V1.2 product tree
 on:
   push:
     branches: ['dev/v1.2.0-ci-source-20260821']
-    paths:
-      - '.github/workflows/materialize-v12-batch4-review-source-r2.yml'
   workflow_dispatch:
 
 permissions:
