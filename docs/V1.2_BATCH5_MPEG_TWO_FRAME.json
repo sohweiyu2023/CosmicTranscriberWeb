@@ -1,0 +1,61 @@
+{
+  "schema": "cosmic-v12-reconstruction-overlay-1",
+  "batch": 5,
+  "purpose": "Close the MPEG-family prebilling gap where one structurally valid frame ending exactly at EOF could authorize paid dispatch.",
+  "appliesAfter": [
+    "certified V1.1.1 recovery",
+    "V1.2 Batch 1 reconstruction",
+    "official Batch 2 prebilling overlay",
+    "Batch 3 multiformat/checkpoint patch",
+    "Batch 3 additive prebilling hardening",
+    "Batch 4 MPEG trust-boundary hardening"
+  ],
+  "overlay": {
+    "path": "tools/v12-batch5-mpeg-two-frame.patch.gz.b64",
+    "patchSha256": "0d40c1317b4a2dd5ac2e63ca7c6a30630993f0ab2461ad2e00d22d69e2c7a2e5",
+    "gzipSha256": "315b481045df1e5aa145804d7e283086fe30c4e6f6a32770c5823f56ada9336d",
+    "base64Sha256": "8e7f18d7173351ea9d1c0e70cd18fd7590f0d92f202bd2b9c05bed5538781028",
+    "patchBytes": 4360,
+    "gzipBytes": 1006,
+    "base64Bytes": 1344,
+    "files": [
+      "src/audio-formats.js",
+      "tests/node/audio-formats.test.mjs",
+      "scripts/audit-lib.mjs",
+      "scripts/mutation-suite.mjs"
+    ]
+  },
+  "behavior": {
+    "mpegFamily": ["mp3", "mpeg", "mpga"],
+    "requiredCorroboration": "A candidate first MPEG frame is accepted only when a second structurally valid frame begins at the exact computed boundary and matches version, layer, and sample rate.",
+    "singleFrameAtEof": "REJECT",
+    "id3PlusSingleFrameAtEof": "REJECT",
+    "twoConsistentFrames": "ACCEPT",
+    "billingBoundaryIntent": "Preserve rejection inside readAndValidateAudioBody before recordTranscriptionDispatch/OpenAI dispatch."
+  },
+  "freshLocalValidation": {
+    "runtime": {"node": "v22.16.0", "npm": "10.9.2"},
+    "focusedExtractedMpegLogic": {"passed": 5, "total": 5, "failed": 0},
+    "cases": [
+      "single valid frame exactly at EOF rejected",
+      "two consistent frames accepted",
+      "second frame with mismatched sample rate rejected",
+      "ID3 plus one frame exactly at EOF rejected",
+      "ID3 plus two consistent frames accepted"
+    ],
+    "scopeCaveat": "This was an extracted deterministic logic check only. The full reconstructed candidate, exact Node 26.7.0/npm 12.0.2 suite, Worker integration, checkpoint regression, mutation suite, browser/platform matrix, and certification gates were NOT run in this automation turn."
+  },
+  "requiredNextValidation": [
+    "reconstruct canonical Batch 4 candidate from certified V1.1.1 provenance and prior overlays",
+    "apply Batch 5 overlay and verify exact patch context",
+    "run focused audio-format tests",
+    "run static safeguards and mutation suite",
+    "run Worker integration proof that malformed single-frame payload is rejected before paid dispatch and attempt remains reusable",
+    "run checkpoint regression because billing boundary changed",
+    "run exact Node 26.7.0/npm 12.0.2 relevant matrix before any certification claim"
+  ],
+  "releaseReady": false,
+  "v12Certified": false,
+  "productionV111Touched": false,
+  "stagingTouched": false
+}
