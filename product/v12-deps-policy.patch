@@ -1,7 +1,7 @@
 diff --git a/package.json b/package.json
 --- a/package.json
 +++ b/package.json
-@@ -80,7 +80,9 @@
+@@ -80,6 +80,8 @@
      "msw@2.15.0": true,
      "workerd@1.20260801.1": true,
      "fsevents": false,
