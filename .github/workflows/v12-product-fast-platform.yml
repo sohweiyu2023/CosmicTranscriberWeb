@@ -1,0 +1,230 @@
+name: V1.2 Product Fast Platform
+
+on:
+  push:
+    branches:
+      - dev/v1.2.0-product-fast
+    paths:
+      - '.github/workflows/v12-product-fast-platform.yml'
+      - 'product/v12-fast.patch.gz.b64/**'
+  pull_request:
+    branches:
+      - main
+      - dev/v1.2.0-validation-base
+    paths:
+      - '.github/workflows/v12-product-fast-platform.yml'
+      - 'product/v12-fast.patch.gz.b64/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  V111_WRAPPER_SHA256: 8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c
+  V111_SOURCE_SHA256: a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df
+  V12_B64_SHA256: ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee
+  V12_GZIP_SHA256: 2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d
+  V12_PATCH_SHA256: b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b
+  V12_LOCK_SHA256: 1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c
+
+jobs:
+  linux-browsers:
+    name: Linux Chromium Firefox WebKit mobile Safari
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Prepare exact V1.2 candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v26.7.0
+          test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-platform"
+          mkdir -p "$ROOT"
+          gh api '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' > "$ROOT/wrapper.zip"
+          printf '%s  %s\n' "$V111_WRAPPER_SHA256" "$ROOT/wrapper.zip" | sha256sum -c -
+          python - "$ROOT" <<'PY'
+          import zipfile,sys,pathlib
+          r=pathlib.Path(sys.argv[1])
+          with zipfile.ZipFile(r/'wrapper.zip') as z:z.extractall(r/'wrapper')
+          with zipfile.ZipFile(r/'wrapper'/'CosmicTranscriberWeb-1.1.1-source.zip') as z:z.extractall(r/'source')
+          PY
+          CERT="$ROOT/wrapper/CosmicTranscriberWeb-1.1.1-source.zip"
+          printf '%s  %s\n' "$V111_SOURCE_SHA256" "$CERT" | sha256sum -c -
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.1.1"
+          cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12.b64"
+          printf '%s  %s\n' "$V12_B64_SHA256" "$ROOT/v12.b64" | sha256sum -c -
+          base64 -d "$ROOT/v12.b64" > "$ROOT/v12.patch.gz"
+          printf '%s  %s\n' "$V12_GZIP_SHA256" "$ROOT/v12.patch.gz" | sha256sum -c -
+          gzip -dc "$ROOT/v12.patch.gz" > "$ROOT/v12.patch"
+          printf '%s  %s\n' "$V12_PATCH_SHA256" "$ROOT/v12.patch" | sha256sum -c -
+          cd "$CANDIDATE"
+          git init -q
+          git apply --check "$ROOT/v12.patch"
+          git apply "$ROOT/v12.patch"
+          test "$(node -p "require('./package.json').version")" = 1.2.0
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
+          printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+      - name: Run core browser matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run browsers:install:ci
+          npm run test:e2e:core
+
+  macos-safari:
+    name: macOS WebKit and real Safari
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Prepare exact V1.2 candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v26.7.0
+          test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-platform"
+          mkdir -p "$ROOT"
+          gh api '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' > "$ROOT/wrapper.zip"
+          printf '%s  %s\n' "$V111_WRAPPER_SHA256" "$ROOT/wrapper.zip" | shasum -a 256 -c -
+          python3 - "$ROOT" <<'PY'
+          import zipfile,sys,pathlib
+          r=pathlib.Path(sys.argv[1])
+          with zipfile.ZipFile(r/'wrapper.zip') as z:z.extractall(r/'wrapper')
+          with zipfile.ZipFile(r/'wrapper'/'CosmicTranscriberWeb-1.1.1-source.zip') as z:z.extractall(r/'source')
+          PY
+          CERT="$ROOT/wrapper/CosmicTranscriberWeb-1.1.1-source.zip"
+          printf '%s  %s\n' "$V111_SOURCE_SHA256" "$CERT" | shasum -a 256 -c -
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.1.1"
+          cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12.b64"
+          printf '%s  %s\n' "$V12_B64_SHA256" "$ROOT/v12.b64" | shasum -a 256 -c -
+          base64 -D "$ROOT/v12.b64" > "$ROOT/v12.patch.gz"
+          printf '%s  %s\n' "$V12_GZIP_SHA256" "$ROOT/v12.patch.gz" | shasum -a 256 -c -
+          gzip -dc "$ROOT/v12.patch.gz" > "$ROOT/v12.patch"
+          printf '%s  %s\n' "$V12_PATCH_SHA256" "$ROOT/v12.patch" | shasum -a 256 -c -
+          cd "$CANDIDATE"
+          git init -q
+          git apply --check "$ROOT/v12.patch"
+          git apply "$ROOT/v12.patch"
+          test "$(node -p "require('./package.json').version")" = 1.2.0
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
+          printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+      - name: Run WebKit and real Safari
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run browsers:install:webkit
+          npm run test:e2e:webkit
+          sudo safaridriver --enable
+          npm run test:safari:real
+
+  windows-branded:
+    name: Windows installed Chrome and Edge
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm
+        shell: pwsh
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Prepare exact V1.2 candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((node --version).Trim() -ne 'v26.7.0') { throw 'Node version mismatch' }
+          if ((npm --version).Trim() -ne '12.0.2') { throw 'npm version mismatch' }
+          $root = Join-Path $env:RUNNER_TEMP 'v12-platform'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $wrapper = Join-Path $root 'wrapper.zip'
+          gh api "/repos/${{ github.repository }}/actions/artifacts/9277847563/zip" | Set-Content -AsByteStream -Path $wrapper
+          if ((Get-FileHash $wrapper -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V111_WRAPPER_SHA256) { throw 'wrapper hash mismatch' }
+          $wrapperDir = Join-Path $root 'wrapper'
+          Expand-Archive -LiteralPath $wrapper -DestinationPath $wrapperDir -Force
+          $cert = Join-Path $wrapperDir 'CosmicTranscriberWeb-1.1.1-source.zip'
+          if ((Get-FileHash $cert -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V111_SOURCE_SHA256) { throw 'source hash mismatch' }
+          $sourceDir = Join-Path $root 'source'
+          Expand-Archive -LiteralPath $cert -DestinationPath $sourceDir -Force
+          $candidate = Join-Path $sourceDir 'CosmicTranscriberWeb-1.1.1'
+          $parts = Get-ChildItem 'product/v12-fast.patch.gz.b64/part-*' | Sort-Object Name
+          $b64 = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join ''
+          $b64Path = Join-Path $root 'v12.b64'
+          [IO.File]::WriteAllText($b64Path, $b64, [Text.UTF8Encoding]::new($false))
+          if ((Get-FileHash $b64Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_B64_SHA256) { throw 'base64 hash mismatch' }
+          $gzipPath = Join-Path $root 'v12.patch.gz'
+          [IO.File]::WriteAllBytes($gzipPath, [Convert]::FromBase64String($b64))
+          if ((Get-FileHash $gzipPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_GZIP_SHA256) { throw 'gzip hash mismatch' }
+          $patchPath = Join-Path $root 'v12.patch'
+          $input = [IO.File]::OpenRead($gzipPath)
+          try {
+            $gz = [IO.Compression.GZipStream]::new($input, [IO.Compression.CompressionMode]::Decompress)
+            try {
+              $out = [IO.File]::Create($patchPath)
+              try { $gz.CopyTo($out) } finally { $out.Dispose() }
+            } finally { $gz.Dispose() }
+          } finally { $input.Dispose() }
+          if ((Get-FileHash $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_PATCH_SHA256) { throw 'patch hash mismatch' }
+          Push-Location $candidate
+          try {
+            git init -q
+            git apply --check $patchPath
+            git apply $patchPath
+            if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
+            if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'releaseReady changed' }
+            if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
+          } finally { Pop-Location }
+          "CANDIDATE=$candidate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          Set-Location $env:CANDIDATE
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+      - name: Run installed Chrome and Edge
+        shell: pwsh
+        run: |
+          Set-Location $env:CANDIDATE
+          npm run browsers:install:branded
+          npm run test:e2e:branded
