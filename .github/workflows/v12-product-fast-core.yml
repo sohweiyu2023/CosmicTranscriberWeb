@@ -107,6 +107,15 @@ jobs:
           npm run deps:install-scripts:verify
           npm audit
 
+      - name: Provision media validation fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          cd "$CANDIDATE"
+          node scripts/generate-test-fixtures.mjs
+
       - name: Run aggregate validation
         shell: bash
         run: |
