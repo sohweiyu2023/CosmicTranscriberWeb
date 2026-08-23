@@ -6,6 +6,11 @@ on:
       - dev/v1.2.0-product-fast
     paths:
       - '.github/workflows/v12-product-fast-staging.yml'
+  pull_request:
+    branches:
+      - dev/v1.2.0-validation-base
+    paths:
+      - '.github/workflows/v12-product-fast-staging.yml'
   workflow_dispatch:
 
 permissions:
