@@ -10,6 +10,7 @@ on:
       - 'product/v12-deps-latest.patch.gz.b64'
       - 'product/v12-deps-policy.patch'
       - 'product/v12-staging-boundary.patch.gz.b64'
+      - 'tools/apply-v12-staging-boundary-conflicts.mjs'
   pull_request:
     branches:
       - main
@@ -20,6 +21,7 @@ on:
       - 'product/v12-deps-latest.patch.gz.b64'
       - 'product/v12-deps-policy.patch'
       - 'product/v12-staging-boundary.patch.gz.b64'
+      - 'tools/apply-v12-staging-boundary-conflicts.mjs'
   workflow_dispatch:
 
 permissions:
@@ -90,7 +92,12 @@ jobs:
           git apply --check "$ROOT/v12.patch"; git apply "$ROOT/v12.patch"
           git apply --check "$ROOT/v12-deps.patch"; git apply "$ROOT/v12-deps.patch"
           git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"; git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
-          git apply --check "$ROOT/v12-boundary.patch"; git apply "$ROOT/v12-boundary.patch"
+          if git apply --check "$ROOT/v12-boundary.patch"; then
+            git apply "$ROOT/v12-boundary.patch"
+          else
+            git apply --reject --whitespace=nowarn "$ROOT/v12-boundary.patch" || true
+            node "$GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" "$CANDIDATE"
+          fi
           test "$(node -p "require('./package.json').version")" = 1.2.0
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
           printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
@@ -156,7 +163,12 @@ jobs:
           git apply --check "$ROOT/v12.patch"; git apply "$ROOT/v12.patch"
           git apply --check "$ROOT/v12-deps.patch"; git apply "$ROOT/v12-deps.patch"
           git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"; git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
-          git apply --check "$ROOT/v12-boundary.patch"; git apply "$ROOT/v12-boundary.patch"
+          if git apply --check "$ROOT/v12-boundary.patch"; then
+            git apply "$ROOT/v12-boundary.patch"
+          else
+            git apply --reject --whitespace=nowarn "$ROOT/v12-boundary.patch" || true
+            node "$GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" "$CANDIDATE"
+          fi
           test "$(node -p "require('./package.json').version")" = 1.2.0
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
           printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
@@ -225,10 +237,18 @@ jobs:
           Push-Location $candidate
           try {
             git init -q; git config core.autocrlf false; git config core.eol lf
-            git apply --check $patchPath; git apply $patchPath
-            git apply --check $depsPatch; git apply $depsPatch
-            git apply --check $policyPatch; git apply $policyPatch
-            git apply --check $boundaryPatch; git apply $boundaryPatch
+            git apply --check $patchPath; if ($LASTEXITCODE -ne 0) { throw 'product patch check failed' }; git apply $patchPath; if ($LASTEXITCODE -ne 0) { throw 'product patch apply failed' }
+            git apply --check $depsPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency patch check failed' }; git apply $depsPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency patch apply failed' }
+            git apply --check $policyPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency policy patch check failed' }; git apply $policyPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency policy patch apply failed' }
+            git apply --check $boundaryPatch
+            if ($LASTEXITCODE -eq 0) {
+              git apply $boundaryPatch
+              if ($LASTEXITCODE -ne 0) { throw 'staging-boundary patch apply failed' }
+            } else {
+              git apply --reject --whitespace=nowarn $boundaryPatch | Out-Host
+              node "$env:GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" $candidate
+              if ($LASTEXITCODE -ne 0) { throw 'reviewed staging-boundary conflict resolution failed' }
+            }
             if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
             if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'releaseReady changed' }
             if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
