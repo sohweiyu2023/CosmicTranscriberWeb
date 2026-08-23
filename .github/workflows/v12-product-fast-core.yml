@@ -1,0 +1,138 @@
+name: V1.2 Product Fast Core
+
+on:
+  push:
+    branches:
+      - dev/v1.2.0-product-fast
+    paths:
+      - '.github/workflows/v12-product-fast-core.yml'
+      - 'product/v12-fast.patch.gz.b64/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  core:
+    name: Exact runtime core product gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up exact Node 26.7.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+
+      - name: Install exact npm 12.0.2
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+
+      - name: Verify exact runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+
+      - name: Reconstruct authoritative V1.2 product candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          WRAP="$RUNNER_TEMP/v111"
+          ROOT="$RUNNER_TEMP/v12-product"
+          mkdir -p "$WRAP" "$ROOT"
+
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
+            > "$WRAP/artifact.zip"
+          printf '%s  %s\n' \
+            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
+            "$WRAP/artifact.zip" | sha256sum -c -
+
+          unzip -q "$WRAP/artifact.zip" -d "$WRAP/extracted"
+          CERT_ZIP="$WRAP/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
+          test -f "$CERT_ZIP"
+          printf '%s  %s\n' \
+            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
+            "$CERT_ZIP" | sha256sum -c -
+          unzip -q "$CERT_ZIP" -d "$ROOT/unzip"
+          CANDIDATE="$ROOT/unzip/CosmicTranscriberWeb-1.1.1"
+          test -f "$CANDIDATE/package.json"
+
+          cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12-fast.b64"
+          printf '%s  %s\n' \
+            'ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee' \
+            "$ROOT/v12-fast.b64" | sha256sum -c -
+          base64 -d "$ROOT/v12-fast.b64" > "$ROOT/v12-fast.patch.gz"
+          printf '%s  %s\n' \
+            '2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d' \
+            "$ROOT/v12-fast.patch.gz" | sha256sum -c -
+          gzip -dc "$ROOT/v12-fast.patch.gz" > "$ROOT/v12-fast.patch"
+          printf '%s  %s\n' \
+            'b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b' \
+            "$ROOT/v12-fast.patch" | sha256sum -c -
+
+          cd "$CANDIDATE"
+          git init -q
+          git apply --check "$ROOT/v12-fast.patch"
+          git apply "$ROOT/v12-fast.patch"
+
+          test "$(node -p "require('./package.json').version")" = '1.2.0'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            package-lock.json | sha256sum -c -
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+
+      - name: Install dependencies and enforce dependency policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+
+      - name: Run aggregate validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run validate
+
+      - name: Run Worker tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run test:worker
+
+      - name: Run whole-Worker integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run test:integration
+
+      - name: Inspect build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run build:inspect
+
+      - name: Reassert non-release state
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          printf '%s  %s\n' \
+            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
+            package-lock.json | sha256sum -c -
+          echo 'V1.2 exact-runtime core product gate PASS; releaseReady remains false.'
