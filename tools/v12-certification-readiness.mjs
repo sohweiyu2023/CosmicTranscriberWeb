@@ -16,6 +16,7 @@ const CERTIFIED_BASE = Object.freeze({
 });
 const EXPECTED_CANDIDATE_LOCK_SHA256 = '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c';
 const REQUIRED = ['package.json','package-lock.json','app.js','wrangler.toml','RELEASE_MANIFEST.json','scripts/validate.mjs','tests'];
+const REQUIRED_NONEMPTY_SOURCE = ['app.js', 'wrangler.toml', 'scripts/validate.mjs'];
 
 function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return { __error: e.message }; } }
@@ -24,10 +25,40 @@ function existsAsExpected(rel) {
   if (!fs.existsSync(p) || fs.lstatSync(p).isSymbolicLink()) return false;
   return rel === 'tests' ? fs.statSync(p).isDirectory() : fs.statSync(p).isFile();
 }
+function hasNonWhitespace(rel) {
+  return fs.readFileSync(path.join(root, rel), 'utf8').trim().length > 0;
+}
+function countTestSources(dir) {
+  let count = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const p = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) stack.push(p);
+      else if (entry.isFile() && /(?:^|\.)test\.(?:mjs|cjs|js)$/i.test(entry.name) && fs.readFileSync(p, 'utf8').trim().length > 0) count++;
+    }
+  }
+  return count;
+}
 
 const missing = REQUIRED.filter((rel) => !existsAsExpected(rel));
 const failures = [];
 let pkg = null, manifest = null, lockSha256 = null;
+let nonemptySourceFiles = 0;
+let testSourceCount = 0;
+
+for (const rel of REQUIRED_NONEMPTY_SOURCE) {
+  if (!missing.includes(rel)) {
+    if (hasNonWhitespace(rel)) nonemptySourceFiles++;
+    else failures.push(`${rel} is empty/whitespace-only; placeholder source cannot satisfy provenance readiness`);
+  }
+}
+if (!missing.includes('tests')) {
+  testSourceCount = countTestSources(path.join(root, 'tests'));
+  if (testSourceCount === 0) failures.push('tests/ contains no non-empty *.test.{mjs,cjs,js} source; placeholder test directories cannot satisfy provenance readiness');
+}
 
 if (!missing.includes('package.json')) {
   pkg = readJson(path.join(root, 'package.json'));
@@ -50,13 +81,18 @@ if (!missing.includes('package-lock.json')) {
 
 const sourceReady = missing.length === 0 && failures.length === 0;
 const result = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: sourceReady ? 'SOURCE_READY_FOR_F4_EXECUTION' : 'BLOCKED',
   releaseCertified: false,
   releaseReadyMayChange: false,
   root,
   missing,
   failures,
+  sourceShape: {
+    requiredNonemptySourceFiles: REQUIRED_NONEMPTY_SOURCE.length,
+    nonemptySourceFiles,
+    nonemptyTestSources: testSourceCount
+  },
   candidate: { version: pkg && !pkg.__error ? pkg.version ?? null : null, packageLockSha256: lockSha256 },
   certifiedBaseline: CERTIFIED_BASE,
   nextRequiredGate: sourceReady
