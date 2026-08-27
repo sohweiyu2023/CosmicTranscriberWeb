@@ -1,0 +1,109 @@
+name: V1.2 Product Refresh Direct Dependencies
+# Push trigger intentionally permits immediate fail-closed registry-latest refresh.
+
+on:
+  push:
+    branches:
+      - dev/v1.2.0-product-fast
+    paths:
+      - '.github/workflows/v12-product-refresh-deps.yml'
+  pull_request:
+    branches:
+      - dev/v1.2.0-validation-base
+    paths:
+      - '.github/workflows/v12-product-refresh-deps.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  STAGING_ARTIFACT_ID: '9499663656'
+  STAGING_ARTIFACT_SHA256: e44ec5237145d0f6c90f1123dcbec7105eed9ec13bdaa3e890e9886f6de8efc4
+  CURRENT_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
+
+jobs:
+  refresh:
+    name: Refresh certified V1.2 direct dependencies to registry latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+
+      - name: Extract exact currently certified V1.2 staging candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = v26.7.0
+          test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-refresh"
+          mkdir -p "$ROOT/wrapper" "$ROOT/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STAGING_ARTIFACT_ID}/zip" > "$ROOT/artifact.zip"
+          printf '%s  %s\n' "$STAGING_ARTIFACT_SHA256" "$ROOT/artifact.zip" | sha256sum -c -
+          unzip -q "$ROOT/artifact.zip" -d "$ROOT/wrapper"
+          INNER="$ROOT/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"
+          test -f "$INNER"
+          unzip -q "$INNER" -d "$ROOT/source"
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.2.0"
+          chmod -R u+rwX "$CANDIDATE"
+          cd "$CANDIDATE"
+          test "$(node -p "require('./package.json').version")" = 1.2.0
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = staging
+          printf '%s  %s\n' "$CURRENT_LOCK_SHA256" package-lock.json | sha256sum -c -
+          git init -q
+          git config user.name 'Cosmic V1.2 CI'
+          git config user.email 'ci@example.invalid'
+          git add package.json package-lock.json
+          git commit -qm 'certified dependency baseline'
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+          echo "ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - name: Refresh direct dependencies to registry latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          node scripts/deps-latest.mjs
+          npm run deps:install-scripts:verify
+          npm audit
+          npm outdated --depth=0
+          node -e "const p=require('./package.json'); console.log(JSON.stringify({dependencies:p.dependencies,devDependencies:p.devDependencies,allowScripts:p.allowScripts},null,2))"
+
+      - name: Create exact incremental dependency overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          git diff --binary HEAD -- package.json package-lock.json > "$ROOT/v12-deps-incremental.patch"
+          test -s "$ROOT/v12-deps-incremental.patch"
+          gzip -n -9 -c "$ROOT/v12-deps-incremental.patch" > "$ROOT/v12-deps-incremental.patch.gz"
+          base64 -w0 "$ROOT/v12-deps-incremental.patch.gz" > "$ROOT/v12-deps-incremental.patch.gz.b64"
+          cp package.json package-lock.json "$ROOT/"
+          sha256sum "$ROOT/v12-deps-incremental.patch" "$ROOT/v12-deps-incremental.patch.gz" "$ROOT/v12-deps-incremental.patch.gz.b64" package.json package-lock.json | tee "$ROOT/SHA256SUMS.txt"
+          echo '---BEGIN-V12-DEPS-INCREMENTAL-B64---'
+          cat "$ROOT/v12-deps-incremental.patch.gz.b64"
+          echo
+          echo '---END-V12-DEPS-INCREMENTAL-B64---'
+
+      - name: Upload refreshed dependency evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: v12-refreshed-dependency-incremental-overlay
+          path: |
+            ${{ env.ROOT }}/v12-deps-incremental.patch
+            ${{ env.ROOT }}/v12-deps-incremental.patch.gz
+            ${{ env.ROOT }}/v12-deps-incremental.patch.gz.b64
+            ${{ env.ROOT }}/package.json
+            ${{ env.ROOT }}/package-lock.json
+            ${{ env.ROOT }}/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 3

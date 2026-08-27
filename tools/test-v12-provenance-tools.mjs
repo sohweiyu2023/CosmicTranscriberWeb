@@ -103,7 +103,8 @@ try {
     base: { root: path.resolve(base), fileCount: walk(base).length, version: '1.1.1', releaseReady: true, treeSha256: CERTIFIED_BASE_TREE_SHA256, expectedTreeSha256: CERTIFIED_BASE_TREE_SHA256, provenanceVerified: true },
     candidate: { root: path.resolve(candidate), fileCount: candidateFiles.length, version: '1.2.0', packageLockSha256: sha256(path.join(candidate, 'package-lock.json')), treeSha256: treeSha256(candidate, candidateFiles) },
     added: ['RELEASE_MANIFEST.json','app.js','package-lock.json','scripts/validate.mjs','src/dist/nested-source.txt','tests/smoke.test.js','wrangler.toml'],
-    modified: [{ path: 'package.json', baseSha256: basePackageSha, candidateSha256: candidatePackageSha }]
+    modified: [{ path: 'package.json', baseSha256: basePackageSha, candidateSha256: candidatePackageSha }],
+    deleted: []
   };
   fs.writeFileSync(evidence, JSON.stringify(report, null, 2), 'utf8');
   const review = [

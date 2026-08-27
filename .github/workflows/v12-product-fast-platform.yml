@@ -1,0 +1,130 @@
+name: V1.2 Product Fast Platform
+
+on:
+  push:
+    branches:
+      - dev/v1.2.0-product-fast
+    paths:
+      - '.github/workflows/v12-product-fast-platform.yml'
+      - 'product/v12-deps-incremental-20260827.patch.gz.b64'
+  pull_request:
+    branches:
+      - main
+      - dev/v1.2.0-validation-base
+    paths:
+      - '.github/workflows/v12-product-fast-platform.yml'
+      - 'product/v12-deps-incremental-20260827.patch.gz.b64'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BASE_ARTIFACT_ID: '9499663656'
+  BASE_ARTIFACT_SHA256: e44ec5237145d0f6c90f1123dcbec7105eed9ec13bdaa3e890e9886f6de8efc4
+  BASE_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
+  DELTA_B64_SHA256: fdccb3ccabaabab3633930a34b994e2f0e7d9d9cf30e9f0e8bda16941a121e87
+  DELTA_GZIP_SHA256: e8a6a659b93705549018773816d5296ebce79c1f63b703c3da2ebb0e0a31a60b
+  DELTA_PATCH_SHA256: fd2ad8b2be685d46ac4814e171daba7ace645917a310a8c9e06ea9aab08c3d25
+  V12_LOCK_SHA256: 90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d
+
+jobs:
+  linux-browsers:
+    name: Linux Chromium Firefox WebKit mobile Safari
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with: {node-version: 26.7.0}
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Prepare refreshed candidate
+        env: {GH_TOKEN: '${{ github.token }}'}
+        shell: bash
+        run: |
+          set -euo pipefail; test "$(node --version)" = v26.7.0; test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-platform"; mkdir -p "$ROOT/wrapper" "$ROOT/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASE_ARTIFACT_ID}/zip" > "$ROOT/base.zip"
+          printf '%s  %s\n' "$BASE_ARTIFACT_SHA256" "$ROOT/base.zip" | sha256sum -c -
+          unzip -q "$ROOT/base.zip" -d "$ROOT/wrapper"; inner="$ROOT/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"; test -f "$inner"; unzip -q "$inner" -d "$ROOT/source"
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.2.0"; chmod -R u+rwX "$CANDIDATE"; cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false; printf '%s  %s\n' "$BASE_LOCK_SHA256" package-lock.json | sha256sum -c -
+          delta="$GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64"; printf '%s  %s\n' "$DELTA_B64_SHA256" "$delta" | sha256sum -c -
+          node -e "const f=require('fs'),z=require('zlib'),b=Buffer.from(f.readFileSync(process.argv[1],'utf8').trim(),'base64');f.writeFileSync(process.argv[2],b);f.writeFileSync(process.argv[3],z.gunzipSync(b))" "$delta" "$ROOT/delta.gz" "$ROOT/delta.patch"
+          printf '%s  %s\n' "$DELTA_GZIP_SHA256" "$ROOT/delta.gz" | sha256sum -c -; printf '%s  %s\n' "$DELTA_PATCH_SHA256" "$ROOT/delta.patch" | sha256sum -c -
+          git init -q; git apply --check "$ROOT/delta.patch"; git apply "$ROOT/delta.patch"; printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        shell: bash
+        run: cd "$CANDIDATE" && npm ci && npm run deps:install-scripts:verify && npm audit && npm outdated --depth=0
+      - name: Run core browser matrix
+        shell: bash
+        run: cd "$CANDIDATE" && npm run browsers:install:ci && npm run test:e2e:core
+
+  macos-safari:
+    name: macOS WebKit and real Safari
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with: {node-version: 26.7.0}
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Prepare refreshed candidate
+        env: {GH_TOKEN: '${{ github.token }}'}
+        shell: bash
+        run: |
+          set -euo pipefail; test "$(node --version)" = v26.7.0; test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-platform"; mkdir -p "$ROOT/wrapper" "$ROOT/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASE_ARTIFACT_ID}/zip" > "$ROOT/base.zip"
+          printf '%s  %s\n' "$BASE_ARTIFACT_SHA256" "$ROOT/base.zip" | shasum -a 256 -c -
+          unzip -q "$ROOT/base.zip" -d "$ROOT/wrapper"; inner="$ROOT/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"; test -f "$inner"; unzip -q "$inner" -d "$ROOT/source"
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.2.0"; chmod -R u+rwX "$CANDIDATE"; cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false; printf '%s  %s\n' "$BASE_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
+          delta="$GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64"; printf '%s  %s\n' "$DELTA_B64_SHA256" "$delta" | shasum -a 256 -c -
+          node -e "const f=require('fs'),z=require('zlib'),b=Buffer.from(f.readFileSync(process.argv[1],'utf8').trim(),'base64');f.writeFileSync(process.argv[2],b);f.writeFileSync(process.argv[3],z.gunzipSync(b))" "$delta" "$ROOT/delta.gz" "$ROOT/delta.patch"
+          printf '%s  %s\n' "$DELTA_GZIP_SHA256" "$ROOT/delta.gz" | shasum -a 256 -c -; printf '%s  %s\n' "$DELTA_PATCH_SHA256" "$ROOT/delta.patch" | shasum -a 256 -c -
+          git init -q; git apply --check "$ROOT/delta.patch"; git apply "$ROOT/delta.patch"; printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
+          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        shell: bash
+        run: cd "$CANDIDATE" && npm ci && npm run deps:install-scripts:verify && npm audit && npm outdated --depth=0
+      - name: Run WebKit and real Safari
+        shell: bash
+        run: cd "$CANDIDATE" && npm run browsers:install:webkit && npm run test:e2e:webkit && sudo safaridriver --enable && npm run test:safari:real
+
+  windows-branded:
+    name: Windows installed Chrome and Edge
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with: {node-version: 26.7.0}
+      - name: Install exact npm
+        shell: pwsh
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Prepare refreshed candidate
+        env: {GH_TOKEN: '${{ github.token }}'}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'; if ((node --version).Trim() -ne 'v26.7.0') { throw 'Node mismatch' }; if ((npm --version).Trim() -ne '12.0.2') { throw 'npm mismatch' }
+          $root=Join-Path $env:RUNNER_TEMP 'v12-platform'; New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $base=Join-Path $root 'base.zip'; $p=Start-Process gh -ArgumentList @('api',"/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:BASE_ARTIFACT_ID/zip") -RedirectStandardOutput $base -NoNewWindow -Wait -PassThru; if($p.ExitCode-ne 0){throw 'artifact download failed'}
+          if((Get-FileHash $base -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:BASE_ARTIFACT_SHA256){throw 'base hash mismatch'}
+          $wrap=Join-Path $root 'wrapper'; Expand-Archive $base $wrap -Force; $inner=Join-Path $wrap 'CosmicTranscriberWeb-1.2.0-source.zip'; $source=Join-Path $root 'source'; Expand-Archive $inner $source -Force; $candidate=Join-Path $source 'CosmicTranscriberWeb-1.2.0'; Set-Location $candidate
+          if((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:BASE_LOCK_SHA256){throw 'base lock mismatch'}
+          $delta=(Resolve-Path "$env:GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64").Path; if((Get-FileHash $delta -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_B64_SHA256){throw 'delta b64 mismatch'}
+          $gz=Join-Path $root 'delta.gz'; [IO.File]::WriteAllBytes($gz,[Convert]::FromBase64String([IO.File]::ReadAllText($delta).Trim())); if((Get-FileHash $gz -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_GZIP_SHA256){throw 'delta gzip mismatch'}
+          $patch=Join-Path $root 'delta.patch'; $i=[IO.File]::OpenRead($gz); try{$g=[IO.Compression.GZipStream]::new($i,[IO.Compression.CompressionMode]::Decompress);try{$o=[IO.File]::Create($patch);try{$g.CopyTo($o)}finally{$o.Dispose()}}finally{$g.Dispose()}}finally{$i.Dispose()}; if((Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_PATCH_SHA256){throw 'delta patch mismatch'}
+          git init -q; git config core.autocrlf false; if($LASTEXITCODE-ne 0){throw 'failed to disable autocrlf'}; git apply --check $patch; if($LASTEXITCODE-ne 0){throw 'delta check failed'}; git apply $patch; if($LASTEXITCODE-ne 0){throw 'delta apply failed'}; if((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:V12_LOCK_SHA256){throw 'refreshed lock mismatch'}
+          "CANDIDATE=$candidate" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install dependencies
+        shell: pwsh
+        run: Set-Location $env:CANDIDATE; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
+      - name: Run installed Chrome and Edge
+        shell: pwsh
+        run: Set-Location $env:CANDIDATE; npm run browsers:install:branded; npm run test:e2e:branded

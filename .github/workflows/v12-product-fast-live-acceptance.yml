@@ -1,0 +1,92 @@
+name: V1.2 Product Fast Live Acceptance
+
+on:
+  push:
+    branches:
+      - dev/v1.2.0-product-fast
+    paths:
+      - '.github/workflows/v12-product-fast-live-acceptance.yml'
+      - 'tools/v12-live-staging-acceptance.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  STAGING_ARTIFACT_ID: '9642728630'
+  STAGING_ARTIFACT_SHA256: fbce0a019ed435a9e9e07969f33e1ebb8b3b68cf115d87e720ed6ba47f952051
+  V12_LOCK_SHA256: 90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d
+
+jobs:
+  live-api-acceptance:
+    name: Exact authenticated live staging API acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+      STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm 12.0.2
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Fail closed unless live staging credentials are available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing staging environment secret CLOUDFLARE_API_TOKEN' >&2; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing staging environment secret CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
+          test -n "${STAGING_CF_AUTHORIZATION:-}" || { echo 'Missing staging environment secret STAGING_CF_AUTHORIZATION' >&2; exit 1; }
+          test -n "${STAGING_OPENAI_API_KEY:-}" || { echo 'Missing staging environment secret STAGING_OPENAI_API_KEY' >&2; exit 1; }
+          echo 'Required live-acceptance secrets are present (values intentionally not printed).'
+      - name: Materialize exact package-certified staging artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/v12-live-acceptance"
+          mkdir -p "$root/wrapper" "$root/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STAGING_ARTIFACT_ID}/zip" > "$root/artifact.zip"
+          printf '%s  %s\n' "$STAGING_ARTIFACT_SHA256" "$root/artifact.zip" | sha256sum -c -
+          unzip -q "$root/artifact.zip" -d "$root/wrapper"
+          inner="$root/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"
+          test -f "$inner"
+          unzip -q "$inner" -d "$root/source"
+          candidate="$root/source/CosmicTranscriberWeb-1.2.0"
+          chmod -R u+rwX "$candidate"
+          test "$(node -p "require('$candidate/package.json').version")" = '1.2.0'
+          test "$(node -p "require('$candidate/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('$candidate/RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          printf '%s  %s\n' "$V12_LOCK_SHA256" "$candidate/package-lock.json" | sha256sum -c -
+          test -f "$candidate/tests/fixtures/format.mp3"
+          test -f "$candidate/tests/fixtures/format.flac"
+          test -f "$candidate/tests/fixtures/format.mp4"
+          test -f "$candidate/tests/fixtures/format.mpeg"
+          test -f "$candidate/tests/fixtures/format.mpga"
+          test -f "$candidate/tests/fixtures/format.m4a"
+          test -f "$candidate/tests/fixtures/format.ogg"
+          test -f "$candidate/tests/fixtures/format.wav"
+          test -f "$candidate/tests/fixtures/format.webm"
+          echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
+          echo 'Exact non-final staging artifact identity verified.'
+      - name: Validate live acceptance harness syntax
+        run: node --check tools/v12-live-staging-acceptance.mjs
+      - name: Run genuine authenticated live staging API acceptance
+        run: node tools/v12-live-staging-acceptance.mjs
+      - name: Reassert release boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('$CANDIDATE/RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('$CANDIDATE/RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          printf '%s  %s\n' "$V12_LOCK_SHA256" "$CANDIDATE/package-lock.json" | sha256sum -c -
+          echo 'Live API acceptance complete. Production remains blocked pending remaining live browser/checkpoint acceptance.'

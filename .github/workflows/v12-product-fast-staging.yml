@@ -1,0 +1,135 @@
+name: V1.2 Product Fast Staging
+
+on:
+  push:
+    branches:
+      - dev/v1.2.0-product-fast
+    paths:
+      - '.github/workflows/v12-product-fast-staging.yml'
+  pull_request:
+    branches:
+      - dev/v1.2.0-validation-base
+    paths:
+      - '.github/workflows/v12-product-fast-staging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  STAGING_ARTIFACT_ID: '9642728630'
+  STAGING_ARTIFACT_SHA256: fbce0a019ed435a9e9e07969f33e1ebb8b3b68cf115d87e720ed6ba47f952051
+  V12_LOCK_SHA256: 90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d
+  STAGING_WORKER_NAME: cosmic-transcriber-web-staging
+
+jobs:
+  deploy-staging-only:
+    name: Deploy package-certified V1.2 candidate to STAGING ONLY
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 26.7.0
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Fail closed unless staging Cloudflare credentials are available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing staging environment secret CLOUDFLARE_API_TOKEN' >&2; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing staging environment secret CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
+      - name: Download exact package-certified staging artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/v12-staging"
+          mkdir -p "$root/wrapper" "$root/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STAGING_ARTIFACT_ID}/zip" > "$root/artifact.zip"
+          printf '%s  %s\n' "$STAGING_ARTIFACT_SHA256" "$root/artifact.zip" | sha256sum -c -
+          unzip -q "$root/artifact.zip" -d "$root/wrapper"
+          inner="$root/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"
+          test -f "$inner"
+          unzip -q "$inner" -d "$root/source"
+          candidate="$root/source/CosmicTranscriberWeb-1.2.0"
+          chmod -R u+rwX "$candidate"
+          test -f "$candidate/package.json"
+          test -f "$candidate/RELEASE_MANIFEST.json"
+          echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
+      - name: Verify staging-certified non-final identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          test "$(node -p "require('./package.json').version")" = '1.2.0'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          test "$(sha256sum package-lock.json | awk '{print $1}')" = "$V12_LOCK_SHA256"
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+          npm outdated --depth=0
+      - name: Reuse approved private bindings from current staging deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          settings="$RUNNER_TEMP/current-staging-settings.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${STAGING_WORKER_NAME}/settings" > "$settings"
+          SETTINGS_FILE="$settings" node --input-type=module <<'NODE'
+          import {readFile, writeFile} from 'node:fs/promises';
+          import path from 'node:path';
+          import {pathToFileURL} from 'node:url';
+          const root=process.env.CANDIDATE;
+          const response=JSON.parse(await readFile(process.env.SETTINGS_FILE,'utf8'));
+          if(response?.success!==true||!response?.result||!Array.isArray(response.result.bindings)) throw new Error('Could not read current staging Worker bindings.');
+          const bindings=response.result.bindings;
+          const plain=name=>{const b=bindings.find(x=>x?.name===name&&x?.type==='plain_text'); if(!b||typeof b.text!=='string'||!b.text.trim())throw new Error(`Current staging binding ${name} is unavailable.`); return b.text;};
+          const d1=bindings.find(x=>x?.name==='USER_DB'&&x?.type==='d1');
+          const databaseId=d1?.database_id||d1?.id;
+          if(typeof databaseId!=='string'||!/^[0-9a-f-]{36}$/i.test(databaseId)) throw new Error('Current staging USER_DB binding is unavailable.');
+          const {applyAccessValues}=await import(pathToFileURL(path.join(root,'scripts/configure-access.mjs')).href);
+          const {applyRegistryValues}=await import(pathToFileURL(path.join(root,'scripts/configure-registry.mjs')).href);
+          const configPath=path.join(root,'wrangler.jsonc');
+          const config=JSON.parse(await readFile(configPath,'utf8'));
+          applyAccessValues(config,'staging',plain('ACCESS_TEAM_DOMAIN'),plain('ACCESS_AUDIENCE'));
+          applyRegistryValues(config,'staging',databaseId,plain('ADMIN_EMAILS'));
+          await writeFile(configPath,JSON.stringify(config,null,2)+'\n','utf8');
+          console.log('Reused current staging Access/admin/D1 bindings without printing private values.');
+          NODE
+          cd "$CANDIDATE"
+          node scripts/deploy-verify.mjs staging
+      - name: Deploy STAGING ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run deploy:staging
+      - name: Staging reachability smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 https://transcriber-staging.awakeningtoreality.com/)"
+          case "$code" in
+            2*|3*|401|403) echo "Staging endpoint reachable through expected app/Access boundary: HTTP $code" ;;
+            *) echo "Unexpected staging HTTP status: $code" >&2; exit 1 ;;
+          esac
+      - name: Reassert release boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          echo 'STAGING deployment only. Production remains blocked until live staging acceptance passes.'

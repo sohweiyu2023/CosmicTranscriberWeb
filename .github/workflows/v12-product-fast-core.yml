@@ -6,18 +6,28 @@ on:
       - dev/v1.2.0-product-fast
     paths:
       - '.github/workflows/v12-product-fast-core.yml'
-      - 'product/v12-fast.patch.gz.b64/**'
+      - 'product/v12-deps-incremental-20260827.patch.gz.b64'
   pull_request:
     branches:
       - main
+      - dev/v1.2.0-validation-base
     paths:
       - '.github/workflows/v12-product-fast-core.yml'
-      - 'product/v12-fast.patch.gz.b64/**'
+      - 'product/v12-deps-incremental-20260827.patch.gz.b64'
   workflow_dispatch:
 
 permissions:
   contents: read
   actions: read
+
+env:
+  BASE_ARTIFACT_ID: '9499663656'
+  BASE_ARTIFACT_SHA256: e44ec5237145d0f6c90f1123dcbec7105eed9ec13bdaa3e890e9886f6de8efc4
+  BASE_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
+  DELTA_B64_SHA256: fdccb3ccabaabab3633930a34b994e2f0e7d9d9cf30e9f0e8bda16941a121e87
+  DELTA_GZIP_SHA256: e8a6a659b93705549018773816d5296ebce79c1f63b703c3da2ebb0e0a31a60b
+  DELTA_PATCH_SHA256: fd2ad8b2be685d46ac4814e171daba7ace645917a310a8c9e06ea9aab08c3d25
+  V12_LOCK_SHA256: 90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d
 
 jobs:
   core:
@@ -26,119 +36,67 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: Set up exact Node 26.7.0
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 26.7.0
-
       - name: Install exact npm 12.0.2
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-
-      - name: Verify exact runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(node --version)" = 'v26.7.0'
-          test "$(npm --version)" = '12.0.2'
-
-      - name: Reconstruct authoritative V1.2 product candidate
+      - name: Materialize exact refreshed V1.2 candidate
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          WRAP="$RUNNER_TEMP/v111"
-          ROOT="$RUNNER_TEMP/v12-product"
-          mkdir -p "$WRAP" "$ROOT"
-
-          gh api \
-            -H 'Accept: application/vnd.github+json' \
-            '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' \
-            > "$WRAP/artifact.zip"
-          printf '%s  %s\n' \
-            '8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c' \
-            "$WRAP/artifact.zip" | sha256sum -c -
-
-          unzip -q "$WRAP/artifact.zip" -d "$WRAP/extracted"
-          CERT_ZIP="$WRAP/extracted/CosmicTranscriberWeb-1.1.1-source.zip"
-          test -f "$CERT_ZIP"
-          printf '%s  %s\n' \
-            'a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df' \
-            "$CERT_ZIP" | sha256sum -c -
-          unzip -q "$CERT_ZIP" -d "$ROOT/unzip"
-          CANDIDATE="$ROOT/unzip/CosmicTranscriberWeb-1.1.1"
-          test -f "$CANDIDATE/package.json"
-
-          cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12-fast.b64"
-          printf '%s  %s\n' \
-            'ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee' \
-            "$ROOT/v12-fast.b64" | sha256sum -c -
-          base64 -d "$ROOT/v12-fast.b64" > "$ROOT/v12-fast.patch.gz"
-          printf '%s  %s\n' \
-            '2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d' \
-            "$ROOT/v12-fast.patch.gz" | sha256sum -c -
-          gzip -dc "$ROOT/v12-fast.patch.gz" > "$ROOT/v12-fast.patch"
-          printf '%s  %s\n' \
-            'b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b' \
-            "$ROOT/v12-fast.patch" | sha256sum -c -
-
-          cd "$CANDIDATE"
-          git init -q
-          git apply --check "$ROOT/v12-fast.patch"
-          git apply "$ROOT/v12-fast.patch"
-
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          root="$RUNNER_TEMP/v12-core"; mkdir -p "$root/wrapper" "$root/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASE_ARTIFACT_ID}/zip" > "$root/base.zip"
+          printf '%s  %s\n' "$BASE_ARTIFACT_SHA256" "$root/base.zip" | sha256sum -c -
+          unzip -q "$root/base.zip" -d "$root/wrapper"
+          inner="$root/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"; test -f "$inner"
+          unzip -q "$inner" -d "$root/source"
+          candidate="$root/source/CosmicTranscriberWeb-1.2.0"; chmod -R u+rwX "$candidate"
+          cd "$candidate"
           test "$(node -p "require('./package.json').version")" = '1.2.0'
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
-          printf '%s  %s\n' \
-            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
-            package-lock.json | sha256sum -c -
-          echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
-
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          printf '%s  %s\n' "$BASE_LOCK_SHA256" package-lock.json | sha256sum -c -
+          delta_b64="$GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64"
+          printf '%s  %s\n' "$DELTA_B64_SHA256" "$delta_b64" | sha256sum -c -
+          base64 -d "$delta_b64" > "$root/delta.gz"
+          printf '%s  %s\n' "$DELTA_GZIP_SHA256" "$root/delta.gz" | sha256sum -c -
+          gzip -dc "$root/delta.gz" > "$root/delta.patch"
+          printf '%s  %s\n' "$DELTA_PATCH_SHA256" "$root/delta.patch" | sha256sum -c -
+          git init -q
+          git apply --check "$root/delta.patch"
+          git apply "$root/delta.patch"
+          printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
+          echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
       - name: Install dependencies and enforce dependency policy
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm ci
-          npm run deps:install-scripts:verify
-          npm audit
-
+          set -euo pipefail; cd "$CANDIDATE"; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
+      - name: Provision media validation fixtures
+        shell: bash
+        run: |
+          set -euo pipefail; sudo apt-get update; sudo apt-get install -y --no-install-recommends ffmpeg; cd "$CANDIDATE"; node scripts/generate-test-fixtures.mjs
       - name: Run aggregate validation
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run validate
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run validate
       - name: Run Worker tests
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run test:worker
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run test:worker
       - name: Run whole-Worker integration
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run test:integration
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run test:integration
       - name: Inspect build
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          npm run build:inspect
-
+          set -euo pipefail; cd "$CANDIDATE"; npm run build:inspect
       - name: Reassert non-release state
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$CANDIDATE"
-          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
-          printf '%s  %s\n' \
-            '1eb32525cf5c4db2e976e44d348724054fe3c789a7ee535b943af16480e3674c' \
-            package-lock.json | sha256sum -c -
-          echo 'V1.2 exact-runtime core product gate PASS; releaseReady remains false.'
+          set -euo pipefail; cd "$CANDIDATE"; test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'; printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -; echo 'Refreshed V1.2 exact-runtime core gate PASS; releaseReady remains false.'
