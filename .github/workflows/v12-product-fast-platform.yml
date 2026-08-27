@@ -6,22 +6,14 @@ on:
       - dev/v1.2.0-product-fast
     paths:
       - '.github/workflows/v12-product-fast-platform.yml'
-      - 'product/v12-fast.patch.gz.b64/**'
-      - 'product/v12-deps-latest.patch.gz.b64'
-      - 'product/v12-deps-policy.patch'
-      - 'product/v12-staging-boundary.patch.gz.b64'
-      - 'tools/apply-v12-staging-boundary-conflicts.mjs'
+      - 'product/v12-deps-incremental-20260827.patch.gz.b64'
   pull_request:
     branches:
       - main
       - dev/v1.2.0-validation-base
     paths:
       - '.github/workflows/v12-product-fast-platform.yml'
-      - 'product/v12-fast.patch.gz.b64/**'
-      - 'product/v12-deps-latest.patch.gz.b64'
-      - 'product/v12-deps-policy.patch'
-      - 'product/v12-staging-boundary.patch.gz.b64'
-      - 'tools/apply-v12-staging-boundary-conflicts.mjs'
+      - 'product/v12-deps-incremental-20260827.patch.gz.b64'
   workflow_dispatch:
 
 permissions:
@@ -29,17 +21,13 @@ permissions:
   actions: read
 
 env:
-  V111_WRAPPER_SHA256: 8347bb5e4bc7bf1904a0aaa26a285b07de4166e8b41be227f7af13dfc0a1fa2c
-  V111_SOURCE_SHA256: a241dbf4ae50dab0e83b4a65000e587a7ffb51b0b568e9017207e22be81a27df
-  V12_B64_SHA256: ae9b5427d660bf4f6180ca816410e6d3dadaf63ec5bc26e73be6564a7e1381ee
-  V12_GZIP_SHA256: 2227461d36e0e5eefe7625aa14fb95def420d03d223c2c832ddb004f3ceb157d
-  V12_PATCH_SHA256: b4647de860f7f387c89754f9aeb9bf7dac2e3468ca222053cdba45d5e24d934b
-  V12_DEPS_B64_SHA256: b4782f44a0a2aca1d4e2ddc3397f9aab9ede0058feec8bfa093a2785d020b4bf
-  V12_DEPS_GZIP_SHA256: cd9982981e83c08ada74b63dabd6cd2383e64b241fbae5762a69de17c0c5b864
-  V12_DEPS_PATCH_SHA256: 38d1fab1a4f0228fbd56605462006004dd8766ce08b5b594a2694d4ec040a926
-  V12_DEPS_POLICY_SHA256: 9e1f6a16b1809a90e3f212b2f7b397ab0a621843731bb495cd8596a40e76686d
-  V12_BOUNDARY_BLOB_SHA: abc8ce1089c20a7320fc006e701b1f7a58d1aa0c
-  V12_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
+  BASE_ARTIFACT_ID: '9499663656'
+  BASE_ARTIFACT_SHA256: e44ec5237145d0f6c90f1123dcbec7105eed9ec13bdaa3e890e9886f6de8efc4
+  BASE_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
+  DELTA_B64_SHA256: fdccb3ccabaabab3633930a34b994e2f0e7d9d9cf30e9f0e8bda16941a121e87
+  DELTA_GZIP_SHA256: e8a6a659b93705549018773816d5296ebce79c1f63b703c3da2ebb0e0a31a60b
+  DELTA_PATCH_SHA256: fd2ad8b2be685d46ac4814e171daba7ace645917a310a8c9e06ea9aab08c3d25
+  V12_LOCK_SHA256: 90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d
 
 jobs:
   linux-browsers:
@@ -49,69 +37,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 26.7.0
+        with: {node-version: 26.7.0}
       - name: Install exact npm
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-      - name: Prepare exact V1.2 candidate
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prepare refreshed candidate
+        env: {GH_TOKEN: '${{ github.token }}'}
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(node --version)" = v26.7.0
-          test "$(npm --version)" = 12.0.2
-          ROOT="$RUNNER_TEMP/v12-platform"; mkdir -p "$ROOT"
-          gh api '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' > "$ROOT/wrapper.zip"
-          printf '%s  %s\n' "$V111_WRAPPER_SHA256" "$ROOT/wrapper.zip" | sha256sum -c -
-          python - "$ROOT" <<'PY'
-          import zipfile,sys,pathlib
-          r=pathlib.Path(sys.argv[1])
-          with zipfile.ZipFile(r/'wrapper.zip') as z:z.extractall(r/'wrapper')
-          with zipfile.ZipFile(r/'wrapper'/'CosmicTranscriberWeb-1.1.1-source.zip') as z:z.extractall(r/'source')
-          PY
-          CERT="$ROOT/wrapper/CosmicTranscriberWeb-1.1.1-source.zip"
-          printf '%s  %s\n' "$V111_SOURCE_SHA256" "$CERT" | sha256sum -c -
-          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.1.1"
-          cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12.b64"
-          printf '%s  %s\n' "$V12_B64_SHA256" "$ROOT/v12.b64" | sha256sum -c -
-          base64 -d "$ROOT/v12.b64" > "$ROOT/v12.patch.gz"
-          printf '%s  %s\n' "$V12_GZIP_SHA256" "$ROOT/v12.patch.gz" | sha256sum -c -
-          gzip -dc "$ROOT/v12.patch.gz" > "$ROOT/v12.patch"
-          printf '%s  %s\n' "$V12_PATCH_SHA256" "$ROOT/v12.patch" | sha256sum -c -
-          printf '%s  %s\n' "$V12_DEPS_B64_SHA256" product/v12-deps-latest.patch.gz.b64 | sha256sum -c -
-          base64 -d product/v12-deps-latest.patch.gz.b64 > "$ROOT/v12-deps.patch.gz"
-          printf '%s  %s\n' "$V12_DEPS_GZIP_SHA256" "$ROOT/v12-deps.patch.gz" | sha256sum -c -
-          gzip -dc "$ROOT/v12-deps.patch.gz" > "$ROOT/v12-deps.patch"
-          printf '%s  %s\n' "$V12_DEPS_PATCH_SHA256" "$ROOT/v12-deps.patch" | sha256sum -c -
-          printf '%s  %s\n' "$V12_DEPS_POLICY_SHA256" product/v12-deps-policy.patch | sha256sum -c -
-          test "$(git rev-parse "$GITHUB_SHA:product/v12-staging-boundary.patch.gz.b64")" = "$V12_BOUNDARY_BLOB_SHA"
-          base64 -d product/v12-staging-boundary.patch.gz.b64 > "$ROOT/v12-boundary.patch.gz"
-          gzip -dc "$ROOT/v12-boundary.patch.gz" > "$ROOT/v12-boundary.patch"
-          cd "$CANDIDATE"; git init -q
-          git apply --check "$ROOT/v12.patch"; git apply "$ROOT/v12.patch"
-          git apply --check "$ROOT/v12-deps.patch"; git apply "$ROOT/v12-deps.patch"
-          git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"; git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
-          if git apply --check "$ROOT/v12-boundary.patch"; then
-            git apply "$ROOT/v12-boundary.patch"
-          else
-            git apply --reject --whitespace=nowarn "$ROOT/v12-boundary.patch" || true
-            node "$GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" "$CANDIDATE"
-          fi
-          test "$(node -p "require('./package.json').version")" = 1.2.0
-          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
-          printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
+          set -euo pipefail; test "$(node --version)" = v26.7.0; test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-platform"; mkdir -p "$ROOT/wrapper" "$ROOT/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASE_ARTIFACT_ID}/zip" > "$ROOT/base.zip"
+          printf '%s  %s\n' "$BASE_ARTIFACT_SHA256" "$ROOT/base.zip" | sha256sum -c -
+          unzip -q "$ROOT/base.zip" -d "$ROOT/wrapper"; inner="$ROOT/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"; test -f "$inner"; unzip -q "$inner" -d "$ROOT/source"
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.2.0"; chmod -R u+rwX "$CANDIDATE"; cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false; printf '%s  %s\n' "$BASE_LOCK_SHA256" package-lock.json | sha256sum -c -
+          delta="$GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64"; printf '%s  %s\n' "$DELTA_B64_SHA256" "$delta" | sha256sum -c -
+          node -e "const f=require('fs'),z=require('zlib'),b=Buffer.from(f.readFileSync(process.argv[1],'utf8').trim(),'base64');f.writeFileSync(process.argv[2],b);f.writeFileSync(process.argv[3],z.gunzipSync(b))" "$delta" "$ROOT/delta.gz" "$ROOT/delta.patch"
+          printf '%s  %s\n' "$DELTA_GZIP_SHA256" "$ROOT/delta.gz" | sha256sum -c -; printf '%s  %s\n' "$DELTA_PATCH_SHA256" "$ROOT/delta.patch" | sha256sum -c -
+          git init -q; git apply --check "$ROOT/delta.patch"; git apply "$ROOT/delta.patch"; printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
           echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
       - name: Install dependencies
         shell: bash
-        run: |
-          set -euo pipefail
-          cd "$CANDIDATE"; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
+        run: cd "$CANDIDATE" && npm ci && npm run deps:install-scripts:verify && npm audit && npm outdated --depth=0
       - name: Run core browser matrix
         shell: bash
-        run: |
-          set -euo pipefail
-          cd "$CANDIDATE"; npm run browsers:install:ci; npm run test:e2e:core
+        run: cd "$CANDIDATE" && npm run browsers:install:ci && npm run test:e2e:core
 
   macos-safari:
     name: macOS WebKit and real Safari
@@ -120,69 +70,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 26.7.0
+        with: {node-version: 26.7.0}
       - name: Install exact npm
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-      - name: Prepare exact V1.2 candidate
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prepare refreshed candidate
+        env: {GH_TOKEN: '${{ github.token }}'}
         shell: bash
         run: |
-          set -euo pipefail
-          test "$(node --version)" = v26.7.0
-          test "$(npm --version)" = 12.0.2
-          ROOT="$RUNNER_TEMP/v12-platform"; mkdir -p "$ROOT"
-          gh api '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip' > "$ROOT/wrapper.zip"
-          printf '%s  %s\n' "$V111_WRAPPER_SHA256" "$ROOT/wrapper.zip" | shasum -a 256 -c -
-          python3 - "$ROOT" <<'PY'
-          import zipfile,sys,pathlib
-          r=pathlib.Path(sys.argv[1])
-          with zipfile.ZipFile(r/'wrapper.zip') as z:z.extractall(r/'wrapper')
-          with zipfile.ZipFile(r/'wrapper'/'CosmicTranscriberWeb-1.1.1-source.zip') as z:z.extractall(r/'source')
-          PY
-          CERT="$ROOT/wrapper/CosmicTranscriberWeb-1.1.1-source.zip"
-          printf '%s  %s\n' "$V111_SOURCE_SHA256" "$CERT" | shasum -a 256 -c -
-          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.1.1"
-          cat product/v12-fast.patch.gz.b64/part-* > "$ROOT/v12.b64"
-          printf '%s  %s\n' "$V12_B64_SHA256" "$ROOT/v12.b64" | shasum -a 256 -c -
-          base64 -D -i "$ROOT/v12.b64" -o "$ROOT/v12.patch.gz"
-          printf '%s  %s\n' "$V12_GZIP_SHA256" "$ROOT/v12.patch.gz" | shasum -a 256 -c -
-          gzip -dc "$ROOT/v12.patch.gz" > "$ROOT/v12.patch"
-          printf '%s  %s\n' "$V12_PATCH_SHA256" "$ROOT/v12.patch" | shasum -a 256 -c -
-          printf '%s  %s\n' "$V12_DEPS_B64_SHA256" product/v12-deps-latest.patch.gz.b64 | shasum -a 256 -c -
-          base64 -D -i product/v12-deps-latest.patch.gz.b64 -o "$ROOT/v12-deps.patch.gz"
-          printf '%s  %s\n' "$V12_DEPS_GZIP_SHA256" "$ROOT/v12-deps.patch.gz" | shasum -a 256 -c -
-          gzip -dc "$ROOT/v12-deps.patch.gz" > "$ROOT/v12-deps.patch"
-          printf '%s  %s\n' "$V12_DEPS_PATCH_SHA256" "$ROOT/v12-deps.patch" | shasum -a 256 -c -
-          printf '%s  %s\n' "$V12_DEPS_POLICY_SHA256" product/v12-deps-policy.patch | shasum -a 256 -c -
-          test "$(git rev-parse "$GITHUB_SHA:product/v12-staging-boundary.patch.gz.b64")" = "$V12_BOUNDARY_BLOB_SHA"
-          base64 -D -i product/v12-staging-boundary.patch.gz.b64 -o "$ROOT/v12-boundary.patch.gz"
-          gzip -dc "$ROOT/v12-boundary.patch.gz" > "$ROOT/v12-boundary.patch"
-          cd "$CANDIDATE"; git init -q
-          git apply --check "$ROOT/v12.patch"; git apply "$ROOT/v12.patch"
-          git apply --check "$ROOT/v12-deps.patch"; git apply "$ROOT/v12-deps.patch"
-          git apply --check "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"; git apply "$GITHUB_WORKSPACE/product/v12-deps-policy.patch"
-          if git apply --check "$ROOT/v12-boundary.patch"; then
-            git apply "$ROOT/v12-boundary.patch"
-          else
-            git apply --reject --whitespace=nowarn "$ROOT/v12-boundary.patch" || true
-            node "$GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" "$CANDIDATE"
-          fi
-          test "$(node -p "require('./package.json').version")" = 1.2.0
-          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false
-          printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
+          set -euo pipefail; test "$(node --version)" = v26.7.0; test "$(npm --version)" = 12.0.2
+          ROOT="$RUNNER_TEMP/v12-platform"; mkdir -p "$ROOT/wrapper" "$ROOT/source"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASE_ARTIFACT_ID}/zip" > "$ROOT/base.zip"
+          printf '%s  %s\n' "$BASE_ARTIFACT_SHA256" "$ROOT/base.zip" | shasum -a 256 -c -
+          unzip -q "$ROOT/base.zip" -d "$ROOT/wrapper"; inner="$ROOT/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"; test -f "$inner"; unzip -q "$inner" -d "$ROOT/source"
+          CANDIDATE="$ROOT/source/CosmicTranscriberWeb-1.2.0"; chmod -R u+rwX "$CANDIDATE"; cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = false; printf '%s  %s\n' "$BASE_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
+          delta="$GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64"; printf '%s  %s\n' "$DELTA_B64_SHA256" "$delta" | shasum -a 256 -c -
+          node -e "const f=require('fs'),z=require('zlib'),b=Buffer.from(f.readFileSync(process.argv[1],'utf8').trim(),'base64');f.writeFileSync(process.argv[2],b);f.writeFileSync(process.argv[3],z.gunzipSync(b))" "$delta" "$ROOT/delta.gz" "$ROOT/delta.patch"
+          printf '%s  %s\n' "$DELTA_GZIP_SHA256" "$ROOT/delta.gz" | shasum -a 256 -c -; printf '%s  %s\n' "$DELTA_PATCH_SHA256" "$ROOT/delta.patch" | shasum -a 256 -c -
+          git init -q; git apply --check "$ROOT/delta.patch"; git apply "$ROOT/delta.patch"; printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | shasum -a 256 -c -
           echo "CANDIDATE=$CANDIDATE" >> "$GITHUB_ENV"
       - name: Install dependencies
         shell: bash
-        run: |
-          set -euo pipefail
-          cd "$CANDIDATE"; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
+        run: cd "$CANDIDATE" && npm ci && npm run deps:install-scripts:verify && npm audit && npm outdated --depth=0
       - name: Run WebKit and real Safari
         shell: bash
-        run: |
-          set -euo pipefail
-          cd "$CANDIDATE"; npm run browsers:install:webkit; npm run test:e2e:webkit; sudo safaridriver --enable; npm run test:safari:real
+        run: cd "$CANDIDATE" && npm run browsers:install:webkit && npm run test:e2e:webkit && sudo safaridriver --enable && npm run test:safari:real
 
   windows-branded:
     name: Windows installed Chrome and Edge
@@ -191,74 +103,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 26.7.0
+        with: {node-version: 26.7.0}
       - name: Install exact npm
         shell: pwsh
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-      - name: Prepare exact V1.2 candidate
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prepare refreshed candidate
+        env: {GH_TOKEN: '${{ github.token }}'}
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          if ((node --version).Trim() -ne 'v26.7.0') { throw 'Node version mismatch' }
-          if ((npm --version).Trim() -ne '12.0.2') { throw 'npm version mismatch' }
-          $root = Join-Path $env:RUNNER_TEMP 'v12-platform'; New-Item -ItemType Directory -Force -Path $root | Out-Null
-          $wrapper = Join-Path $root 'wrapper.zip'
-          $download = Start-Process -FilePath 'gh' -ArgumentList @('api', '/repos/${{ github.repository }}/actions/artifacts/9277847563/zip') -RedirectStandardOutput $wrapper -NoNewWindow -Wait -PassThru
-          if ($download.ExitCode -ne 0) { throw "gh artifact download failed: $($download.ExitCode)" }
-          if ((Get-FileHash $wrapper -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V111_WRAPPER_SHA256) { throw 'wrapper hash mismatch' }
-          $wrapperDir = Join-Path $root 'wrapper'; Expand-Archive -LiteralPath $wrapper -DestinationPath $wrapperDir -Force
-          $cert = Join-Path $wrapperDir 'CosmicTranscriberWeb-1.1.1-source.zip'
-          if ((Get-FileHash $cert -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V111_SOURCE_SHA256) { throw 'source hash mismatch' }
-          $sourceDir = Join-Path $root 'source'; Expand-Archive -LiteralPath $cert -DestinationPath $sourceDir -Force
-          $candidate = Join-Path $sourceDir 'CosmicTranscriberWeb-1.1.1'
-          $parts = Get-ChildItem 'product/v12-fast.patch.gz.b64/part-*' | Sort-Object Name
-          $b64 = ($parts | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join ''
-          $b64Path = Join-Path $root 'v12.b64'; [IO.File]::WriteAllText($b64Path, $b64, [Text.UTF8Encoding]::new($false))
-          if ((Get-FileHash $b64Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_B64_SHA256) { throw 'base64 hash mismatch' }
-          $gzipPath = Join-Path $root 'v12.patch.gz'; [IO.File]::WriteAllBytes($gzipPath, [Convert]::FromBase64String($b64))
-          if ((Get-FileHash $gzipPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_GZIP_SHA256) { throw 'gzip hash mismatch' }
-          $patchPath = Join-Path $root 'v12.patch'
-          $input = [IO.File]::OpenRead($gzipPath); try { $gz=[IO.Compression.GZipStream]::new($input,[IO.Compression.CompressionMode]::Decompress); try { $out=[IO.File]::Create($patchPath); try{$gz.CopyTo($out)}finally{$out.Dispose()} } finally{$gz.Dispose()} } finally{$input.Dispose()}
-          if ((Get-FileHash $patchPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_PATCH_SHA256) { throw 'patch hash mismatch' }
-          $depsB64='product/v12-deps-latest.patch.gz.b64'
-          if ((Get-FileHash $depsB64 -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_B64_SHA256) { throw 'dependency base64 hash mismatch' }
-          $depsGzip=Join-Path $root 'v12-deps.patch.gz'; [IO.File]::WriteAllBytes($depsGzip,[Convert]::FromBase64String([IO.File]::ReadAllText((Resolve-Path $depsB64))))
-          if ((Get-FileHash $depsGzip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_GZIP_SHA256) { throw 'dependency gzip hash mismatch' }
-          $depsPatch=Join-Path $root 'v12-deps.patch'; $di=[IO.File]::OpenRead($depsGzip); try { $dg=[IO.Compression.GZipStream]::new($di,[IO.Compression.CompressionMode]::Decompress); try { $do=[IO.File]::Create($depsPatch); try{$dg.CopyTo($do)}finally{$do.Dispose()} } finally{$dg.Dispose()} } finally{$di.Dispose()}
-          if ((Get-FileHash $depsPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_PATCH_SHA256) { throw 'dependency patch hash mismatch' }
-          $policyPatch=Join-Path $root 'v12-deps-policy.patch'; $policyText=[IO.File]::ReadAllText((Resolve-Path 'product/v12-deps-policy.patch')).Replace("`r`n","`n"); [IO.File]::WriteAllText($policyPatch,$policyText,[Text.UTF8Encoding]::new($false))
-          if ((Get-FileHash $policyPatch -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_DEPS_POLICY_SHA256) { throw 'dependency policy patch hash mismatch' }
-          $boundaryBlob=(git rev-parse "$($env:GITHUB_SHA):product/v12-staging-boundary.patch.gz.b64").Trim(); if ($boundaryBlob -ne $env:V12_BOUNDARY_BLOB_SHA) { throw 'boundary overlay blob mismatch' }
-          $boundaryGzip=Join-Path $root 'v12-boundary.patch.gz'; [IO.File]::WriteAllBytes($boundaryGzip,[Convert]::FromBase64String([IO.File]::ReadAllText((Resolve-Path 'product/v12-staging-boundary.patch.gz.b64'))))
-          $boundaryPatch=Join-Path $root 'v12-boundary.patch'; $bi=[IO.File]::OpenRead($boundaryGzip); try { $bg=[IO.Compression.GZipStream]::new($bi,[IO.Compression.CompressionMode]::Decompress); try { $bo=[IO.File]::Create($boundaryPatch); try{$bg.CopyTo($bo)}finally{$bo.Dispose()} } finally{$bg.Dispose()} } finally{$bi.Dispose()}
-          Push-Location $candidate
-          try {
-            git init -q; git config core.autocrlf false; git config core.eol lf
-            git apply --check $patchPath; if ($LASTEXITCODE -ne 0) { throw 'product patch check failed' }; git apply $patchPath; if ($LASTEXITCODE -ne 0) { throw 'product patch apply failed' }
-            git apply --check $depsPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency patch check failed' }; git apply $depsPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency patch apply failed' }
-            git apply --check $policyPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency policy patch check failed' }; git apply $policyPatch; if ($LASTEXITCODE -ne 0) { throw 'dependency policy patch apply failed' }
-            git apply --check $boundaryPatch
-            if ($LASTEXITCODE -eq 0) {
-              git apply $boundaryPatch
-              if ($LASTEXITCODE -ne 0) { throw 'staging-boundary patch apply failed' }
-            } else {
-              git apply --reject --whitespace=nowarn $boundaryPatch | Out-Host
-              node "$env:GITHUB_WORKSPACE/tools/apply-v12-staging-boundary-conflicts.mjs" $candidate
-              if ($LASTEXITCODE -ne 0) { throw 'reviewed staging-boundary conflict resolution failed' }
-            }
-            if ((node -p "require('./package.json').version").Trim() -ne '1.2.0') { throw 'candidate version mismatch' }
-            if ((node -p "require('./RELEASE_MANIFEST.json').releaseReady").Trim() -ne 'false') { throw 'releaseReady changed' }
-            if ((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:V12_LOCK_SHA256) { throw 'lock hash mismatch' }
-          } finally { Pop-Location }
-          "CANDIDATE=$candidate" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $ErrorActionPreference='Stop'; if ((node --version).Trim() -ne 'v26.7.0') { throw 'Node mismatch' }; if ((npm --version).Trim() -ne '12.0.2') { throw 'npm mismatch' }
+          $root=Join-Path $env:RUNNER_TEMP 'v12-platform'; New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $base=Join-Path $root 'base.zip'; $p=Start-Process gh -ArgumentList @('api',"/repos/$env:GITHUB_REPOSITORY/actions/artifacts/$env:BASE_ARTIFACT_ID/zip") -RedirectStandardOutput $base -NoNewWindow -Wait -PassThru; if($p.ExitCode-ne 0){throw 'artifact download failed'}
+          if((Get-FileHash $base -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:BASE_ARTIFACT_SHA256){throw 'base hash mismatch'}
+          $wrap=Join-Path $root 'wrapper'; Expand-Archive $base $wrap -Force; $inner=Join-Path $wrap 'CosmicTranscriberWeb-1.2.0-source.zip'; $source=Join-Path $root 'source'; Expand-Archive $inner $source -Force; $candidate=Join-Path $source 'CosmicTranscriberWeb-1.2.0'; Set-Location $candidate
+          if((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:BASE_LOCK_SHA256){throw 'base lock mismatch'}
+          $delta=(Resolve-Path "$env:GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64").Path; if((Get-FileHash $delta -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_B64_SHA256){throw 'delta b64 mismatch'}
+          $gz=Join-Path $root 'delta.gz'; [IO.File]::WriteAllBytes($gz,[Convert]::FromBase64String([IO.File]::ReadAllText($delta).Trim())); if((Get-FileHash $gz -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_GZIP_SHA256){throw 'delta gzip mismatch'}
+          $patch=Join-Path $root 'delta.patch'; $i=[IO.File]::OpenRead($gz); try{$g=[IO.Compression.GZipStream]::new($i,[IO.Compression.CompressionMode]::Decompress);try{$o=[IO.File]::Create($patch);try{$g.CopyTo($o)}finally{$o.Dispose()}}finally{$g.Dispose()}}finally{$i.Dispose()}; if((Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_PATCH_SHA256){throw 'delta patch mismatch'}
+          git init -q; git apply --check $patch; if($LASTEXITCODE-ne 0){throw 'delta check failed'}; git apply $patch; if($LASTEXITCODE-ne 0){throw 'delta apply failed'}; if((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:V12_LOCK_SHA256){throw 'refreshed lock mismatch'}
+          "CANDIDATE=$candidate" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install dependencies
         shell: pwsh
-        run: |
-          Set-Location $env:CANDIDATE; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
+        run: Set-Location $env:CANDIDATE; npm ci; npm run deps:install-scripts:verify; npm audit; npm outdated --depth=0
       - name: Run installed Chrome and Edge
         shell: pwsh
-        run: |
-          Set-Location $env:CANDIDATE; npm run browsers:install:branded; npm run test:e2e:branded
+        run: Set-Location $env:CANDIDATE; npm run browsers:install:branded; npm run test:e2e:branded
