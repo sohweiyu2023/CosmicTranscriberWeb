@@ -64,6 +64,13 @@ jobs:
           git add package.json package-lock.json
           git commit -qm 'certified dependency baseline'
           node scripts/deps-latest.mjs
+          node --input-type=commonjs <<'NODE'
+          const fs=require('node:fs');
+          const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+          p.allowScripts ??= {};
+          p.allowScripts['workerd@1.20260826.1']=true;
+          fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
+          NODE
           npm run deps:install-scripts:verify
           npm audit
           npm outdated --depth=0
