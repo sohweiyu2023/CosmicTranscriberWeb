@@ -66,6 +66,7 @@ jobs:
           test -f "$inner"
           unzip -q "$inner" -d "$root/source"
           candidate="$root/source/CosmicTranscriberWeb-1.2.0"
+          chmod -R u+rwX "$candidate"
           test -f "$candidate/package.json"
           test -f "$candidate/RELEASE_MANIFEST.json"
           echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
