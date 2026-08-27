@@ -18,87 +18,12 @@ permissions:
   actions: read
 
 env:
-  STAGING_ARTIFACT_ID: '9499663656'
-  STAGING_ARTIFACT_SHA256: e44ec5237145d0f6c90f1123dcbec7105eed9ec13bdaa3e890e9886f6de8efc4
-  V12_LOCK_SHA256: 145c28bdf9cb6178a6e1ccf687e686a1bd42f77c1b5ad49617bc23bcb631a76e
+  STAGING_ARTIFACT_ID: '9642728630'
+  STAGING_ARTIFACT_SHA256: fbce0a019ed435a9e9e07969f33e1ebb8b3b68cf115d87e720ed6ba47f952051
+  V12_LOCK_SHA256: 90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d
   STAGING_WORKER_NAME: cosmic-transcriber-web-staging
 
 jobs:
-  refresh-dependency-overlay:
-    name: Generate exact registry-latest dependency delta from certified candidate
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: 26.7.0
-      - name: Install exact npm
-        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-      - name: Generate verified incremental dependency overlay
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(node --version)" = 'v26.7.0'
-          test "$(npm --version)" = '12.0.2'
-          root="$RUNNER_TEMP/v12-dependency-refresh"
-          mkdir -p "$root/wrapper" "$root/source"
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STAGING_ARTIFACT_ID}/zip" > "$root/artifact.zip"
-          printf '%s  %s\n' "$STAGING_ARTIFACT_SHA256" "$root/artifact.zip" | sha256sum -c -
-          unzip -q "$root/artifact.zip" -d "$root/wrapper"
-          inner="$root/wrapper/CosmicTranscriberWeb-1.2.0-source.zip"
-          test -f "$inner"
-          unzip -q "$inner" -d "$root/source"
-          candidate="$root/source/CosmicTranscriberWeb-1.2.0"
-          chmod -R u+rwX "$candidate"
-          cd "$candidate"
-          test "$(node -p "require('./package.json').version")" = '1.2.0'
-          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
-          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
-          printf '%s  %s\n' "$V12_LOCK_SHA256" package-lock.json | sha256sum -c -
-          git init -q
-          git config user.name 'Cosmic V1.2 CI'
-          git config user.email 'ci@example.invalid'
-          git add package.json package-lock.json
-          git commit -qm 'certified dependency baseline'
-          node scripts/deps-latest.mjs
-          node --input-type=commonjs <<'NODE'
-          const fs=require('node:fs');
-          const p=JSON.parse(fs.readFileSync('package.json','utf8'));
-          p.allowScripts ??= {};
-          p.allowScripts['workerd@1.20260826.1']=true;
-          fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
-          NODE
-          npm run deps:install-scripts:verify
-          npm audit
-          npm outdated --depth=0
-          git diff --binary HEAD -- package.json package-lock.json > "$root/v12-deps-incremental.patch"
-          test -s "$root/v12-deps-incremental.patch"
-          gzip -n -9 -c "$root/v12-deps-incremental.patch" > "$root/v12-deps-incremental.patch.gz"
-          base64 -w0 "$root/v12-deps-incremental.patch.gz" > "$root/v12-deps-incremental.patch.gz.b64"
-          cp package.json package-lock.json "$root/"
-          sha256sum "$root/v12-deps-incremental.patch" "$root/v12-deps-incremental.patch.gz" "$root/v12-deps-incremental.patch.gz.b64" package.json package-lock.json | tee "$root/SHA256SUMS.txt"
-          echo "REFRESH_ROOT=$root" >> "$GITHUB_ENV"
-          echo '---BEGIN-V12-DEPS-INCREMENTAL-B64---'
-          cat "$root/v12-deps-incremental.patch.gz.b64"
-          echo
-          echo '---END-V12-DEPS-INCREMENTAL-B64---'
-      - name: Upload dependency refresh evidence
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: v12-registry-latest-dependency-delta
-          path: |
-            ${{ env.REFRESH_ROOT }}/v12-deps-incremental.patch
-            ${{ env.REFRESH_ROOT }}/v12-deps-incremental.patch.gz
-            ${{ env.REFRESH_ROOT }}/v12-deps-incremental.patch.gz.b64
-            ${{ env.REFRESH_ROOT }}/package.json
-            ${{ env.REFRESH_ROOT }}/package-lock.json
-            ${{ env.REFRESH_ROOT }}/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 3
-
   deploy-staging-only:
     name: Deploy package-certified V1.2 candidate to STAGING ONLY
     runs-on: ubuntu-latest
