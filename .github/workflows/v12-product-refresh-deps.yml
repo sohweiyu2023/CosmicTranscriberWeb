@@ -1,4 +1,5 @@
 name: V1.2 Product Refresh Direct Dependencies
+# Push trigger intentionally permits immediate fail-closed registry-latest refresh.
 
 on:
   push:
