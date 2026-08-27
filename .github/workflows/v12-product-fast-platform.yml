@@ -120,7 +120,7 @@ jobs:
           $delta=(Resolve-Path "$env:GITHUB_WORKSPACE/product/v12-deps-incremental-20260827.patch.gz.b64").Path; if((Get-FileHash $delta -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_B64_SHA256){throw 'delta b64 mismatch'}
           $gz=Join-Path $root 'delta.gz'; [IO.File]::WriteAllBytes($gz,[Convert]::FromBase64String([IO.File]::ReadAllText($delta).Trim())); if((Get-FileHash $gz -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_GZIP_SHA256){throw 'delta gzip mismatch'}
           $patch=Join-Path $root 'delta.patch'; $i=[IO.File]::OpenRead($gz); try{$g=[IO.Compression.GZipStream]::new($i,[IO.Compression.CompressionMode]::Decompress);try{$o=[IO.File]::Create($patch);try{$g.CopyTo($o)}finally{$o.Dispose()}}finally{$g.Dispose()}}finally{$i.Dispose()}; if((Get-FileHash $patch -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:DELTA_PATCH_SHA256){throw 'delta patch mismatch'}
-          git init -q; git apply --check $patch; if($LASTEXITCODE-ne 0){throw 'delta check failed'}; git apply $patch; if($LASTEXITCODE-ne 0){throw 'delta apply failed'}; if((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:V12_LOCK_SHA256){throw 'refreshed lock mismatch'}
+          git init -q; git config core.autocrlf false; if($LASTEXITCODE-ne 0){throw 'failed to disable autocrlf'}; git apply --check $patch; if($LASTEXITCODE-ne 0){throw 'delta check failed'}; git apply $patch; if($LASTEXITCODE-ne 0){throw 'delta apply failed'}; if((Get-FileHash 'package-lock.json' -Algorithm SHA256).Hash.ToLowerInvariant()-ne $env:V12_LOCK_SHA256){throw 'refreshed lock mismatch'}
           "CANDIDATE=$candidate" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Install dependencies
         shell: pwsh
