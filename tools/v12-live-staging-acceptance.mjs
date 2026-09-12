@@ -6,12 +6,12 @@ import crypto from 'node:crypto';
 const BASE = 'https://transcriber-staging.awakeningtoreality.com';
 const WORKER = 'cosmic-transcriber-web-staging';
 const EXPECTED_VERSION = '1.2.0';
-const EXPECTED_LOCK_SHA256 = '90c85c65637a2e243273a13438cb23a9a51c3d1aea80236ecf4983df4876b85d';
 const FORMATS = Object.freeze({
   mp3: 'audio/mpeg', flac: 'audio/flac', mp4: 'audio/mp4', mpeg: 'audio/mpeg', mpga: 'audio/mpeg',
   m4a: 'audio/mp4', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm'
 });
-const candidate = process.env.CANDIDATE;
+const fixtureDir = process.env.LIVE_FIXTURE_DIR;
+const expectedWorkerVersion = process.env.EXPECTED_STAGING_WORKER_VERSION_ID;
 const accessSecret = process.env.STAGING_CF_AUTHORIZATION;
 const openaiKey = process.env.STAGING_OPENAI_API_KEY;
 const cfToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -23,7 +23,8 @@ function safeId(prefix) { return `${prefix}-${crypto.randomUUID()}`; }
 function b64urlJson(value) { return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url'); }
 function requireSecret(value, name) { if (!value || !String(value).trim()) fail(`Missing required staging environment secret ${name}.`); }
 
-requireSecret(candidate, 'CANDIDATE');
+requireSecret(fixtureDir, 'LIVE_FIXTURE_DIR');
+requireSecret(expectedWorkerVersion, 'EXPECTED_STAGING_WORKER_VERSION_ID');
 requireSecret(accessSecret, 'STAGING_CF_AUTHORIZATION');
 requireSecret(openaiKey, 'STAGING_OPENAI_API_KEY');
 requireSecret(cfToken, 'CLOUDFLARE_API_TOKEN');
@@ -91,12 +92,18 @@ async function d1Query(databaseId, sql, params=[]) {
   assert(Array.isArray(data.result) && data.result.length >= 1 && data.result.every(x => x?.success === true), 'D1 query did not report success.');
   return data.result;
 }
-
-async function sha256File(file) {
-  const bytes = await readFile(file);
-  return crypto.createHash('sha256').update(bytes).digest('hex');
-}
 function modelRequests(overview, model) { return Number(overview?.models?.find(x => x.model === model)?.requests || 0); }
+
+async function requireExactActiveDeployment() {
+  const data = await cfJson(`https://api.cloudflare.com/client/v4/accounts/${cfAccount}/workers/scripts/${WORKER}/deployments`);
+  const deployments = data?.result?.deployments;
+  assert(Array.isArray(deployments) && deployments.length > 0, 'No active staging Worker deployment was returned.');
+  const active = deployments[0];
+  assert(Array.isArray(active?.versions) && active.versions.length === 1, 'Staging must be serving exactly one Worker version for certification.');
+  const deployed = active.versions[0];
+  assert(deployed?.version_id === expectedWorkerVersion, `Active staging Worker version mismatch: ${deployed?.version_id || 'missing'}.`);
+  assert(Number(deployed?.percentage) === 100, 'Expected certified staging Worker version is not serving 100% of traffic.');
+}
 
 let originalRegistrationMode = null;
 let syntheticUserId = null;
@@ -104,21 +111,20 @@ let databaseId = null;
 let mainError = null;
 
 try {
-  const pkg = JSON.parse(await readFile(path.join(candidate, 'package.json'), 'utf8'));
-  const manifest = JSON.parse(await readFile(path.join(candidate, 'RELEASE_MANIFEST.json'), 'utf8'));
-  assert(pkg.version === EXPECTED_VERSION, `Candidate version mismatch: ${pkg.version}`);
-  assert(manifest.releaseReady === false, 'Live staging acceptance must run against releaseReady:false candidate.');
-  assert(manifest.certificationLevel === 'staging', 'Candidate is not staging-certified.');
-  assert(await sha256File(path.join(candidate, 'package-lock.json')) === EXPECTED_LOCK_SHA256, 'Candidate dependency-lock SHA-256 mismatch.');
-  console.log('PASS candidate identity: exact staging-certified V1.2 artifact; releaseReady remains false.');
+  await requireExactActiveDeployment();
+  console.log('PASS deployment identity: exact package-certified staging Worker version serves 100% of traffic.');
 
   const settings = await cfJson(`https://api.cloudflare.com/client/v4/accounts/${cfAccount}/workers/scripts/${WORKER}/settings`);
   const bindings = settings?.result?.bindings;
   assert(Array.isArray(bindings), 'Current staging Worker bindings unavailable.');
+  const plain = name => bindings.find(x => x?.name === name && x?.type === 'plain_text')?.text;
+  assert(plain('APP_VERSION') === EXPECTED_VERSION, 'Current staging APP_VERSION binding mismatch.');
+  assert(plain('DEPLOYMENT_ENV') === 'staging', 'Current Worker is not configured for staging.');
+  assert(plain('LOCAL_AUTH_BYPASS') === 'false', 'Staging LOCAL_AUTH_BYPASS must remain false.');
   const d1 = bindings.find(x => x?.name === 'USER_DB' && x?.type === 'd1');
   databaseId = d1?.database_id || d1?.id;
   assert(typeof databaseId === 'string' && /^[0-9a-f-]{36}$/i.test(databaseId), 'Current staging USER_DB binding unavailable.');
-  console.log('PASS staging target identity: existing Access/admin/D1 bindings resolved without printing private values.');
+  console.log('PASS staging target identity: version/environment/auth/D1 bindings verified without printing private values.');
 
   const initial = await appRequest('/api/session/status');
   assert(initial.json?.ok === true, 'Session status did not return ok:true.');
@@ -175,7 +181,7 @@ try {
 
   let replay = null;
   for (const [format, mime] of Object.entries(FORMATS)) {
-    const bytes = await readFile(path.join(candidate, 'tests', 'fixtures', `format.${format}`));
+    const bytes = await readFile(path.join(fixtureDir, `format.${format}`));
     const metadata = {
       v: 2, jobId: safeId(`live-${format}`), fileId: safeId(`file-${format}`), chunkIndex: 1, chunkCount: 1,
       attemptId: safeId(`attempt-${format}`), declaredBytes: bytes.byteLength, durationSeconds: 1,
@@ -209,7 +215,7 @@ try {
   assert(mismatchBilling === 'ambiguous_after_dispatch', 'Attempt-identity conflict did not preserve conservative billing state.');
   console.log('PASS billing safety: duplicate dispatch blocked pre-OpenAI + identity mismatch stays conservative/ambiguous.');
 
-  const diarizeBytes = await readFile(path.join(candidate, 'tests', 'fixtures', 'format.mp3'));
+  const diarizeBytes = await readFile(path.join(fixtureDir, 'format.mp3'));
   const diarizeMetadata = {
     v:2, jobId:safeId('live-diarize'), fileId:safeId('file-diarize'), chunkIndex:1, chunkCount:1,
     attemptId:safeId('attempt-diarize'), declaredBytes:diarizeBytes.byteLength, durationSeconds:1,
@@ -232,6 +238,9 @@ try {
   const afterForget = await appRequest('/api/session/status');
   assert(afterForget.json?.configured === false, 'BYOK session remained configured after forget.');
   console.log('PASS BYOK forget + post-forget session status.');
+
+  await requireExactActiveDeployment();
+  console.log('PASS deployment identity reasserted after paid live acceptance.');
   console.log('LIVE_STAGING_API_ACCEPTANCE_PASS');
 } catch (error) {
   mainError = error;
