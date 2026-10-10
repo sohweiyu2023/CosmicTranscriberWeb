@@ -35,13 +35,11 @@ jobs:
           node - <<'NODE'
           const fs=require('node:fs');
           const source=fs.readFileSync('.github/workflows/reconstruct-v12-dev-source.yml','utf8');
-          const marker="<<'V12_RECONSTRUCTION_B64'\\n";
-          const p=source.indexOf(marker);
-          if(p<0)throw Error('missing reconstruction payload');
-          const start=p+marker.length;
-          const end=source.indexOf('\\n          V12_RECONSTRUCTION_B64',start);
-          if(end<0)throw Error('missing payload terminator');
-          const payload=source.slice(start,end).split(/\\r?\\n/).map(s=>s.replace(/^ {10}/,'')).join('').trim();
+          const lines=source.split(/\\r?\\n/);
+          const opener=lines.findIndex(line=>line.includes("<<'V12_RECONSTRUCTION_B64'"));
+          const closer=lines.findIndex((line,i)=>i>opener&&line.trim()==='V12_RECONSTRUCTION_B64');
+          if(opener<0||closer<0||closer<=opener)throw Error('missing Batch1 payload delimiters');
+          const payload=lines.slice(opener+1,closer).map(line=>line.trim()).join('');
           fs.writeFileSync('/tmp/v12-batch1-reconstruction.gz',Buffer.from(payload,'base64'));
           NODE
           gzip -dc /tmp/v12-batch1-reconstruction.gz > /tmp/v12-batch1-reconstruction.mjs
