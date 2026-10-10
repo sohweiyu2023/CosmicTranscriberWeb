@@ -175,7 +175,8 @@ try {
     const info = await d1Query(databaseId, `PRAGMA table_info(${table})`);
     const names = (info?.[0]?.results || []).map(x => String(x.name));
     assert(names.length > 0, `Remote D1 table ${table} is missing.`);
-    assert(!names.some(name => forbidden.test(name)), `Remote D1 table ${table} contains forbidden content-bearing column.`);
+    const forbiddenColumns = names.filter(name => forbidden.test(name));
+    assert(forbiddenColumns.length === 0, `Remote D1 table ${table} contains forbidden content-bearing column name(s): ${JSON.stringify(forbiddenColumns)}`);
   }
   console.log('PASS remote staging D1 persistence schema: no transcript/audio/prompt/filename/credential columns.');
 
