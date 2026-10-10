@@ -31,4 +31,19 @@ jobs:
           printf '%s  %s\n' abdb0e1040bef4ef7e87f615b14d90840c3c2fdfa68c296170346742617352dd "$RUNNER_TEMP/batch3.patch" | sha256sum -c -
           echo 'BATCH3_PROVIDER_PATCH_CONTEXT:'
           awk '/^diff --git a\/src\/openai.js /{p=1} /^diff --git / && !/^diff --git a\/src\/openai.js / && p{exit} p {print}' "$RUNNER_TEMP/batch3.patch" | head -180
+          echo 'BATCH1_RECONSTRUCTION_SCRIPT_PROVIDER_REFERENCES:'
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const source=fs.readFileSync('.github/workflows/reconstruct-v12-dev-source.yml','utf8');
+          const marker="<<'V12_RECONSTRUCTION_B64'\\n";
+          const p=source.indexOf(marker);
+          if(p<0)throw Error('missing reconstruction payload');
+          const start=p+marker.length;
+          const end=source.indexOf('\\n          V12_RECONSTRUCTION_B64',start);
+          if(end<0)throw Error('missing payload terminator');
+          const payload=source.slice(start,end).split(/\\r?\\n/).map(s=>s.replace(/^ {10}/,'')).join('').trim();
+          fs.writeFileSync('/tmp/v12-batch1-reconstruction.gz',Buffer.from(payload,'base64'));
+          NODE
+          gzip -dc /tmp/v12-batch1-reconstruction.gz > /tmp/v12-batch1-reconstruction.mjs
+          grep -n -C 6 -E '(openai\\.js|filename=|audio\\.mpga|audioFormat|Content-Disposition)' /tmp/v12-batch1-reconstruction.mjs | head -160 || true
           echo 'No release artifact generated, no production or staging deployment.'
