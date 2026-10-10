@@ -64,7 +64,9 @@ jobs:
           # Use a real MPEG Program Stream for .mpeg; renaming a raw MP3 is not a valid container-format test.
           ffmpeg -hide_banner -loglevel error -y -i "$fixture/format.wav" -c:a libmp3lame -b:a 32k -f mpeg "$fixture/format.mpeg"
           ffprobe -hide_banner -loglevel error -show_entries format=format_name -of default=noprint_wrappers=1 "$fixture/format.mpeg" | grep -qx "format_name=mpeg"
-          cp "$fixture/format.mp3" "$fixture/format.mpga"
+          # MPGA represents raw MPEG audio; exercise Layer II rather than merely renaming a Layer III MP3 fixture.
+          ffmpeg -hide_banner -loglevel error -y -i "$fixture/format.wav" -c:a mp2 -b:a 64k -f mp2 "$fixture/format.mpga"
+          ffprobe -hide_banner -loglevel error -show_entries stream=codec_name -of default=noprint_wrappers=1 "$fixture/format.mpga" | grep -qx "codec_name=mp2"
           for ext in mp3 flac mp4 mpeg mpga m4a ogg wav webm; do test -s "$fixture/format.$ext"; done
           echo "LIVE_FIXTURE_DIR=$fixture" >> "$GITHUB_ENV"
           echo 'Nine tiny deterministic live fixtures provisioned.'
