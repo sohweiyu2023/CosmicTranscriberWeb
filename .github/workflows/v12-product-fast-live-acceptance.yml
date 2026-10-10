@@ -61,7 +61,9 @@ jobs:
           ffmpeg -hide_banner -loglevel error -y -i "$fixture/format.wav" -c:a aac -b:a 32k "$fixture/format.mp4"
           ffmpeg -hide_banner -loglevel error -y -i "$fixture/format.wav" -c:a libvorbis -q:a 2 "$fixture/format.ogg"
           ffmpeg -hide_banner -loglevel error -y -i "$fixture/format.wav" -c:a libopus -b:a 24k "$fixture/format.webm"
-          cp "$fixture/format.mp3" "$fixture/format.mpeg"
+          # Use a real MPEG Program Stream for .mpeg; renaming a raw MP3 is not a valid container-format test.
+          ffmpeg -hide_banner -loglevel error -y -i "$fixture/format.wav" -c:a libmp3lame -b:a 32k -f mpeg "$fixture/format.mpeg"
+          ffprobe -hide_banner -loglevel error -show_entries format=format_name -of default=noprint_wrappers=1 "$fixture/format.mpeg" | grep -qx "format_name=mpeg"
           cp "$fixture/format.mp3" "$fixture/format.mpga"
           for ext in mp3 flac mp4 mpeg mpga m4a ogg wav webm; do test -s "$fixture/format.$ext"; done
           echo "LIVE_FIXTURE_DIR=$fixture" >> "$GITHUB_ENV"
