@@ -201,8 +201,27 @@ try {
     } catch (error) {
       formatFailures.push(format);
       console.error(`FAIL live transcription format .${format}: ${String(error.message).replace(/[\r\n]/g, ' ').slice(0,160)}`);
-      // Abort early on the known provider-blocked MPGA format to avoid paying for already-passed formats.
-      if (format === 'mpga') throw error;
+      // Diagnose the SAME synthetic bytes directly against OpenAI only when the app rejects MPGA.
+      // A direct success is not a product PASS; certification still fails closed on the app 400.
+      if (format === 'mpga') {
+        try {
+          const directForm = new FormData();
+          directForm.set('model', 'gpt-transcribe');
+          directForm.set('file', new File([bytes], 'format.mpga', { type: mime }));
+          const direct = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+            method: 'POST', headers: { Authorization: `Bearer ${openaiKey}` },
+            body: directForm, signal: AbortSignal.timeout(20000)
+          });
+          let directResult = {};
+          try { directResult = await direct.json(); } catch {}
+          const code = String(directResult?.error?.code || 'none').replace(/[^a-zA-Z0-9_-]/g, '').slice(0,60);
+          const safeMessage = String(directResult?.error?.message || '').replace(/sk-(?:proj-)?[A-Za-z0-9_-]+/gi, '[redacted]').replace(/[^a-zA-Z0-9.,:;() -]/g, ' ').slice(0,180);
+          console.error(`DIRECT_PROVIDER_MPGA_DIAGNOSTIC status=${direct.status} code=${code} message=${safeMessage || 'none'}`);
+        } catch (directError) {
+          console.error(`DIRECT_PROVIDER_MPGA_DIAGNOSTIC unavailable=${String(directError?.name || 'unknown')}`);
+        }
+        throw error;
+      }
       continue;
     }
     assert(result.json?.ok === true && result.json?.diagnostics?.status === 200, `Live ${format} transcription did not succeed.`);
