@@ -189,7 +189,7 @@ try {
     const bytes = await readFile(path.join(fixtureDir, `format.${format}`));
     const metadata = {
       v: 2, jobId: safeId(`live-${format}`), fileId: safeId(`file-${format}`), chunkIndex: 1, chunkCount: 1,
-      attemptId: safeId(`attempt-${format}`), declaredBytes: bytes.byteLength, durationSeconds: 1,
+      attemptId: safeId(`attempt-${format}`), declaredBytes: bytes.byteLength, durationSeconds: format === 'mpga' ? 7 : 1,
       model: 'gpt-transcribe', languages: [], keywords: [], prompt: '', requestKind: 'transcription', audioFormat: format
     };
     let result;
@@ -201,6 +201,8 @@ try {
     } catch (error) {
       formatFailures.push(format);
       console.error(`FAIL live transcription format .${format}: ${String(error.message).replace(/[\r\n]/g, ' ').slice(0,160)}`);
+      // Abort early on the known provider-blocked MPGA format to avoid paying for already-passed formats.
+      if (format === 'mpga') throw error;
       continue;
     }
     assert(result.json?.ok === true && result.json?.diagnostics?.status === 200, `Live ${format} transcription did not succeed.`);
