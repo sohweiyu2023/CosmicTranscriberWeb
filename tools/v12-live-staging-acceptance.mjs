@@ -7,7 +7,7 @@ const BASE = 'https://transcriber-staging.awakeningtoreality.com';
 const WORKER = 'cosmic-transcriber-web-staging';
 const EXPECTED_VERSION = '1.2.0';
 const FORMATS = Object.freeze({
-  mp3: 'audio/mpeg', flac: 'audio/flac', mp4: 'audio/mp4', mpeg: 'audio/mpeg', mpga: 'audio/mpeg',
+  mpga: 'audio/mpeg', mp3: 'audio/mpeg', flac: 'audio/flac', mp4: 'audio/mp4', mpeg: 'audio/mpeg',
   m4a: 'audio/mp4', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm'
 });
 const fixtureDir = process.env.LIVE_FIXTURE_DIR;
@@ -183,6 +183,26 @@ try {
   }
   console.log('PASS remote staging D1 persistence schema: no transcript/audio/prompt/filename/credential columns.');
 
+  // Diagnostic-only direct provider probe on a synthetic MPGA failure. Never use it as
+  // evidence of product acceptance, never log credentials, and never use user audio.
+  async function diagnoseMpgaWithProvider(bytes) {
+    try {
+      const body = new FormData();
+      body.set('model', 'gpt-transcribe');
+      body.set('file', new File([bytes], 'fixture.mpga', { type: 'audio/mpeg' }));
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method:'POST', headers:{ Authorization: `Bearer ${openaiKey}` }, body
+      });
+      let payload = {};
+      try { payload = await response.json(); } catch {}
+      const safe = value => String(value ?? 'none').replace(/[^a-zA-Z0-9_ -]/g, '').slice(0,100);
+      const message = String(payload?.error?.message ?? '').replace(/sk-(?:proj-)?[A-Za-z0-9_-]+/g,'[redacted]').replace(/[^a-zA-Z0-9_ .,;:() -]/g, ' ').slice(0,220);
+      console.error(`DIAGNOSTIC_DIRECT_MPGA status=${response.status} error_type=${safe(payload?.error?.type)} code=${safe(payload?.error?.code)} message=${message}`);
+    } catch (error) {
+      console.error(`DIAGNOSTIC_DIRECT_MPGA unavailable: ${String(error?.name || 'unknown')}`);
+    }
+  }
+
   let replay = null;
   for (const [format, mime] of Object.entries(FORMATS)) {
     const bytes = await readFile(path.join(fixtureDir, `format.${format}`));
@@ -191,10 +211,16 @@ try {
       attemptId: safeId(`attempt-${format}`), declaredBytes: bytes.byteLength, durationSeconds: 1,
       model: 'gpt-transcribe', languages: [], keywords: [], prompt: '', requestKind: 'transcription', audioFormat: format
     };
-    const result = await appRequest('/api/transcribe', {
-      method:'POST', body: bytes,
-      headers: { 'Content-Type': mime, 'X-Cosmic-Metadata': b64urlJson(metadata), 'Content-Length': String(bytes.byteLength) }
-    });
+    let result;
+    try {
+      result = await appRequest('/api/transcribe', {
+        method:'POST', body: bytes,
+        headers: { 'Content-Type': mime, 'X-Cosmic-Metadata': b64urlJson(metadata), 'Content-Length': String(bytes.byteLength) }
+      });
+    } catch (error) {
+      if (format === 'mpga' && /HTTP 400/.test(String(error.message))) await diagnoseMpgaWithProvider(bytes);
+      throw error;
+    }
     assert(result.json?.ok === true && result.json?.diagnostics?.status === 200, `Live ${format} transcription did not succeed.`);
     if (format === 'mp3') replay = { bytes, mime, metadata };
     console.log(`PASS live transcription format .${format}`);
