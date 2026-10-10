@@ -1,0 +1,54 @@
+name: V1.2 Recover Exact Legacy Source Evidence
+
+on:
+  push:
+    branches: [dev/v1.2.0-product-fast]
+    paths: ['.github/workflows/v12-recover-legacy-source.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconstruct:
+    name: Verify archived 1.1.1 source chain without deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout V1.2 tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Checkout immutable historical 1.1.1 source archive lineage
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 725327e6af5f15ebf7ba3da39674d8ff12b85229
+          path: legacy
+      - name: Verify legacy source snapshot identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' '7633e6ed8f133b3de3a096ee176bd072f2110eb9b39a59fbbc15cb18453a8efb' 'legacy/ctw112_ci_source.tar.xz' | sha256sum -c -
+          python legacy/.ci/build_111_candidate.py
+          python - <<'PY'
+          import json, pathlib, hashlib
+          root=pathlib.Path('legacy/work')
+          files=sorted(p for p in root.rglob('*') if p.is_file() and not any(x in p.parts for x in ('node_modules','.git','.wrangler','dist','coverage','evidence')))
+          dig=hashlib.sha256()
+          for p in files:
+              rel=p.relative_to(root).as_posix()
+              h=hashlib.sha256(p.read_bytes()).hexdigest()
+              dig.update(rel.encode('utf-8')+b'\0'+h.encode('ascii')+b'\n')
+          pkg=json.loads((root/'package.json').read_text())
+          manifest=json.loads((root/'RELEASE_MANIFEST.json').read_text())
+          print('RECONSTRUCTED_LEGACY_REVIEW_SOURCE version='+str(pkg['version'])+' releaseReady='+str(manifest.get('releaseReady'))+' fileCount='+str(len(files))+' treeSha256='+dig.hexdigest())
+          print('CERTIFIED_1_1_1_TREE_EXPECTED a67ba4aee35bf533c122f322418ac3fd4bf68601a1ae320deecb35318ffb5300')
+          print('REVIEW_CANDIDATE_NOT_CERTIFIED_FROM_THIS_TEST')
+          relevant=[p.relative_to(root).as_posix() for p in files if p.suffix in {'.js','.mjs','.ts'} and ('worker' in p.as_posix().lower() or 'transcrib' in p.as_posix().lower() or 'audio' in p.as_posix().lower())]
+          print('SOURCE_FILES_FOR_PROVIDER_FIX:', ', '.join(relevant[:55]))
+          PY
+      - name: Upload non-certified reconstructed review source for comparison only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: v12-recovered-v111-reviewed-source-NOT-CERTIFIED
+          path: legacy/work/
+          retention-days: 7
+          if-no-files-found: error
