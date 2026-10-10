@@ -175,7 +175,10 @@ try {
     const info = await d1Query(databaseId, `PRAGMA table_info(${table})`);
     const names = (info?.[0]?.results || []).map(x => String(x.name));
     assert(names.length > 0, `Remote D1 table ${table} is missing.`);
-    const forbiddenColumns = names.filter(name => forbidden.test(name));
+    // A numeric duration counter is usage metadata, not persisted audio content.
+    // Keep the fail-closed ban on actual audio, transcripts and credential columns.
+    const safeUsageCounter = column => column.name === 'audio_seconds_requested' && /^(?:INT|INTEGER|REAL|NUMERIC|DOUBLE|FLOAT)\b/i.test(String(column.type || ''));
+    const forbiddenColumns = (info?.[0]?.results || []).filter(column => forbidden.test(String(column.name)) && !safeUsageCounter(column)).map(column => String(column.name));
     assert(forbiddenColumns.length === 0, `Remote D1 table ${table} contains forbidden content-bearing column name(s): ${JSON.stringify(forbiddenColumns)}`);
   }
   console.log('PASS remote staging D1 persistence schema: no transcript/audio/prompt/filename/credential columns.');
