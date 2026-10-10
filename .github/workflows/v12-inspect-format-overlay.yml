@@ -35,7 +35,7 @@ jobs:
           node - <<'NODE'
           const fs=require('node:fs');
           const source=fs.readFileSync('.github/workflows/reconstruct-v12-dev-source.yml','utf8');
-          const lines=source.split(/\\r?\\n/);
+          const lines=source.split(String.fromCharCode(10));
           const opener=lines.findIndex(line=>line.includes("<<'V12_RECONSTRUCTION_B64'"));
           const closer=lines.findIndex((line,i)=>i>opener&&line.trim()==='V12_RECONSTRUCTION_B64');
           if(opener<0||closer<0||closer<=opener)throw Error('missing Batch1 payload delimiters');
