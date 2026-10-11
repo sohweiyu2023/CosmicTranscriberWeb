@@ -143,22 +143,26 @@ async function selectNative(fixture){
   assert.equal(visibility.visible,true,'Real Safari native file picker must be rendered');
   assert.ok(visibility.width>0&&visibility.height>0,'Real Safari native file input has nonzero dimensions');
   try{
-    // Only SafariDriver Element Send Keys is permitted; there is deliberately
-    // no constructed-file fallback if Safari cannot access disk-backed bytes.
+    // Keep the original native file input rendered while Safari asynchronously
+    // reads the selected disk file and the app completes its real preparation.
+    // Safari's WebDriver file sandbox grant may not outlive hiding the control.
+    // The exact native full/sliced SHA, timestamp and duration checks below stay mandatory.
     await command(`/element/${await element('#fileInput')}/value`,{text:fixture.file});
-  }finally{
-    await evaluate(()=>{
-      const input=document.querySelector('#fileInput');
-      input.hidden=true;input.removeAttribute('style');
-    });
-  }
-  const observed=await until(`${fixture.name} native bytes and media metadata`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,previous),value=>value?.done);
+    const observed=await until(`${fixture.name} native bytes and media metadata`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,previous),value=>value?.done);
   const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
   assertNativeObservation(observed.result,fixture);
   const queue=await until(`${fixture.name} application preparation`,()=>evaluate(()=>Array.from(document.querySelectorAll('#queueList li'),row=>({name:row.querySelector('strong')?.textContent,status:row.querySelector('.mini-state')?.textContent}))),rows=>rows.length===1&&rows[0].status!=='Inspecting');
   assert.deepEqual(queue,[{name:fixture.name,status:'Ready'}]);assertPreparedDiagnostic(await diagnostics(),fixture);
   assert.equal(await count(),beforeCount,'Selecting and preparing a native file must not dispatch transcription');
-  evidence.nativePreparationStatus='PASS';return evidence;
+    evidence.nativePreparationStatus='PASS';return evidence;
+  }finally{
+    // Restore the original product UI only after all async native reads have
+    // finished, whether the strict acceptance passes or fails.
+    await evaluate(()=>{
+      const input=document.querySelector('#fileInput');
+      input.hidden=true;input.removeAttribute('style');
+    });
+  }
 }
 async function waitComplete(){
   const state=await until('Completed mocked transcription',()=>evaluate(()=>({title:document.querySelector('#progressTitle').textContent,status:document.querySelector('#queueList .mini-state')?.textContent,startDisabled:document.querySelector('#startBtn').disabled,cancelDisabled:document.querySelector('#cancelBtn').disabled})),value=>value.title==='Complete'&&value.status==='Completed'&&value.cancelDisabled);
