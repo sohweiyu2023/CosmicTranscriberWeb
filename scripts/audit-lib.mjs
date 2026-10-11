@@ -2,6 +2,31 @@ export function safeguards(files) {
   const s = (file) => files[file] || "";
   const all = () => Object.values(files).join("\n");
   return [
+    ["lone exact-EOF MPEG frame requires corroboration and retained prebilling regressions", () => {
+      const audio = s("src/audio-formats.js");
+      const mpeg = audio.match(/export function looksLikeMpegAudio\(bytes\)\{([\s\S]*?)\r?\n\}/)?.[1] || "";
+      const layer3 = audio.match(/export function looksLikeMpegLayer3\(bytes\)\{([\s\S]*?)\r?\n\}/)?.[1] || "";
+      const unit = s("tests/node/audio-formats.test.mjs").match(/test\('MPEG family rejects fake sync and a lone exact-EOF frame, but accepts corroborated frames',[\s\S]*?\r?\n\}\);/)?.[0] || "";
+      const integration = s("tests/integration/worker.test.js").match(/it\('rejects a lone MPEG frame ending at EOF before paid dispatch and keeps the attempt reusable',[\s\S]*?\r?\n  \}\);/)?.[0] || "";
+      const compact = text => text.replace(/\s+/g, "");
+      return /const nextOffset\s*=\s*i\s*\+\s*first\.frameLength;\s*const second\s*=\s*mpegFrameInfo\(bytes,\s*nextOffset\);/.test(mpeg)
+        && !/if\s*\(\s*nextOffset\s*===\s*bytes\.length\s*\)\s*\{?\s*return\s+true\s*;/.test(mpeg)
+        && compact(mpeg).includes("if(second&&second.version===first.version&&second.layer===first.layer&&second.sampleRate===first.sampleRate)returntrue;")
+        && (mpeg.match(/return\s+true\s*;/g) || []).length === 1
+        && /return\s+frames\s*>=\s*2\s*;/.test(layer3)
+        && compact(s("tests/node/audio-formats.test.mjs")).includes("functionmpegFrame(sampleByte=0x90){constout=newUint8Array(417);out.set([0xff,0xfb,sampleByte,0x64]);returnout}")
+        && compact(unit).includes("constexactEof=mpegFrame();")
+        && compact(unit).includes("consttwo=concat(mpegFrame(),mpegFrame());")
+        && compact(unit).includes("for(constfof['mp3','mpeg','mpga']){")
+        && compact(unit).includes("assert.equal(validateAudioSignature(f,exactEof),false);")
+        && compact(unit).includes("assert.equal(validateAudioSignature(f,two),true);")
+        && compact(integration).includes("constexactEof=newUint8Array(417);exactEof.set([0xff,0xfb,0x90,0x64],0);")
+        && compact(integration).includes("constbad=awaittranscribe(cookie,{...identity,declaredBytes:exactEof.length},{'Content-Type':'audio/mpeg'},exactEof);")
+        && compact(integration).includes("expect(bad.status).toBe(415);expect(upstreamHits).toBe(0);")
+        && compact(integration).includes("constvalid=twoFrameMpeg();")
+        && compact(integration).includes("constretry=awaittranscribe(cookie,{...identity,declaredBytes:valid.length},{'Content-Type':'audio/mpeg'},valid);")
+        && compact(integration).includes("expect(retry.status,awaitretry.clone().text()).toBe(200);expect(upstreamHits).toBe(1);");
+    }],
     ["cookie HttpOnly", () => /HttpOnly/i.test(s("src/byok.js"))],
     ["cookie Secure", () => /Secure/i.test(s("src/byok.js"))],
     ["cookie SameSite strict", () => /SameSite=Strict/i.test(s("src/byok.js"))],

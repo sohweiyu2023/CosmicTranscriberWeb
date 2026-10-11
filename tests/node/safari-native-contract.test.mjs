@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {NATIVE_FIXTURES,assertDuration,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from '../safari/native-file-contract.mjs';
+import {NATIVE_FIXTURES,expectedNativeLastModified,assertDuration,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from '../safari/native-file-contract.mjs';
 
 // Synthetic observations exercise the validator only; they are not Safari evidence.
 const hash='a'.repeat(64);
@@ -8,6 +8,29 @@ const fixture={name:'format.wav',format:'wav',mimeTypes:['','audio/wav','audio/x
 const observed=()=>({isFile:true,name:fixture.name,size:96078,type:'audio/wav',lastModified:315504000000,sha256:hash,slices:structuredClone(fixture.slices),duration:1});
 const prepared=()=>({schema:'cosmic-web-diagnostics-2',queue:[{ref:'file-ref',size:96078,status:'ready',chunks:1,errorCode:null,duration:1}],events:[{category:'file_prepared',fileRef:'file-ref',audioFormat:'wav',duration:1}]});
 const dispatched=()=>({bytes:96078,sha256:hash,contentType:'audio/wav',metadata:{v:2,audioFormat:'wav',chunkIndex:1,chunkCount:1,model:'gpt-transcribe',requestKind:'transcription',declaredBytes:96078,durationSeconds:1,attemptId:`attempt-${'a'.repeat(24)}`,jobId:`run-${'b'.repeat(24)}`,fileId:`file-${'c'.repeat(24)}`}});
+
+test('Linux WebKit native timestamp requires the exact whole-second value, not a tolerance',()=>{
+  const host={browserName:'webkit',platform:'linux'};
+  assert.equal(expectedNativeLastModified(1791698653912,host),1791698653000);
+  assert.equal(expectedNativeLastModified(1791698653999.75,host),1791698653000);
+  assert.equal(expectedNativeLastModified(1791698654000,host),1791698654000);
+  const expected=expectedNativeLastModified(1791698653912,host);
+  for(const wrong of [1791698652999,1791698653001,1791698653912,1791698654000])assert.throws(()=>assert.equal(wrong,expected));
+});
+
+test('native timestamp seconds precision applies only to Linux WebKit, independent of project labels',()=>{
+  for(const platform of ['linux','darwin','win32'])for(const browserName of ['chromium','firefox','webkit']){
+    if(platform==='linux'&&browserName==='webkit')continue;
+    assert.equal(expectedNativeLastModified(1791698653912.75,{browserName,platform}),1791698653912,`${browserName} on ${platform}`);
+  }
+});
+
+test('native timestamp expectation fails closed for invalid times and unknown engine or platform',()=>{
+  const host={browserName:'webkit',platform:'linux'};
+  for(const invalid of [NaN,Infinity,-1,Number.MAX_SAFE_INTEGER+1,'1791698653912'])assert.throws(()=>expectedNativeLastModified(invalid,host));
+  assert.throws(()=>expectedNativeLastModified(1791698653912,{browserName:'mobile-safari',platform:'linux'}));
+  assert.throws(()=>expectedNativeLastModified(1791698653912,{browserName:'webkit',platform:'unknown'}));
+});
 
 test('real Safari fixture contract includes every format and exact Unicode native-file name',()=>{
   assert.deepEqual(NATIVE_FIXTURES.map(item=>item.name),['format.mp3','format.flac','format.mp4','format.mpeg','format.mpga','format.m4a','format.ogg','format.wav','format.webm','ID3 Unicode 東京.mp3']);

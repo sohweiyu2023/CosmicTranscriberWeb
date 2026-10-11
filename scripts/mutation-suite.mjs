@@ -22,6 +22,13 @@ const currentVersion = JSON.parse(files["package.json"]).version;
 const escapedVersion = currentVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const mutations = [
+  ["accept lone MPEG frame ending exactly at EOF", "src/audio-formats.js", /const nextOffset\s*=\s*i\s*\+\s*first\.frameLength;\s*const second\s*=\s*mpegFrameInfo\(bytes,\s*nextOffset\);/, "const nextOffset=i+first.frameLength;\n    if (nextOffset === bytes.length) return true;\n    const second=mpegFrameInfo(bytes,nextOffset);"],
+  ["accept one MPGA Layer III frame at EOF", "src/audio-formats.js", /return\s+frames\s*>=\s*2\s*;/, "return frames>=1;"],
+  ["move MPEG exact-EOF unit fixture off the frame boundary", "tests/node/audio-formats.test.mjs", /function mpegFrame\(sampleByte=0x90\)\{const out=new Uint8Array\(417/, "function mpegFrame(sampleByte=0x90){const out=new Uint8Array(418"],
+  ["remove exact-EOF MPEG unit rejection", "tests/node/audio-formats.test.mjs", /assert\.equal\(validateAudioSignature\(f,exactEof\),false\);/, ""],
+  ["remove MPGA from exact-EOF MPEG unit coverage", "tests/node/audio-formats.test.mjs", /(test\('MPEG family rejects fake sync and a lone exact-EOF frame, but accepts corroborated frames',[\s\S]*?for\(const f of )\['mp3','mpeg','mpga'\]/, "$1['mp3','mpeg']"],
+  ["remove exact-EOF MPEG prebilling rejection proof", "tests/integration/worker.test.js", /(it\('rejects a lone MPEG frame ending at EOF before paid dispatch and keeps the attempt reusable',[\s\S]*?)expect\(bad.status\).toBe\(415\);expect\(upstreamHits\).toBe\(0\);/, "$1"],
+  ["remove exact-EOF MPEG attempt reuse proof", "tests/integration/worker.test.js", /(it\('rejects a lone MPEG frame ending at EOF before paid dispatch and keeps the attempt reusable',[\s\S]*?)expect\(retry.status,await retry.clone\(\).text\(\)\).toBe\(200\);expect\(upstreamHits\).toBe\(1\);/, "$1"],
   ["use unavailable runner context in macOS job defaults", ".github/workflows/ci.yml", /working-directory: \$\{\{ github.workspace \}\}\/cosmic-native\//, "working-directory: ${{ runner.temp }}/cosmic-native/"],
   ["replace real Safari native file command", "tests/safari/safari-smoke.mjs", /\/value`,\{text:fixture.file\}/, "/value`,{text:''}"],
   ["remove real Safari full native byte verification", "tests/safari/native-file-contract.mjs", /assert.equal\(actual.sha256,fixture.before.sha256[^\n]+/, ""],

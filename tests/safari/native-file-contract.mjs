@@ -21,6 +21,16 @@ export const NATIVE_FIXTURES=Object.freeze([
 export const CANONICAL_MIME=Object.freeze({mp3:'audio/mpeg',flac:'audio/flac',mp4:'audio/mp4',mpeg:'audio/mpeg',mpga:'audio/mpeg',m4a:'audio/mp4',ogg:'audio/ogg',wav:'audio/wav',webm:'audio/webm'});
 export const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
 
+export function expectedNativeLastModified(mtimeMs,{browserName,platform}){
+  assert.ok(Number.isFinite(mtimeMs)&&mtimeMs>=0&&Number.isSafeInteger(Math.trunc(mtimeMs)),'Invalid on-disk modification time');
+  assert.ok(['chromium','firefox','webkit'].includes(browserName),'Unknown browser engine');
+  assert.ok(['linux','darwin','win32'].includes(platform),'Unknown browser host platform');
+  // Linux WebKit exposes whole seconds for disk-backed File timestamps:
+  // https://github.com/microsoft/playwright/blob/main/tests/page/page-set-input-files.spec.ts
+  // This predicts that exact value; it does not alter the file or accept a tolerance.
+  return browserName==='webkit'&&platform==='linux'?Math.floor(mtimeMs/1000)*1000:Math.trunc(mtimeMs);
+}
+
 export function assertDuration(actual,expected,label){
   assert.ok(Number.isFinite(expected)&&expected>=0.5,`${label}: invalid independent duration oracle`);
   assert.ok(Number.isFinite(actual)&&actual>=0.5,`${label}: missing/invalid decoded duration (${actual}); 0.001 fallback is not acceptance`);
