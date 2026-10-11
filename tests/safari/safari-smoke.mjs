@@ -92,7 +92,34 @@ async function attachObservers(){
           audio.preload='metadata';audio.onloadedmetadata=()=>finish(audio.duration);audio.onerror=()=>finish(null,new Error(`Native media decode failed (${audio.error?.code})`));audio.src=url;audio.load();
         });
         entry.result=result;
-      })().catch(error=>{entry.result={error:String(error?.stack||error)}}).finally(()=>{entry.done=true});
+      })().catch(async error=>{
+        // A failing real-file read remains a HARD FAILURE. These bounded,
+        // byte-free diagnostics distinguish file sandbox access from a single
+        // Blob API regression without constructing or substituting any File.
+        const failure={error:String(error?.stack||error)};
+        if(file instanceof File){
+          const blob=file.slice(0,Math.min(64,file.size));
+          const probe=async read=>{
+            try{
+              const bytes=await Promise.race([read(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('probe timeout')),3000))]);
+              return {ok:bytes.byteLength===blob.size,bytes:bytes.byteLength};
+            }catch(e){return {ok:false,error:String(e?.name||'Error')+': '+String(e?.message||e).slice(0,160)}}
+          };
+          const fileReader=()=>new Promise((resolve,reject)=>{
+            const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(reader.error||new Error('FileReader failed'));reader.readAsArrayBuffer(blob);
+          });
+          const urlRead=async()=>{
+            const url=URL.createObjectURL(blob);
+            try{const response=await fetch(url);if(!response.ok)throw new Error('blob URL response '+response.status);return await response.arrayBuffer()}
+            finally{URL.revokeObjectURL(url)}
+          };
+          failure.diskReadDiagnostics={size:file.size,type:file.type,
+            sliceArrayBuffer:await probe(()=>blob.arrayBuffer()),
+            fileReader:await probe(fileReader),
+            blobUrlFetch:await probe(urlRead)};
+        }
+        entry.result=failure;
+      }).finally(()=>{entry.done=true});
     },true);
     // Verify payloads produced by the application's real download controls.
     // This does not claim Safari's OS download-directory behavior was tested.
