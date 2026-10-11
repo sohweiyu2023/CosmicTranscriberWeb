@@ -1,4 +1,4 @@
-name: DIAGNOSTIC ONLY - normal Safari native navigation and file picker
+name: DIAGNOSTIC ONLY - Safari direct URL and native file picker
 
 on:
   push:
@@ -101,7 +101,7 @@ jobs:
           finally:
               evidence.write_text(json.dumps(proof, indent=2) + '\n')
           PY
-      - name: Run native address bar and file picker without Safari scripting
+      - name: Run direct URL navigation and native picker with bounded failure evidence
         timeout-minutes: 5
         run: |
           set -o pipefail
@@ -153,5 +153,6 @@ jobs:
           path: |
             ${{ github.workspace }}/os-picker-evidence/*.json
             ${{ github.workspace }}/os-picker-evidence/*.log
+            ${{ github.workspace }}/os-picker-evidence/setup-failure-*.jpg
           if-no-files-found: error
           retention-days: 7

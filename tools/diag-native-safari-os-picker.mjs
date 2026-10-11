@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn,execFile} from 'node:child_process';
 import {createHash,randomBytes} from 'node:crypto';
-import {readFile,writeFile,mkdir,stat,realpath} from 'node:fs/promises';
+import {readFile,writeFile,mkdir,stat,realpath,unlink} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import path from 'node:path';
 
@@ -20,7 +20,7 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const expectedArchive='c68370707fc18093a3e4e741bdd1686643fa585aed41715b8fbf4bd175ae1485';
 const fixtureHashes={'format.mp3':'e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55','ID3 Unicode 東京.mp3':'7c170f8ca3be08da4e7c7a751998d066f6853be1598e5fac0aa0e8047767eb8c'};
-const report={schema:'native-safari-os-picker-diagnostic-2',purpose:'DIAGNOSTIC ONLY; never release acceptance',status:'RUNNING',startedAt:new Date(startedAt).toISOString(),node:process.version,providerCalls:0,applicationLoaded:false,webDriverUsed:false,safariScriptingAppleEventsUsed:false,securitySettingsChanged:false,releaseAcceptance:false,runner:{image:process.env.ImageOS||null,version:process.env.ImageVersion||null},permissionProbe:{},commands:[],trials:[],errors:[]};
+const report={schema:'native-safari-os-picker-diagnostic-3',purpose:'DIAGNOSTIC ONLY; never release acceptance',status:'RUNNING',startedAt:new Date(startedAt).toISOString(),node:process.version,providerCalls:0,applicationLoaded:false,webDriverUsed:false,safariScriptingAppleEventsUsed:false,securitySettingsChanged:false,releaseAcceptance:false,runner:{image:process.env.ImageOS||null,version:process.env.ImageVersion||null},permissionProbe:{},commands:[],trials:[],errors:[]};
 let server,origin;
 const ownedWindowTitles=new Set();
 const sources=[],active=new Map();
@@ -44,46 +44,45 @@ async function osa(stage,script,args=[],language='AppleScript',timeout=15000){
   });
 }
 
-async function launchSafari(){
-  const row={stage:'Launch normal Safari through LaunchServices',command:'/usr/bin/open -a Safari',startedAt:new Date().toISOString()};report.commands.push(row);await save();
-  await new Promise((resolve,reject)=>execFile('/usr/bin/open',['-a','Safari'],{timeout:10000,maxBuffer:65536},(error,stdout,stderr)=>{Object.assign(row,{stdout,stderr,finishedAt:new Date().toISOString(),error:error?errorInfo(error):null});if(error)reject(error);else resolve();}));
+async function external(stage,executable,args,timeout=10000){
+  assert.ok(Date.now()<deadline,'Diagnostic deadline exceeded.');
+  const row={stage,executable,args,startedAt:new Date().toISOString()};report.commands.push(row);await save();
+  await new Promise((resolve,reject)=>execFile(executable,args,{timeout:Math.min(timeout,Math.max(1,deadline-Date.now())),killSignal:'SIGKILL',maxBuffer:65536},(error,stdout,stderr)=>{Object.assign(row,{stdout,stderr,finishedAt:new Date().toISOString(),error:error?{...errorInfo(error),code:error.code,signal:error.signal,killed:error.killed}:null});if(error)reject(error);else resolve();}));
 }
-const openPage=`on run argv
-  set targetURL to item 1 of argv
+async function failureScreenshot(trial){
+  const name=`setup-failure-${report.trials.indexOf(trial)+1}.jpg`,target=path.join(output,name);
+  trial.screenshot={name,status:'PENDING',timeoutMs:5000,maxBytes:8*1024*1024};await save();
+  try{
+    await external('Bounded setup failure screenshot','/usr/sbin/screencapture',['-x','-t','jpg',target],5000);
+    const info=await stat(target);
+    if(info.size>8*1024*1024){await unlink(target);throw new Error('Screenshot exceeded8MiB; removed only this generated evidence file.');}
+    trial.screenshot={...trial.screenshot,status:'CAPTURED',bytes:info.size,sha256:hash(await readFile(target))};
+  }catch(error){
+    trial.screenshot.status='UNAVAILABLE';trial.screenshot.error=errorInfo(error);
+    try{const partial=await stat(target);if(partial.size>8*1024*1024){await unlink(target);trial.screenshot.partialRemovedForSize=true;}else{trial.screenshot.partialBytes=partial.size;}}
+    catch(partialError){if(partialError.code!=='ENOENT')trial.screenshot.partialError=errorInfo(partialError);}
+  }
+  await save();
+}
+const windowTitles=`tell application "System Events"
+  if not (exists process "Safari") then return "NO_SAFARI_PROCESS"
+  tell process "Safari"
+    return {frontmost, name of every window}
+  end tell
+end tell`;
+const activateSafari=`on run argv
+  set ownedTitle to item 1 of argv
   tell application "System Events"
-    repeat 50 times
-      if exists process "Safari" then exit repeat
-      delay 0.1
-    end repeat
-    if not (exists process "Safari") then error "Safari process did not launch."
     tell process "Safari"
-      set frontmost to true
-      set previousCount to count of windows
-      keystroke "n" using command down
-      repeat 50 times
-        if (count of windows) > previousCount then exit repeat
-        delay 0.1
+      repeat with w in windows
+        if (name of w as text) contains ownedTitle then
+          set frontmost to true
+          perform action "AXRaise" of w
+          if (name of front window as text) does not contain ownedTitle then error "Owned diagnostic tab is not frontmost."
+          return "OWNED_DIAGNOSTIC_TITLE_FRONT"
+        end if
       end repeat
-      if (count of windows) <= previousCount then error "Native New Window did not appear."
-      keystroke "l" using command down
-      set addressField to missing value
-      repeat 25 times
-        repeat with e in (entire contents of front window)
-          try
-            if role of e is "AXTextField" and description of e is "smart search field" and value of attribute "AXFocused" of e is true then
-              set addressField to e
-              exit repeat
-            end if
-          end try
-        end repeat
-        if addressField is not missing value then exit repeat
-        delay 0.1
-      end repeat
-      if addressField is missing value then error "Observed Safari smart search field is not focused."
-      keystroke targetURL
-      if (value of attribute "AXValue" of addressField as text) is not targetURL then error "Native address bar did not retain the exact local URL."
-      key code 36
-      return "NAVIGATED_USING_NATIVE_SMART_SEARCH"
+      error "Owned diagnostic title is absent from Safari windows."
     end tell
   end tell
 end run`;
@@ -96,14 +95,20 @@ const closePage=`on run argv
         if (name of w as text) contains ownedTitle then
           set frontmost to true
           perform action "AXRaise" of w
+          if (name of front window as text) does not contain ownedTitle then error "Refuse to close a different Safari tab."
           repeat 3 times
             if (count of sheets of w) is 0 then exit repeat
             key code 53
             delay 0.1
           end repeat
           if (count of sheets of w) > 0 then error "Owned diagnostic window still has a modal sheet."
-          click (first button of w whose subrole is "AXCloseButton")
-          return "CLOSED_OWNED_DIAGNOSTIC_TITLE"
+          if (name of front window as text) does not contain ownedTitle then error "Owned diagnostic tab changed before cleanup."
+          keystroke "w" using command down
+          repeat 20 times
+            if not (exists window whose name contains ownedTitle) then return "CLOSED_OWNED_DIAGNOSTIC_TAB"
+            delay 0.1
+          end repeat
+          error "Owned diagnostic tab did not close."
         end if
       end repeat
       return "OWNED_DIAGNOSTIC_TITLE_ABSENT"
@@ -129,9 +134,10 @@ const dumpAX=`tell application "System Events"
     return resultLines as text
   end tell
 end tell`;
-const clickFileInput=`tell application "System Events"
+const clickFileInput=`on run argv
+tell application "System Events"
   tell process "Safari"
-    set frontmost to true
+    if (name of front window as text) does not contain (item 1 of argv) then error "Refuse file input interaction in a different Safari tab."
     set chosen to missing value
     repeat with e in (entire contents of front window)
       try
@@ -152,7 +158,8 @@ const clickFileInput=`tell application "System Events"
     end repeat
     error "Native Open sheet did not appear."
   end tell
-end tell`;
+end tell
+end run`;
 const enterPath=`on run argv
   set originalPath to item 1 of argv
   tell application "System Events"
@@ -253,12 +260,13 @@ try{
       const url=new URL(req.url,origin),parts=url.pathname.split('/'),token=parts[2],trial=active.get(token);
       if(req.headers.host!==new URL(origin).host||!trial){res.writeHead(404);res.end();return;}
       if(req.method==='GET'&&parts[1]==='trial'){
+        trial.ui.httpGetAt=new Date().toISOString();await save();
         const html=`<!doctype html><meta charset="utf-8"><title>${trial.windowTitle}</title><h1>Native Safari OS picker — diagnostic only</h1><label for="nativeInput">Select untouched fixture</label><input id="nativeInput" aria-label="Select untouched fixture" type="file"><pre id="state">Waiting for native selection</pre><script>(${installPage.toString()})(${JSON.stringify(token)});</script>`;
         res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store','content-security-policy':"default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'"});res.end(html);return;
       }
       if(req.method==='POST'&&parts[1]==='collect'&&req.headers.origin===origin&&req.headers['content-type']==='application/json'){
         let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>65536){res.writeHead(413);res.end();return;}}
-        const payload=JSON.parse(body);assert.equal(payload.token,token);trial.native=payload;await save();res.writeHead(204);res.end();return;
+        const payload=JSON.parse(body);assert.equal(payload.token,token);trial.native=payload;if(payload.ready&&!trial.ui.pageReadyAt)trial.ui.pageReadyAt=new Date().toISOString();await save();res.writeHead(204);res.end();return;
       }
       res.writeHead(405);res.end();
     }catch(error){report.errors.push(errorInfo(error));res.writeHead(500);res.end();}
@@ -266,19 +274,23 @@ try{
   server.headersTimeout=5000;server.requestTimeout=10000;
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
   origin=`http://localhost:${server.address().port}`;report.origin=origin;
-  await launchSafari();
   for(const source of sources){
     const token=randomBytes(16).toString('hex'),windowTitle=`Cosmic OS Picker ${token}`,trial={name:source.name,selectedPath:source.file,windowTitle,before:source.before,status:'RUNNING',ui:{}};active.set(token,trial);ownedWindowTitles.add(windowTitle);report.trials.push(trial);await save();
     try{
-      trial.ui.navigation=await osa('Navigate normal Safari through native address bar',openPage,[`${origin}/trial/${token}`]);
-      assert.equal(trial.ui.navigation,'NAVIGATED_USING_NATIVE_SMART_SEARCH');
-      const readyUntil=Date.now()+15000;while(!trial.native?.ready&&Date.now()<readyUntil)await delay(100);
+      trial.ui.navigation='LAUNCHSERVICES_DIRECT_URL';
+      await external('Open exact diagnostic URL through LaunchServices','/usr/bin/open',['-a','Safari',`${origin}/trial/${token}`]);
+      const readiness={stage:'Await normal Safari page GET and ready callback',startedAt:new Date().toISOString()};report.commands.push(readiness);await save();
+      const readyUntil=Date.now()+20000;while(!trial.native?.ready&&Date.now()<readyUntil)await delay(100);
+      Object.assign(readiness,{finishedAt:new Date().toISOString(),httpGetAt:trial.ui.httpGetAt||null,pageReadyAt:trial.ui.pageReadyAt||null});await save();
       assert.equal(trial.native?.ready,true,'Bare page did not report ready.');assert.equal(trial.native.page.secure,true,'Loopback page lacks secure-context hashing.');
       assert.match(trial.native.page.userAgent,/Version\/[\d.]+.*Safari\//);
       assert.equal(trial.native.page.href,`${origin}/trial/${token}`);
       trial.safariVersionFromUserAgent=trial.native.page.userAgent.match(/Version\/([\d.]+)/)[1];
+      trial.ui.windowTitles=await osa('Observe Safari window titles only',windowTitles,[],'AppleScript',5000);
+      trial.ui.frontmost=await osa('Raise the uniquely titled diagnostic tab',activateSafari,[windowTitle],'AppleScript',5000);
+      assert.equal(trial.ui.frontmost,'OWNED_DIAGNOSTIC_TITLE_FRONT');
       trial.axBefore=await osa('Observe native Safari AX tree',dumpAX);
-      trial.ui.filePicker=await osa('Press native Choose File',clickFileInput);
+      trial.ui.filePicker=await osa('Press native Choose File',clickFileInput,[windowTitle]);
       assert.equal(trial.ui.filePicker,'FILE_PICKER_VISIBLE');
       trial.ui.pathEntry=await osa('Enter exact original path in Go To Folder',enterPath,[source.file]);
       assert.equal(trial.ui.pathEntry,'EXACT_PATH_ENTERED_IN_NATIVE_SHEET');
@@ -291,8 +303,8 @@ try{
       assert.equal(trial.native.error,undefined);assert.equal(trial.native.stages.length,4);
       for(const expected of source.expected){const stage=trial.native.stages.find(item=>item.stage===expected.stage);assert.ok(stage);stage.matchesExpectedBytes=stage.status==='READ'&&stage.bytes===expected.bytes&&stage.sha256===expected.sha256;assert.equal(stage.matchesExpectedBytes,true,`Native ${expected.stage} read does not match source.`);}
       trial.status='PASS_NATIVE_OS_PICKER_READS';
-    }catch(error){trial.status='FAILED';trial.error=errorInfo(error);process.exitCode=1;try{trial.axAfterFailure=await osa('Observe failed native picker',dumpAX,[],'AppleScript',5000)}catch(dumpError){trial.axCaptureError=errorInfo(dumpError)}}
-    finally{trial.after=await identity(source.file);trial.diskUnchanged=JSON.stringify(trial.before)===JSON.stringify(trial.after);assert.equal(trial.diskUnchanged,true);await save();trial.ui.cleanup=await osa('Close only the owned diagnostic AX title',closePage,[windowTitle]);ownedWindowTitles.delete(windowTitle);}
+    }catch(error){trial.status='FAILED';trial.error=errorInfo(error);process.exitCode=1;await failureScreenshot(trial);try{trial.ui.failureWindowTitles=await osa('Observe failed Safari window titles',windowTitles,[],'AppleScript',5000)}catch(titleError){trial.titleCaptureError=errorInfo(titleError)}try{trial.axAfterFailure=await osa('Observe failed native picker',dumpAX,[],'AppleScript',5000)}catch(dumpError){trial.axCaptureError=errorInfo(dumpError)}}
+    finally{trial.after=await identity(source.file);trial.diskUnchanged=JSON.stringify(trial.before)===JSON.stringify(trial.after);assert.equal(trial.diskUnchanged,true);await save();trial.ui.cleanup=await osa('Close only the owned diagnostic AX title',closePage,[windowTitle],'AppleScript',5000);ownedWindowTitles.delete(windowTitle);}
   }
   report.status=report.trials.length===2&&report.trials.every(t=>t.status==='PASS_NATIVE_OS_PICKER_READS')?'DIAGNOSTIC_NATIVE_PICKER_READS_PASS':'DIAGNOSTIC_NATIVE_PICKER_FAILED';
 }catch(error){if(report.status!=='PERMISSION_BLOCKED')report.status='DIAGNOSTIC_INCOMPLETE';report.errors.push(errorInfo(error));process.exitCode=1;}
