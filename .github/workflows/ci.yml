@@ -229,6 +229,28 @@ jobs:
       - run: npm run browsers:install:branded
       - run: npm run test:e2e:branded
       - run: npm run build:inspect
+      - name: Inspect Windows runner socket exhaustion without altering networking
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          Write-Output 'Windows TCP ephemeral port ranges:'
+          & netsh int ipv4 show dynamicport tcp
+          & netsh int ipv6 show dynamicport tcp
+          Write-Output 'Socket counts by TCP state:'
+          try {
+            Get-NetTCPConnection -ErrorAction Stop |
+              Group-Object State |
+              Sort-Object Name |
+              Select-Object Name,Count |
+              Format-Table -AutoSize
+          } catch { Write-Warning ('TCP diagnostic unavailable: ' + $_.Exception.Message) }
+          Write-Output 'Branded browser process counts:'
+          try {
+            Get-Process -Name chrome,msedge,firefox -ErrorAction SilentlyContinue |
+              Group-Object ProcessName |
+              Select-Object Name,Count |
+              Format-Table -AutoSize
+          } catch { Write-Warning ('Browser process diagnostic unavailable: ' + $_.Exception.Message) }
       - name: Record reviewed lock hash
         id: lock-before
         shell: pwsh
