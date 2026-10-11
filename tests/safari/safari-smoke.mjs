@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {randomBytes,randomInt} from 'node:crypto';
-import {mkdir,writeFile} from 'node:fs/promises';
+import {chmod,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {NATIVE_FIXTURES,describeFixture,fixtureIdentity,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from './native-file-contract.mjs';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED='0'; // CTW_REAL_SAFARI_LOCALHOST_TLS_ONLY
@@ -17,7 +17,7 @@ const seeded='SAFARI-FAKE-KEY-NO-PROVIDER-7d9b4676';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const report={schema:'cosmic-real-safari-native-acceptance-1',status:'RUNNING',platform:process.platform,startedAt:new Date().toISOString(),fixtures:[],checks:[],providerCalls:0,mp3DispatchOracle:'separate Node execution of the shipped reviewed MP3 frame preparation',downloadVerification:'application-generated payloads; OS download destination is not asserted'};
 const fixtures=[];
-let server,driver,sessionId;
+let server,driver,sessionId,sharedNativeFixtureDirectory;
 
 async function jsonRequest(url,{method='GET',body,timeout=45000}={}){
   const response=await fetch(url,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});
@@ -51,6 +51,26 @@ async function type(selector,text){const id=await element(selector);await comman
 async function control(action){return jsonRequest(`${origin}/__cosmic_e2e_native_control?token=${token}`,action?{method:'POST',body:{action}}:{})}
 async function count(){return (await control()).requests.length}
 function passed(name){report.checks.push({name,status:'PASS'});console.log(`Real Safari acceptance PASS: ${name}`)}
+
+// SafariDriver's native file upload requires world-readable paths. The exact
+// committed fixture is copied to macOS /Users/Shared (not a synthetic JS File),
+// preserving its original bytes and modification time. The source and copy
+// are independently checked before/after Safari accesses the native file.
+async function stageWorldReadableNativeFixtures(){
+  sharedNativeFixtureDirectory=await mkdtemp('/Users/Shared/ctw-safari-native-');
+  await chmod(sharedNativeFixtureDirectory,0o755);
+  for(const fixture of fixtures){
+    const source=fixture.file,destination=path.join(sharedNativeFixtureDirectory,fixture.name);
+    fixture.sourceFile=source;
+    const copied=spawnSync('/bin/cp',['-p',source,destination],{encoding:'utf8',timeout:15000});
+    assert.equal(copied.status,0,`${fixture.name}: cannot create exact native fixture copy: ${copied.error?.message||copied.stderr}`);
+    await chmod(destination,0o644);
+    assert.equal((await stat(destination)).mode&0o777,0o644,`${fixture.name}: WebDriver fixture must be world-readable`);
+    assert.deepEqual(await fixtureIdentity(destination),fixture.before,`${fixture.name}: world-readable fixture copy must preserve exact bytes and timestamp`);
+    fixture.file=destination;
+  }
+  passed('native disk fixtures are world-readable, byte-identical and timestamp-identical');
+}
 
 async function attachObservers(){
   await evaluate(()=>{
@@ -148,6 +168,7 @@ async function confirmRerun(accept){
 
 try{
   for(const spec of NATIVE_FIXTURES)fixtures.push(await describeFixture(root,spec));
+  await stageWorldReadableNativeFixtures();
   server=spawn(process.execPath,['tests/e2e/mock-server.mjs'],{cwd:root,env:{...process.env,COSMIC_E2E_PORT:String(port),COSMIC_E2E_TOKEN:token,COSMIC_E2E_CONTROL:'native-file-acceptance'},stdio:['ignore','pipe','pipe']});
   server.stdout.pipe(process.stdout);server.stderr.pipe(process.stderr);server.on('error',error=>{report.serverError=error.message});
   await waitEndpoint(`${origin}/__cosmic_e2e_health?token=${token}`);
@@ -225,11 +246,12 @@ try{
   report.fixturesPreserved=true;
   for(const entry of report.fixtures)if(entry.nativePreparationStatus==='RUNNING')entry.nativePreparationStatus='FAIL';
   for(const fixture of fixtures){
-    try{const after=await fixtureIdentity(fixture.file);assert.deepEqual(after,fixture.before);for(const entry of report.fixtures.filter(item=>item.name===fixture.name))entry.after=after}
+    try{const after=await fixtureIdentity(fixture.file);assert.deepEqual(after,fixture.before);if(fixture.sourceFile)assert.deepEqual(await fixtureIdentity(fixture.sourceFile),fixture.before,`${fixture.name}: original source fixture changed`);for(const entry of report.fixtures.filter(item=>item.name===fixture.name))entry.after=after}
     catch(error){report.fixturesPreserved=false;report.status='FAIL';report.integrityError=String(error);process.exitCode=1}
   }
   if(sessionId&&driver){try{await command('',{},'DELETE')}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
   if(driver&&!driver.killed)driver.kill('SIGTERM');if(server&&!server.killed)server.kill('SIGTERM');
+  if(sharedNativeFixtureDirectory){try{await rm(sharedNativeFixtureDirectory,{recursive:true,force:true})}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
   report.finishedAt=new Date().toISOString();const text=JSON.stringify(report,null,2)+'\n';
   const reportPath=path.resolve(process.env.COSMIC_SAFARI_REPORT||path.join(root,'test-results','safari-native-acceptance.json'));
   await mkdir(path.dirname(reportPath),{recursive:true});await writeFile(reportPath,text);
