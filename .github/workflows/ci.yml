@@ -1,0 +1,295 @@
+name: Cosmic Transcriber Web Release CI
+
+on:
+  push:
+    branches: [main, 'release/**', 'ci/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-lock:
+    name: Resolve one reviewed dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Activate reviewed npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify tool versions
+        run: |
+          node --version
+          test "$(node --version)" = "v26.7.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Refresh all direct dependencies to registry latest and resolve one graph
+        run: node scripts/deps-latest.mjs
+      - name: Verify reviewed install-script policy
+        run: npm run deps:install-scripts:verify
+      - name: Verify complete installed dependency tree
+        run: npm ls --all
+      - name: Audit resolved graph
+        run: npm audit
+      - name: Require direct dependencies to be current
+        run: npm outdated --depth=0
+      - name: Provision audio fixture toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - name: Generate deterministic MP3 and nine-format fixtures
+        run: node scripts/generate-test-fixtures.mjs
+      - name: Full dependency-free adversarial gate
+        run: npm run validate
+      - name: Upload reviewed lock and fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reviewed-release-inputs
+          path: |
+            package.json
+            package-lock.json
+            tests/fixtures/
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-full:
+    name: Linux Worker + integration + browser matrix
+    needs: resolve-lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reviewed-release-inputs
+          path: .
+      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - run: npm run validate
+      - run: npm run test:worker
+      - run: npm run test:integration
+      - run: npm run browsers:install:ci
+      - run: npm run test:e2e:core
+      - run: npm run build:inspect
+
+  macos-safari:
+    name: macOS WebKit + real Safari
+    needs: resolve-lock
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reviewed-release-inputs
+          path: .
+      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - run: npm run validate
+      - run: npm run build
+      - run: npm run browsers:install:webkit
+      - run: npm run test:e2e:webkit
+      - name: Enable SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Real Safari WebDriver smoke
+        run: npm run test:safari:real
+
+  windows-release:
+    name: Windows toolchain + Chrome/Edge + staging-certified ZIP
+    needs: resolve-lock
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.certified.outputs.version }}
+      artifact-name: ${{ steps.certified.outputs.artifact-name }}
+      source-file: ${{ steps.certified.outputs.source-file }}
+      source-sha256: ${{ steps.certified.outputs.source-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reviewed-release-inputs
+          path: .
+      - name: Activate reviewed npm for shared-lock preflight
+        shell: pwsh
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - name: Execute private Windows toolchain regression/smoke test
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\WINDOWS-TOOLCHAIN-SELFTEST.ps1
+      - name: Provision media validation toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "ffmpeg provisioning failed with exit code $LASTEXITCODE." }
+          }
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
+          & $ffmpeg.Source -version
+          if ($LASTEXITCODE -ne 0) { throw "ffmpeg verification failed with exit code $LASTEXITCODE." }
+          & $ffprobe.Source -version
+          if ($LASTEXITCODE -ne 0) { throw "ffprobe verification failed with exit code $LASTEXITCODE." }
+      - run: npm run validate
+      - run: npm run build
+      - run: npm run browsers:install:branded
+      - run: npm run test:e2e:branded
+      - run: npm run build:inspect
+      - name: Record reviewed lock hash
+        id: lock-before
+        shell: pwsh
+        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
+      - name: Run complete Windows certification for staging candidate
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
+      - name: Prove certification did not alter the reviewed dependency graph
+        shell: pwsh
+        env:
+          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
+        run: |
+          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($after -ne $env:LOCK_BEFORE) { throw "Release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
+      - name: Verify versioned staging-certified ZIP
+        id: certified
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = Get-Content -LiteralPath .\package.json -Raw | ConvertFrom-Json
+          $version = [string]$pkg.version
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid release package version.' }
+          $rootName = "CosmicTranscriberWeb-$version"
+          $sourceFile = "$rootName-source.zip"
+          $zip = Resolve-Path -LiteralPath (Join-Path .. $sourceFile)
+          if (-not (Test-Path -LiteralPath $zip.Path -PathType Leaf)) { throw 'Staging-certified ZIP missing.' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.Path)
+          try {
+            $entry = $archive.GetEntry("$rootName/RELEASE_MANIFEST.json")
+            if ($null -eq $entry) { throw 'Staging-certified manifest missing from versioned ZIP root.' }
+            $reader = [System.IO.StreamReader]::new($entry.Open())
+            try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json }
+            finally { $reader.Dispose() }
+          } finally { $archive.Dispose() }
+          if ($manifest.version -cne $version -or $manifest.releaseReady -isnot [bool] -or $manifest.releaseReady -ne $false -or $manifest.certificationLevel -cne 'staging') {
+            throw 'CI may publish only a matching staging candidate with releaseReady:false.'
+          }
+          $lockHash = (Get-FileHash -LiteralPath .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.dependencyLock.status -ne 'verified' -or $manifest.dependencyLock.sha256 -ne $lockHash) {
+            throw 'Staging candidate does not contain the reviewed dependency graph.'
+          }
+          $sourceHash = (Get-FileHash -LiteralPath $zip.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output ('path=' + $zip.Path) >> $env:GITHUB_OUTPUT
+          Write-Output ('version=' + $version) >> $env:GITHUB_OUTPUT
+          Write-Output ('artifact-name=' + $rootName + '-staging-certified') >> $env:GITHUB_OUTPUT
+          Write-Output ('source-file=' + $sourceFile) >> $env:GITHUB_OUTPUT
+          Write-Output ('source-sha256=' + $sourceHash) >> $env:GITHUB_OUTPUT
+      - name: Upload staging-certified candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.certified.outputs.artifact-name }}
+          path: ${{ steps.certified.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  all-green:
+    name: ALL RELEASE GATES GREEN - staging candidate only
+    needs: [linux-full, macos-safari, windows-release]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every platform gate to have succeeded
+        shell: bash
+        env:
+          LINUX_RESULT: ${{ needs.linux-full.result }}
+          MACOS_RESULT: ${{ needs.macos-safari.result }}
+          WINDOWS_RESULT: ${{ needs.windows-release.result }}
+        run: |
+          test "$LINUX_RESULT" = success
+          test "$MACOS_RESULT" = success
+          test "$WINDOWS_RESULT" = success
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.windows-release.outputs.artifact-name }}
+          path: certified
+      - name: Require unchanged staging-certified ZIP after every CI gate
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}
+          SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}
+          SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, zipfile
+          version = os.environ['RELEASE_VERSION']
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
+              raise SystemExit('Invalid release package version.')
+          root = f'CosmicTranscriberWeb-{version}'
+          filename = f'{root}-source.zip'
+          if os.environ['SOURCE_FILE'] != filename:
+              raise SystemExit('Unexpected staging candidate filename.')
+          source = pathlib.Path('certified') / filename
+          digest = hashlib.sha256(source.read_bytes()).hexdigest()
+          if digest != os.environ['SOURCE_SHA256']:
+              raise SystemExit('Staging candidate checksum changed after Windows certification.')
+          with zipfile.ZipFile(source) as archive:
+              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))
+              package = json.loads(archive.read(f'{root}/package.json'))
+              lock_digest = hashlib.sha256(archive.read(f'{root}/package-lock.json')).hexdigest()
+          if manifest.get('version') != version or package.get('version') != version:
+              raise SystemExit('Staging candidate version does not match its package.')
+          if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':
+              raise SystemExit('CI artifact must remain staging-only with releaseReady:false.')
+          lock = manifest.get('dependencyLock', {})
+          if lock.get('status') != 'verified' or lock.get('sha256') != lock_digest:
+              raise SystemExit('Staging candidate dependency-lock provenance is invalid.')
+          print(f'{digest}  {source}')
+          print('ALL RELEASE GATES GREEN - staging candidate only; live staging acceptance and production approval remain pending.')
+          PY

@@ -1,0 +1,247 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cosmic-transcriber-web-dev",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-08",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist/public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false,
+      "head_sampling_rate": 0.1
+    }
+  },
+  "vars": {
+    "APP_VERSION": "1.2.0",
+    "DEPLOYMENT_ENV": "development",
+    "APP_ORIGIN": "http://localhost:8787",
+    "ACCESS_TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com",
+    "ACCESS_AUDIENCE": "REPLACE_WITH_ACCESS_AUD_TAG",
+    "BYOK_KEY_VERSION_CURRENT": "1",
+    "BYOK_KEY_VERSION_PREVIOUS": "",
+    "LOCAL_AUTH_BYPASS": "true",
+    "ADMIN_EMAILS": "local-development@example.invalid",
+    "REGISTRY_SCHEMA_REVISION": "2"
+  },
+  "secrets": {
+    "required": [
+      "BYOK_SESSION_MASTER_KEY_CURRENT"
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "RL_KEY_SESSION",
+      "namespace_id": "1010071809",
+      "simple": {
+        "limit": 8,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_KEY_TEST",
+      "namespace_id": "793274850",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_TRANSCRIBE",
+      "namespace_id": "1016098409",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_ADMIN",
+      "namespace_id": "1413208157",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "cosmic-transcriber-web-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "invocation_logs": false,
+          "head_sampling_rate": 1
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 1
+        }
+      },
+      "routes": [
+        {
+          "pattern": "transcriber-staging.awakeningtoreality.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_VERSION": "1.2.0",
+        "DEPLOYMENT_ENV": "staging",
+        "APP_ORIGIN": "https://transcriber-staging.awakeningtoreality.com",
+        "ACCESS_TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com",
+        "ACCESS_AUDIENCE": "REPLACE_WITH_STAGING_ACCESS_AUD_TAG",
+        "BYOK_KEY_VERSION_CURRENT": "1",
+        "BYOK_KEY_VERSION_PREVIOUS": "",
+        "LOCAL_AUTH_BYPASS": "false",
+        "ADMIN_EMAILS": "REPLACE_WITH_STAGING_ADMIN_EMAILS",
+        "REGISTRY_SCHEMA_REVISION": "2"
+      },
+      "secrets": {
+        "required": [
+          "BYOK_SESSION_MASTER_KEY_CURRENT"
+        ]
+      },
+      "ratelimits": [
+        {
+          "name": "RL_KEY_SESSION",
+          "namespace_id": "1865743469",
+          "simple": {
+            "limit": 8,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_KEY_TEST",
+          "namespace_id": "1935541582",
+          "simple": {
+            "limit": 5,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_TRANSCRIBE",
+          "namespace_id": "1942507375",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_ADMIN",
+          "namespace_id": "1524709133",
+          "simple": {
+            "limit": 60,
+            "period": 60
+          }
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "USER_DB",
+          "database_name": "cosmic-transcriber-web-staging-users",
+          "database_id": "REPLACE_WITH_STAGING_USER_DB_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "cosmic-transcriber-web",
+      "workers_dev": false,
+      "preview_urls": false,
+      "observability": {
+        "enabled": true,
+        "logs": {
+          "enabled": true,
+          "invocation_logs": false,
+          "head_sampling_rate": 0.1
+        },
+        "traces": {
+          "enabled": true,
+          "head_sampling_rate": 0.05
+        }
+      },
+      "routes": [
+        {
+          "pattern": "transcriber.awakeningtoreality.com",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_VERSION": "1.2.0",
+        "DEPLOYMENT_ENV": "production",
+        "APP_ORIGIN": "https://transcriber.awakeningtoreality.com",
+        "ACCESS_TEAM_DOMAIN": "https://YOUR_TEAM.cloudflareaccess.com",
+        "ACCESS_AUDIENCE": "REPLACE_WITH_PRODUCTION_ACCESS_AUD_TAG",
+        "BYOK_KEY_VERSION_CURRENT": "1",
+        "BYOK_KEY_VERSION_PREVIOUS": "",
+        "LOCAL_AUTH_BYPASS": "false",
+        "ADMIN_EMAILS": "REPLACE_WITH_PRODUCTION_ADMIN_EMAILS",
+        "REGISTRY_SCHEMA_REVISION": "2"
+      },
+      "secrets": {
+        "required": [
+          "BYOK_SESSION_MASTER_KEY_CURRENT"
+        ]
+      },
+      "ratelimits": [
+        {
+          "name": "RL_KEY_SESSION",
+          "namespace_id": "1091782099",
+          "simple": {
+            "limit": 8,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_KEY_TEST",
+          "namespace_id": "1101647894",
+          "simple": {
+            "limit": 5,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_TRANSCRIBE",
+          "namespace_id": "1791920508",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_ADMIN",
+          "namespace_id": "1742609187",
+          "simple": {
+            "limit": 60,
+            "period": 60
+          }
+        }
+      ],
+      "d1_databases": [
+        {
+          "binding": "USER_DB",
+          "database_name": "cosmic-transcriber-web-production-users",
+          "database_id": "REPLACE_WITH_PRODUCTION_USER_DB_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  },
+  "d1_databases": [
+    {
+      "binding": "USER_DB",
+      "database_name": "cosmic-transcriber-web-dev-users",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "preview_database_id": "USER_DB",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
