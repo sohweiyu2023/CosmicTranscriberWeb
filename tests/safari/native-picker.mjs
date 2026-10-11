@@ -1,5 +1,6 @@
 import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 
 // Invokes the real macOS file-open panel via a genuine OS keyboard event.
 // Unlike WebDriver sendKeys this follows the user picker path that WebKit
@@ -9,7 +10,11 @@ import assert from 'node:assert/strict';
 export function nativePickerAppleScript(absolutePath){
   if(typeof absolutePath!=='string'||!absolutePath.startsWith('/')||absolutePath.includes('\0')||absolutePath.length>4096)
     throw new TypeError('A bounded absolute native fixture path is required');
-  const quoted=JSON.stringify(absolutePath);
+  const parentDirectory=path.posix.dirname(absolutePath);
+  const fileName=path.posix.basename(absolutePath);
+  if(parentDirectory==='/'||!fileName||fileName==='.'||fileName==='..')
+    throw new TypeError('Native fixture must be a file in an explicit absolute directory');
+  const quotedDirectory=JSON.stringify(parentDirectory),quotedName=JSON.stringify(fileName);
   return `tell application "Safari" to activate
   delay 0.5
   tell application "System Events"
@@ -22,14 +27,18 @@ export function nativePickerAppleScript(absolutePath){
   -- until the modal closes, starving subsequent WebDriver commands.
   key code 49
   delay 1.0
-  -- Finder's Go to Folder sheet and the selected-file Open panel are two
-  -- separate transitions. Allow each to settle before the next key event.
+  -- The previous whole-path Go to Folder attempt left the Safari 26.6
+  -- native panel unresolved, blocking the subsequent WebDriver command.
+  -- Instead navigate to the genuine disk parent directory, then use the
+  -- native Open dialog's ordinary filename selection and Open action.
   keystroke "g" using {command down, shift down}
-  delay 0.65
-  keystroke ${quoted}
-  delay 0.65
+  delay 0.75
+  keystroke ${quotedDirectory}
+  delay 0.75
   key code 36
   delay 1.2
+  keystroke ${quotedName}
+  delay 0.75
   key code 36
 end tell
 return frontApp`;

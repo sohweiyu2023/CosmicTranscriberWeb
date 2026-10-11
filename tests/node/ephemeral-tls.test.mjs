@@ -22,7 +22,13 @@ test('ephemeral HTTPS certificate generation deletes its private key on success'
     assert.match(tls.key.toString(),/BEGIN PRIVATE KEY/);
     assert.match(tls.cert.toString(),/BEGIN CERTIFICATE/);
     assert.deepEqual(await readFile(exported),tls.cert);
-    assert.equal((await stat(exported)).mode&0o777,0o600);
+    const publicCertStat=await stat(exported);
+    assert.equal(publicCertStat.isFile(),true,'The exported public certificate must be a regular file');
+    // Windows reports synthetic Unix permission bits from DOS file attributes,
+    // so mode & 0777 is not evidence about the NTFS ACL. Keep the strict 0600
+    // assertion on POSIX, where these mode bits are meaningful. The actual
+    // private-key absence and certificate contents remain asserted everywhere.
+    if(process.platform!=='win32')assert.equal(publicCertStat.mode&0o777,0o600);
     await assertNoPrivateKeyArtifacts(dir);
   });
 });

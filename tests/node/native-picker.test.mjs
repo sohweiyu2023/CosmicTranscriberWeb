@@ -17,10 +17,17 @@ test('native macOS picker preserves Unicode filename and escapes quotes in Apple
   assert.ok(source.indexOf('key code 49')<source.indexOf('command down, shift down'),'OS Space must precede Go to Folder');
   assert.match(source,/if frontApp is not "Safari" then error/,'Never type a disk pathname into an unrelated foreground app');
   assert.ok(source.indexOf('if frontApp is not "Safari"')<source.indexOf('key code 49'),'Check foreground Safari before OS keyboard input');
-  assert.match(source,/delay 1\.2\n  key code 36/,'Allow the file chooser to settle after Go to Folder before confirming Open');
-  assert.match(source,/ID3 Unicode 東京 \\"sample\\".mp3/);
-  assert.match(source,/key code 36/);
-  assert.equal((source.match(/key code 36/g)||[]).length,2);
+  assert.match(source,/keystroke "\/Users\/Shared\/ctw-safari-native-xyz"/,
+    'Navigate to the parent directory rather than repeating the observed stalled whole-file-path attempt');
+  assert.ok(source.includes('keystroke '+JSON.stringify('ID3 Unicode 東京 "sample".mp3')),
+    'The real filename must be selected separately in the native Open panel');
+  assert.doesNotMatch(source,/keystroke "\/Users\/Shared\/ctw-safari-native-xyz\/ID3/,
+    'Avoid the previously stalled full-path navigation in this genuine Safari fallback');
+  assert.ok(source.indexOf('keystroke "/Users/Shared/ctw-safari-native-xyz"')<source.indexOf('keystroke "ID3 Unicode'),
+    'Navigate to the actual directory before choosing the genuine file');
+  assert.match(source,/delay 1\.2\n  keystroke/,'Wait for directory navigation before selecting the file');
+  assert.equal((source.match(/key code 36/g)||[]).length,2,
+    'One Return opens the directory and one opens the selected file');
 });
 
 test('native picker cannot run on an unrelated non-macOS platform',()=>{
