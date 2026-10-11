@@ -9,7 +9,9 @@ export function nativePickerAppleScript(absolutePath){
   if(typeof absolutePath!=='string'||!absolutePath.startsWith('/')||absolutePath.includes('\0')||absolutePath.length>4096)
     throw new TypeError('A bounded absolute native fixture path is required');
   const quoted=JSON.stringify(absolutePath);
-  return `tell application "System Events"
+  return `tell application "Safari" to activate
+  delay 0.5
+  tell application "System Events"
   keystroke "g" using {command down, shift down}
   delay 0.35
   keystroke ${quoted}
@@ -17,7 +19,9 @@ export function nativePickerAppleScript(absolutePath){
   key code 36
   delay 0.35
   key code 36
-end tell`;
+  set frontApp to name of first application process whose frontmost is true
+end tell
+return frontApp`;
 }
 
 export function submitRealMacOSFilePanel(absolutePath){
@@ -27,4 +31,5 @@ export function submitRealMacOSFilePanel(absolutePath){
     const explanation=(outcome.error?.message||outcome.stderr||'native picker unavailable').trim().slice(0,250);
     throw new Error(`Native macOS file picker failed: ${explanation}`);
   }
+  return String(outcome.stdout||'').trim().slice(0,100);
 }

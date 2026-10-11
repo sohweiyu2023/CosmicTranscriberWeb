@@ -10,6 +10,7 @@ test('native macOS picker strictly requires a genuine absolute disk fixture',()=
 
 test('native macOS picker preserves Unicode filename and escapes quotes in AppleScript',()=>{
   const source=nativePickerAppleScript('/Users/Shared/ctw-safari-native-xyz/ID3 Unicode 東京 "sample".mp3');
+  assert.match(source,/tell application "Safari" to activate/);
   assert.match(source,/command down, shift down/);
   assert.match(source,/ID3 Unicode 東京 \\"sample\\".mp3/);
   assert.match(source,/key code 36/);

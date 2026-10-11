@@ -191,13 +191,14 @@ async function selectNative(fixture){
         // remain pending until the modal closes, so overlap osascript.
         const clickSettled=click('#addFilesBtn').then(()=>null,error=>String(error?.message||error));
         await sleep(500);
-        submitRealMacOSFilePanel(fixture.file);
+        const pickerFrontApp=submitRealMacOSFilePanel(fixture.file);
+        nativePickerDiagnostic={mode:'native-macOS-open-panel',frontApp:pickerFrontApp||'unknown',stage:'picker-keystrokes-sent'};
         const clickError=await clickSettled;
         if(clickError)throw new Error(`WebDriver native picker click failed: ${clickError.slice(0,180)}`);
         const pickerObserved=await until(`${fixture.name} native open-panel bytes`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,pickerPrevious),entry=>entry?.done,{timeout:12000});
-        nativePickerDiagnostic={mode:'native-macOS-open-panel',result:pickerObserved.result?.error||'read-completed'};
+        nativePickerDiagnostic={mode:'native-macOS-open-panel',frontApp:pickerFrontApp||'unknown',result:pickerObserved.result?.error||'read-completed'};
         if(!pickerObserved.result?.error){observed=pickerObserved;nativeSelectionMode='native-macOS-open-panel'}
-      }catch(error){nativePickerDiagnostic={mode:'native-macOS-open-panel',error:String(error?.message||error).slice(0,300)}}
+      }catch(error){nativePickerDiagnostic={...(nativePickerDiagnostic||{mode:'native-macOS-open-panel'}),error:String(error?.message||error).slice(0,300)}}
     }
   const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativeSelectionMode,nativePickerDiagnostic,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
   assertNativeObservation(observed.result,fixture);
