@@ -1,4 +1,4 @@
-name: DIAGNOSTIC ONLY - normal Safari OS file picker
+name: DIAGNOSTIC ONLY - normal Safari native navigation and file picker
 
 on:
   push:
@@ -101,7 +101,7 @@ jobs:
           finally:
               evidence.write_text(json.dumps(proof, indent=2) + '\n')
           PY
-      - name: Run normal Safari native OS picker without permission changes
+      - name: Run native address bar and file picker without Safari scripting
         timeout-minutes: 5
         run: |
           set -o pipefail
