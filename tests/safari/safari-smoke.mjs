@@ -4,6 +4,7 @@ import {randomBytes,randomInt} from 'node:crypto';
 import {chmod,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {NATIVE_FIXTURES,describeFixture,fixtureIdentity,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from './native-file-contract.mjs';
+import {submitRealMacOSFilePanel} from './native-picker.mjs';
 process.env.NODE_TLS_REJECT_UNAUTHORIZED='0'; // CTW_REAL_SAFARI_LOCALHOST_TLS_ONLY
 
 // Actual Safari only. Playwright WebKit and injected File buffers do not satisfy this gate.
@@ -175,8 +176,28 @@ async function selectNative(fixture){
     // Safari's WebDriver file sandbox grant may not outlive hiding the control.
     // The exact native full/sliced SHA, timestamp and duration checks below stay mandatory.
     await command(`/element/${await element('#fileInput')}/value`,{text:fixture.file});
-    const observed=await until(`${fixture.name} native bytes and media metadata`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,previous),value=>value?.done);
-  const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
+    let observed=await until(`${fixture.name} native bytes and media metadata`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,previous),value=>value?.done);
+    let nativeSelectionMode='safaridriver-sendkeys';let nativePickerDiagnostic=null;
+    if(observed.result?.error){
+      // SafariDriver can populate input.files but leave its underlying disk
+      // handle unreadable. Try a REAL user-style macOS open panel, which grants
+      // sandbox access, while retaining all original native identity checks.
+      // Picker unavailability is reported but never turns a failure into PASS.
+      try{
+        const pickerPrevious=await evaluate(()=>window.__ctwSafariAcceptance.selections.length);
+        // SafariDriver can keep a WebDriver click pending until the native
+        // panel closes; submit the real panel while that click is outstanding.
+        const clickSettled=click('#fileInput').then(()=>null,error=>String(error?.message||error));
+        await sleep(500);
+        submitRealMacOSFilePanel(fixture.file);
+        const clickError=await clickSettled;
+        if(clickError)throw new Error(`WebDriver native picker click failed: ${clickError.slice(0,180)}`);
+        const pickerObserved=await until(`${fixture.name} native open-panel bytes`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,pickerPrevious),entry=>entry?.done,{timeout:12000});
+        nativePickerDiagnostic={mode:'native-macOS-open-panel',result:pickerObserved.result?.error||'read-completed'};
+        if(!pickerObserved.result?.error){observed=pickerObserved;nativeSelectionMode='native-macOS-open-panel'}
+      }catch(error){nativePickerDiagnostic={mode:'native-macOS-open-panel',error:String(error?.message||error).slice(0,300)}}
+    }
+  const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativeSelectionMode,nativePickerDiagnostic,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
   assertNativeObservation(observed.result,fixture);
   const queue=await until(`${fixture.name} application preparation`,()=>evaluate(()=>Array.from(document.querySelectorAll('#queueList li'),row=>({name:row.querySelector('strong')?.textContent,status:row.querySelector('.mini-state')?.textContent}))),rows=>rows.length===1&&rows[0].status!=='Inspecting');
   assert.deepEqual(queue,[{name:fixture.name,status:'Ready'}]);assertPreparedDiagnostic(await diagnostics(),fixture);
