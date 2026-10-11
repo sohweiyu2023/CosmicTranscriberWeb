@@ -1,4 +1,4 @@
-name: DIAGNOSTIC ONLY - native Safari file lifetime
+name: DIAGNOSTIC ONLY - Safari native read APIs and timing
 
 on:
   push:
@@ -16,8 +16,12 @@ concurrency:
 
 jobs:
   native-safari-diagnostic:
-    name: DIAGNOSTIC ONLY - no release acceptance
-    runs-on: macos-26
+    name: DIAGNOSTIC ONLY - ${{ matrix.os }} - no acceptance
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-15]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     env:
       DIAG_ARCHIVE_SHA256: c68370707fc18093a3e4e741bdd1686643fa585aed41715b8fbf4bd175ae1485
@@ -101,7 +105,7 @@ jobs:
           PY
       - name: Enable actual SafariDriver
         run: sudo /usr/bin/safaridriver --enable
-      - name: Run bounded bare-page native file control experiment
+      - name: Run bounded native API, first-read timing and origin controls
         timeout-minutes: 8
         run: |
           set -o pipefail
@@ -149,7 +153,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: diagnostic-only-native-safari-files
+          name: diagnostic-only-native-safari-files-v2-${{ matrix.os }}
           path: |
             ${{ github.workspace }}/diagnostic-evidence/*.json
             ${{ github.workspace }}/diagnostic-evidence/*.log
