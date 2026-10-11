@@ -1,0 +1,157 @@
+name: DIAGNOSTIC ONLY - normal Safari OS file picker
+
+on:
+  push:
+    branches: ['diag/native-safari-os-picker']
+    paths: ['.github/workflows/diag-native-safari-os-picker.yml', 'tools/diag-native-safari-os-picker.mjs']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: native-safari-os-picker-diagnostic-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-safari-os-picker:
+    name: DIAGNOSTIC ONLY - no release acceptance
+    runs-on: macos-26
+    timeout-minutes: 8
+    env:
+      DIAG_ARCHIVE_SHA256: c68370707fc18093a3e4e741bdd1686643fa585aed41715b8fbf4bd175ae1485
+      DIAG_ARCHIVE_PATH: ${{ github.workspace }}/os-picker-artifact/CosmicTranscriberWeb-1.2.0-source.zip
+      DIAG_EXTRACTED: ${{ github.workspace }}/os-picker-native/CosmicTranscriberWeb-1.2.0
+      DIAG_OUTPUT: ${{ github.workspace }}/os-picker-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Prepare diagnostic evidence directory
+        run: mkdir -p "$DIAG_OUTPUT"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Record diagnostic host and tool versions
+        run: |
+          node --version
+          test "$(node --version)" = v26.7.0
+          sw_vers
+          echo "Runner image: $ImageOS $ImageVersion"
+          test "$ImageVersion" = 20260907.0351.1
+          test "$(uname -m)" = arm64
+          /usr/bin/osascript -l JavaScript -e 'ObjC.import("ApplicationServices"); $.AXIsProcessTrusted() ? "trusted" : "denied";'
+      - name: Download the exact old Windows artifact for diagnosis only
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: CosmicTranscriberWeb-1.2.0-staging-certified
+          run-id: '38116782643'
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          path: ${{ github.workspace }}/os-picker-artifact
+      - name: Verify pinned ZIP and extract untouched with ditto
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, stat, subprocess, time, zipfile
+          source = pathlib.Path(os.environ['DIAG_ARCHIVE_PATH'])
+          root = 'CosmicTranscriberWeb-1.2.0'
+          destination = pathlib.Path(os.environ['DIAG_EXTRACTED']).parent
+          evidence = pathlib.Path(os.environ['DIAG_OUTPUT']) / 'extraction-proof.json'
+          proof = {'purpose': 'DIAGNOSTIC ONLY; never release acceptance', 'sourceRun': 38116782643, 'sourceCommit': '30de09b2bd9403c5f39afe05bd63383e88343708', 'status': 'RUNNING'}
+          try:
+              digest = hashlib.sha256(source.read_bytes()).hexdigest()
+              if digest != os.environ['DIAG_ARCHIVE_SHA256']:
+                  raise RuntimeError('Pinned inner ZIP SHA256 mismatch')
+              proof['archiveSha256'] = digest
+              if destination.exists():
+                  raise RuntimeError('Require a fresh diagnostic extraction destination')
+              with zipfile.ZipFile(source) as archive:
+                  entries = archive.infolist()
+                  names = [entry.filename for entry in entries]
+                  if len(names) != 178 or len(names) != len(set(names)):
+                      raise RuntimeError('Unexpected178 source membership or duplicate ZIP entry')
+                  for entry in entries:
+                      parts = pathlib.PurePosixPath(entry.filename).parts
+                      if not parts or parts[0] != root or any(part in ('.', '..') for part in parts) or entry.filename.startswith('/') or chr(92) in entry.filename or entry.is_dir():
+                          raise RuntimeError('Unsafe or unexpected archive entry')
+                      if entry.date_time != (1980, 1, 1, 0, 0, 0):
+                          raise RuntimeError('Diagnostic requires unchanged1980 ZIP metadata')
+                      if stat.S_ISLNK(entry.external_attr >> 16):
+                          raise RuntimeError('Symlink in source ZIP')
+                  if archive.testzip() is not None:
+                      raise RuntimeError('ZIP CRC failure')
+                  manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))
+                  if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':
+                      raise RuntimeError('Old artifact must remain staging-only')
+                  subprocess.run(['/usr/bin/ditto', '-xk', str(source), str(destination)], check=True)
+                  proof['files'] = {}
+                  for entry in entries:
+                      target = destination / entry.filename
+                      content = target.read_bytes()
+                      info = target.stat()
+                      if content != archive.read(entry.filename):
+                          raise RuntimeError(f'Native extraction byte mismatch: {entry.filename}')
+                      if tuple(time.localtime(info.st_mtime)[:6]) != entry.date_time:
+                          raise RuntimeError(f'Native extraction timestamp mismatch: {entry.filename}')
+                      proof['files'][entry.filename] = {'sha256': hashlib.sha256(content).hexdigest(), 'mtimeNs': str(info.st_mtime_ns), 'mode': stat.S_IMODE(info.st_mode), 'uid': info.st_uid, 'gid': info.st_gid, 'inode': info.st_ino}
+                  proof.update(status='EXTRACTION_VERIFIED', entries=len(entries), extracted=str(destination / root), releaseAcceptance=False)
+          except Exception as error:
+              proof.update(status='EXTRACTION_FAILED', error=str(error))
+              raise
+          finally:
+              evidence.write_text(json.dumps(proof, indent=2) + '\n')
+          PY
+      - name: Run normal Safari native OS picker without permission changes
+        timeout-minutes: 5
+        run: |
+          set -o pipefail
+          node tools/diag-native-safari-os-picker.mjs "$DIAG_EXTRACTED" "$DIAG_OUTPUT" 2>&1 | tee "$DIAG_OUTPUT/diagnostic.log"
+      - name: Prove the accepted extraction remained unchanged
+        if: ${{ always() }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, stat, time, zipfile
+          source = pathlib.Path(os.environ['DIAG_ARCHIVE_PATH'])
+          destination = pathlib.Path(os.environ['DIAG_EXTRACTED']).parent
+          output = pathlib.Path(os.environ['DIAG_OUTPUT'])
+          output.mkdir(parents=True, exist_ok=True)
+          proof = {'purpose': 'DIAGNOSTIC ONLY; never release acceptance', 'status': 'RUNNING'}
+          try:
+              if hashlib.sha256(source.read_bytes()).hexdigest() != os.environ['DIAG_ARCHIVE_SHA256']:
+                  raise RuntimeError('Pinned ZIP changed')
+              before = json.loads((output / 'extraction-proof.json').read_text())
+              if before.get('status') != 'EXTRACTION_VERIFIED':
+                  raise RuntimeError('Initial extraction proof was not successful')
+              with zipfile.ZipFile(source) as archive:
+                  expected_names = {entry.filename for entry in archive.infolist()}
+                  actual_names = {str(file.relative_to(destination)) for file in pathlib.Path(os.environ['DIAG_EXTRACTED']).rglob('*') if file.is_file()}
+                  if actual_names != expected_names:
+                      raise RuntimeError('Accepted source membership changed')
+                  for entry in archive.infolist():
+                      target = destination / entry.filename
+                      content = target.read_bytes()
+                      info = target.stat()
+                      if content != archive.read(entry.filename):
+                          raise RuntimeError(f'Accepted source bytes changed: {entry.filename}')
+                      if tuple(time.localtime(info.st_mtime)[:6]) != entry.date_time:
+                          raise RuntimeError(f'Accepted source timestamp changed: {entry.filename}')
+                      actual = {'sha256': hashlib.sha256(content).hexdigest(), 'mtimeNs': str(info.st_mtime_ns), 'mode': stat.S_IMODE(info.st_mode), 'uid': info.st_uid, 'gid': info.st_gid, 'inode': info.st_ino}
+                      if actual != before['files'].get(entry.filename):
+                          raise RuntimeError(f'Accepted source exact metadata changed: {entry.filename}')
+                  proof.update(status='UNCHANGED', entries=len(archive.infolist()), releaseAcceptance=False)
+          except Exception as error:
+              proof.update(status='FAILED_OR_NOT_EXTRACTED', error=str(error))
+              raise
+          finally:
+              (output / 'accepted-extraction-after.json').write_text(json.dumps(proof, indent=2) + '\n')
+          PY
+      - name: Preserve diagnostic evidence even when native reads fail
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: diagnostic-only-native-safari-os-picker
+          path: |
+            ${{ github.workspace }}/os-picker-evidence/*.json
+            ${{ github.workspace }}/os-picker-evidence/*.log
+          if-no-files-found: error
+          retention-days: 7
