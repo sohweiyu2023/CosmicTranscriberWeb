@@ -4,8 +4,10 @@ import {randomBytes,randomInt} from 'node:crypto';
 import {chmod,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {NATIVE_FIXTURES,describeFixture,fixtureIdentity,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from './native-file-contract.mjs';
-import {submitRealMacOSFilePanel} from './native-picker.mjs';
-process.env.NODE_TLS_REJECT_UNAUTHORIZED='0'; // CTW_REAL_SAFARI_LOCALHOST_TLS_ONLY
+import {submitRealMacOSFilePanel,clearRejectedNativeSelection} from './native-picker.mjs';
+import {pinnedLocalRequest} from './pinned-local-https.mjs';
+import {tmpdir} from 'node:os';
+// CTW_REAL_SAFARI_PINNED_LOCALHOST_TLS: no global certificate bypass.
 
 // Actual Safari only. Playwright WebKit and injected File buffers do not satisfy this gate.
 if(process.platform!=='darwin')throw new Error('Real Safari native-file acceptance requires macOS and its installed /usr/bin/safaridriver.');
@@ -18,13 +20,16 @@ const seeded='SAFARI-FAKE-KEY-NO-PROVIDER-7d9b4676';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const report={schema:'cosmic-real-safari-native-acceptance-1',status:'RUNNING',platform:process.platform,startedAt:new Date().toISOString(),fixtures:[],checks:[],providerCalls:0,mp3DispatchOracle:'separate Node execution of the shipped reviewed MP3 frame preparation',downloadVerification:'application-generated payloads; OS download destination is not asserted'};
 const fixtures=[];
-let server,driver,sessionId,sharedNativeFixtureDirectory;
+let server,driver,sessionId,sharedNativeFixtureDirectory,pinnedTlsDirectory,pinnedTlsCertPath;
 
 async function jsonRequest(url,{method='GET',body,timeout=45000}={}){
-  const response=await fetch(url,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});
-  const text=await response.text();
+  const target=new URL(url);
+  const response=target.protocol==='https:'
+    ?await pinnedLocalRequest(url,{method,body,certificatePath:pinnedTlsCertPath,timeout})
+    :await (async()=>{const result=await fetch(url,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});return {status:result.status,text:await result.text()}})();
+  const text=response.text;
   let parsed;try{parsed=text?JSON.parse(text):{}}catch{throw new Error(`Invalid JSON from local acceptance endpoint (${response.status})`)}
-  if(!response.ok||parsed.value?.error)throw new Error(`Local acceptance ${method} ${new URL(url).pathname}: ${response.status} ${parsed.value?.error||''} ${parsed.value?.message||''}`);
+  if(response.status<200||response.status>=300||parsed.value?.error)throw new Error(`Local acceptance ${method} ${target.pathname}: ${response.status} ${parsed.value?.error||''} ${parsed.value?.message||''}`);
   return parsed;
 }
 async function until(label,read,accept,{timeout=30000}={}){
@@ -179,26 +184,51 @@ async function selectNative(fixture){
     let observed=await until(`${fixture.name} native bytes and media metadata`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,previous),value=>value?.done);
     let nativeSelectionMode='safaridriver-sendkeys';let nativePickerDiagnostic=null;
     if(observed.result?.error){
+      // The original native sendKeys event also reaches the real app. Its
+      // asynchronous inspection leaves an errored queue item when WebKit
+      // refuses to read the file. A successful OS-picker retry must not be
+      // obscured by that stale item or silently count it as a second upload.
+      // Wait for the app's genuine failed inspection, require its visible
+      // error state, and clear it through the original UI. No paid request is
+      // permitted before or during this cleanup.
+      const readQueue=()=>evaluate(()=>Array.from(document.querySelectorAll('#queueList li'),row=>({name:row.querySelector('strong')?.textContent,status:row.querySelector('.mini-state')?.textContent})));
+      await clearRejectedNativeSelection({
+        expectedName:fixture.name,beforePaidCount:beforeCount,
+        waitForRejectedQueue:()=>until(`${fixture.name} unreadable native selection is rejected by the app`,readQueue,rows=>rows.length===1&&rows[0].status!=='Inspecting',{timeout:20000}),
+        readQueue,clickClear:()=>click('#clearQueueBtn'),countPaid:count
+      });
       // SafariDriver can populate input.files but leave its underlying disk
       // handle unreadable. Try a REAL user-style macOS open panel, which grants
       // sandbox access, while retaining all original native identity checks.
       // Picker unavailability is reported but never turns a failure into PASS.
       try{
         const pickerPrevious=await evaluate(()=>window.__ctwSafariAcceptance.selections.length);
-        // SafariDriver rejects direct WebDriver clicks on <input type=file>.
-        // Click the application's genuine '+ Files' button; its trusted
-        // handler opens the original native file chooser. The click may
-        // remain pending until the modal closes, so overlap osascript.
-        const clickSettled=click('#addFilesBtn').then(()=>null,error=>String(error?.message||error));
-        await sleep(500);
+        // A WebDriver click on the app's '+ Files' button can itself hang
+        // while the OS modal is open, making SafariDriver unresponsive to
+        // later commands. Focus the REAL app button first, then send an OS
+        // Space keypress to activate it and operate the native picker. This
+        // avoids a pending WebDriver command entirely. No File is injected.
+        const focused=await evaluate(()=>{
+          const button=document.querySelector('#addFilesBtn');
+          const input=document.querySelector('#fileInput');
+          if(!button||button.disabled)throw new Error('Original app file-picker button is unavailable');
+          if(!input||input.type!=='file')throw new Error('Original native file input is unavailable');
+          // SafariDriver's earlier failed sendKeys selection may still point to
+          // this same pathname. Clear only the input's selection so choosing
+          // the SAME real disk file through the OS picker fires a fresh change.
+          // No File/Blob is constructed and no application bytes are supplied.
+          input.value='';
+          button.focus();
+          return {buttonFocused:document.activeElement===button,selectionCleared:input.files.length===0};
+        });
+        assert.deepEqual(focused,{buttonFocused:true,selectionCleared:true},'Native picker must focus the original app button with no stale selection');
+        nativePickerDiagnostic={mode:'native-macOS-keyboard-open-panel',stage:'original-app-button-focused'};
         const pickerFrontApp=submitRealMacOSFilePanel(fixture.file);
-        nativePickerDiagnostic={mode:'native-macOS-open-panel',frontApp:pickerFrontApp||'unknown',stage:'picker-keystrokes-sent'};
-        const clickError=await clickSettled;
-        if(clickError)throw new Error(`WebDriver native picker click failed: ${clickError.slice(0,180)}`);
+        nativePickerDiagnostic={mode:'native-macOS-keyboard-open-panel',frontApp:pickerFrontApp||'unknown',stage:'picker-keystrokes-sent'};
         const pickerObserved=await until(`${fixture.name} native open-panel bytes`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,pickerPrevious),entry=>entry?.done,{timeout:12000});
-        nativePickerDiagnostic={mode:'native-macOS-open-panel',frontApp:pickerFrontApp||'unknown',result:pickerObserved.result?.error||'read-completed'};
-        if(!pickerObserved.result?.error){observed=pickerObserved;nativeSelectionMode='native-macOS-open-panel'}
-      }catch(error){nativePickerDiagnostic={...(nativePickerDiagnostic||{mode:'native-macOS-open-panel'}),error:String(error?.message||error).slice(0,300)}}
+        nativePickerDiagnostic={mode:'native-macOS-keyboard-open-panel',frontApp:pickerFrontApp||'unknown',result:pickerObserved.result?.error||'read-completed'};
+        if(!pickerObserved.result?.error){observed=pickerObserved;nativeSelectionMode='native-macOS-keyboard-open-panel'}
+      }catch(error){nativePickerDiagnostic={...(nativePickerDiagnostic||{mode:'native-macOS-keyboard-open-panel'}),error:String(error?.message||error).slice(0,300)}}
     }
   const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativeSelectionMode,nativePickerDiagnostic,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
   assertNativeObservation(observed.result,fixture);
@@ -245,7 +275,9 @@ async function confirmRerun(accept){
 try{
   for(const spec of NATIVE_FIXTURES)fixtures.push(await describeFixture(root,spec));
   await stageWorldReadableNativeFixtures();
-  server=spawn(process.execPath,['tests/e2e/mock-server.mjs'],{cwd:root,env:{...process.env,COSMIC_E2E_PORT:String(port),COSMIC_E2E_TOKEN:token,COSMIC_E2E_CONTROL:'native-file-acceptance'},stdio:['ignore','pipe','pipe']});
+  pinnedTlsDirectory=await mkdtemp(path.join(tmpdir(),'ctw-safari-tls-'));
+  pinnedTlsCertPath=path.join(pinnedTlsDirectory,'cert.pem');
+  server=spawn(process.execPath,['tests/e2e/mock-server.mjs'],{cwd:root,env:{...process.env,COSMIC_E2E_PORT:String(port),COSMIC_E2E_TOKEN:token,COSMIC_E2E_CONTROL:'native-file-acceptance',COSMIC_E2E_TLS_CERT_OUT:pinnedTlsCertPath},stdio:['ignore','pipe','pipe']});
   server.stdout.pipe(process.stdout);server.stderr.pipe(process.stderr);server.on('error',error=>{report.serverError=error.message});
   await waitEndpoint(`${origin}/__cosmic_e2e_health?token=${token}`);
   driver=spawn('/usr/bin/safaridriver',['-p',String(driverPort)],{stdio:['ignore','pipe','pipe']});
@@ -328,6 +360,7 @@ try{
   if(sessionId&&driver){try{await command('',{},'DELETE')}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
   if(driver&&!driver.killed)driver.kill('SIGTERM');if(server&&!server.killed)server.kill('SIGTERM');
   if(sharedNativeFixtureDirectory){try{await rm(sharedNativeFixtureDirectory,{recursive:true,force:true})}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
+  if(pinnedTlsDirectory){try{await rm(pinnedTlsDirectory,{recursive:true,force:true})}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
   report.finishedAt=new Date().toISOString();const text=JSON.stringify(report,null,2)+'\n';
   const reportPath=path.resolve(process.env.COSMIC_SAFARI_REPORT||path.join(root,'test-results','safari-native-acceptance.json'));
   await mkdir(path.dirname(reportPath),{recursive:true});await writeFile(reportPath,text);

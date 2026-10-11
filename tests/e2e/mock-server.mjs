@@ -1,7 +1,5 @@
 import {createE2eTlsServer} from './tls-transport.mjs';
-import {spawnSync} from 'node:child_process';
-import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {createEphemeralLocalhostTlsOptions} from './ephemeral-tls.mjs';
 import {readFile,stat} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -26,20 +24,11 @@ const heldNativeResponses=new Set();
 const ct={html:'text/html;charset=utf-8',css:'text/css;charset=utf-8',js:'text/javascript;charset=utf-8',json:'application/json;charset=utf-8',mp3:'audio/mpeg'};
 function json(res,status,obj,headers={}){res.writeHead(status,{'Content-Type':ct.json,'Cache-Control':'no-store',...headers});res.end(JSON.stringify(obj))}
 function hasSession(req){return (req.headers.cookie||'').split(/;\s*/).includes(COOKIE)}
-const tlsDir=mkdtempSync(path.join(tmpdir(),'cosmic-e2e-tls-'));
-const tlsKeyPath=path.join(tlsDir,'key.pem');
-const tlsCertPath=path.join(tlsDir,'cert.pem');
-const openssl=spawnSync('openssl',[
-  'req','-x509','-newkey','rsa:2048','-sha256','-nodes',
-  '-keyout',tlsKeyPath,'-out',tlsCertPath,'-days','1',
-  '-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'
-],{stdio:'pipe',windowsHide:true});
-if(openssl.error||openssl.status!==0){
-  rmSync(tlsDir,{recursive:true,force:true});
-  throw new Error('Unable to generate ephemeral localhost TLS certificate for E2E.');
-}
-const tlsOptions={key:readFileSync(tlsKeyPath),cert:readFileSync(tlsCertPath)};
-rmSync(tlsDir,{recursive:true,force:true});
+// Public certificate is exported only in native acceptance mode. The helper
+// destroys its temporary private-key directory even when export is rejected.
+const tlsOptions=createEphemeralLocalhostTlsOptions({
+  nativeAcceptance,certificateOut:process.env.COSMIC_E2E_TLS_CERT_OUT
+});
 const requestHandler=async(req,res)=>{
   const u=new URL(req.url,ORIGIN);
   if(u.pathname==='/__cosmic_e2e_health'){if(u.searchParams.get('token')!==E2E_TOKEN){res.writeHead(403);return res.end('Forbidden')}return json(res,200,{ok:true,product:'cosmic-transcriber-web-e2e',version:'1.2.0'})}
