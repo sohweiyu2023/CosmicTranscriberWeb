@@ -24,6 +24,18 @@ test('secure key setup, native controls, queue, mocked transcript and downloads'
   await expect(page.locator('.brand')).toContainText('COSMIC TRANSCRIBER');
   const accountEmail=page.locator('#accountEmail');
   await expect(accountEmail).toHaveText('e2e-user@example.test');
+  // Avoid an unnecessary locator-actionability wait during the repeated
+  // long-address layout stress. Direct DOM evaluation still requires the
+  // genuine current page and element, and a full text assertion follows.
+  const setDisplayedEmail=async value=>{
+    await page.evaluate(text=>{
+      const card=document.getElementById('accountCard');
+      const element=document.getElementById('accountEmail');
+      if(!element||!card?.contains(element)||element.tagName!=='STRONG')throw new Error('The authenticated account email element is missing');
+      element.textContent=text;
+    },value);
+    await expect(accountEmail).toHaveText(value);
+  };
   const initialViewport=page.viewportSize(),normalEmail=await accountEmail.textContent();
   const longEmail=`${'a'.repeat(64)}@${'b'.repeat(63)}.${'c'.repeat(63)}.example.test`;
   try{
@@ -32,12 +44,12 @@ test('secure key setup, native controls, queue, mocked transcript and downloads'
       await expectAccountWithinPage(page);
       // Exercise the display's maximum realistic address shape without changing
       // authentication or the mocked session used by the rest of this case.
-      await accountEmail.evaluate((element,value)=>{element.textContent=value},longEmail);
+      await setDisplayedEmail(longEmail);
       await expectAccountWithinPage(page);
-      await accountEmail.evaluate((element,value)=>{element.textContent=value},normalEmail);
+      await setDisplayedEmail(normalEmail);
     }
   }finally{
-    await accountEmail.evaluate((element,value)=>{element.textContent=value},normalEmail);
+    await setDisplayedEmail(normalEmail);
     await page.setViewportSize(initialViewport);
   }
   const model=page.locator('#modelSelect');
