@@ -45,8 +45,8 @@ That was the 1.0.10 PowerShell-command-precedence defect. Node 24.19.0 legitimat
 ## Portable Node download/hash verification fails
 Do not bypass the check or substitute an unofficial archive. Confirm internet access to the official Node distribution and rerun. A cached archive whose SHA-256 does not match the pinned official release checksum is deleted and downloaded again; a repeated mismatch is a hard stop.
 
-## The `deploy\CosmicTranscriberWeb-1.0.15` folder does not exist
-A deploy folder is created only after every local release gate passes and the certified ZIP proves `releaseReady:true`. In 1.0.15 `RELEASE-WINDOWS.ps1` extracts that ZIP automatically and prints the exact `Prepared deployment folder:` path. If certification failed, the absence of that folder is expected. Do not guess a path or manually continue from the candidate.
+## The prepared deployment folder does not exist
+`RELEASE-WINDOWS.ps1` creates and extracts a staging-certified ZIP only after its local gates pass, then prints the exact `Prepared deployment folder:` path. Its manifest correctly remains `releaseReady:false` with `certificationLevel:staging`. If certification failed, no deployable folder is promised. Do not guess a path or continue from an audit candidate; external Linux/macOS CI must also pass before staging deployment.
 
 ## `npm ci` says `package-lock.json` is missing
 You are almost certainly still in the audit-candidate tree. That tree deliberately has no fabricated lock and is marked `releaseReady:false`. Run certification successfully first, then change to the **prepared deployment folder printed by `RELEASE-WINDOWS.ps1`** and run `npm ci` there.
@@ -55,7 +55,7 @@ You are almost certainly still in the audit-candidate tree. That tree deliberate
 This normally follows the previous problem: `npm ci` never succeeded in the certified deployment copy, so `node_modules` does not contain Wrangler. Do not install Wrangler globally to bypass the project gate. Enter the prepared certified deployment folder and run its clean `npm ci`.
 
 ## `deploy-verify` says `releaseReady` is false or Access placeholders remain
-`releaseReady:false` means you are using the audit candidate, not the certified release. Placeholder Access values are separately intentional until you configure a certified deployment copy. After successful certification run `npm run configure:access:staging` (or `:production`) in the prepared deploy folder; the helper changes only the permitted team-domain/AUD fields and restores the original config if provenance validation fails. Complete registry configuration next, then run the final `deploy-verify` gate.
+Inspect `certificationLevel` and checksum/lock provenance as well as the flag. A verified `releaseReady:false`, `certificationLevel:staging` ZIP is valid only for staging; an audit candidate is blocked everywhere. Production requires the separate final `releaseReady:true`, `certificationLevel:release` ZIP produced by Windows `npm run package:source` on accepted source after all-platform CI and live staging acceptance. Never flip the flag manually. Placeholder Access values remain intentional until environment configuration; use the corresponding `configure:access:*`, then registry configuration and `deploy-verify` in the correct certified extraction. Existing upgrades must not use `FIRST-DEPLOY-WINDOWS.ps1` or `deploy:first:*`.
 
 ## Audit candidate has no package-lock.json
 Do not deploy it as a certified release. On a clean Windows/public-registry checkout, create/update the real lock with the reviewed dependency workflow, prove `npm ci`, then run all release gates and create the release-mode ZIP. Never copy the unrelated Wake Call lock into Cosmic Transcriber.

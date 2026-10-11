@@ -96,9 +96,12 @@ jobs:
       - run: npm run build:inspect
 
   macos-safari:
-    name: macOS WebKit + real Safari
-    needs: resolve-lock
+    name: macOS native ZIP + WebKit/mobile + Chrome + real Safari
+    needs: windows-release
     runs-on: macos-26
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -107,8 +110,43 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: reviewed-release-inputs
-          path: .
+          name: ${{ needs.windows-release.outputs.artifact-name }}
+          path: ${{ runner.temp }}/cosmic-archive
+      - name: Verify and natively extract the exact Windows staging ZIP
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}
+          SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}
+          RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, time, zipfile
+          source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'cosmic-archive' / os.environ['SOURCE_FILE']
+          if hashlib.sha256(source.read_bytes()).hexdigest() != os.environ['SOURCE_SHA256']:
+              raise SystemExit('Windows staging archive identity mismatch.')
+          destination = pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'cosmic-native'
+          if destination.exists():
+              raise SystemExit('Native extraction destination must be fresh.')
+          root = f"CosmicTranscriberWeb-{os.environ['RELEASE_VERSION']}"
+          with zipfile.ZipFile(source) as archive:
+              for entry in archive.infolist():
+                  parts = pathlib.PurePosixPath(entry.filename).parts
+                  if not parts or parts[0] != root or '..' in parts or entry.filename.startswith('/') or '\\' in entry.filename:
+                      raise SystemExit('Unsafe or unexpected archive entry.')
+              if archive.testzip() is not None:
+                  raise SystemExit('Archive CRC verification failed.')
+              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))
+              if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':
+                  raise SystemExit('macOS must test the unchanged staging-only archive.')
+              subprocess.run(['/usr/bin/ditto', '-xk', str(source), str(destination)], check=True)
+              for entry in archive.infolist():
+                  target = destination / entry.filename
+                  if target.read_bytes() != archive.read(entry.filename):
+                      raise SystemExit(f'Native extraction byte mismatch: {entry.filename}')
+                  if tuple(time.localtime(target.stat().st_mtime)[:6]) != entry.date_time:
+                      raise SystemExit(f'Native extraction timestamp mismatch: {entry.filename}')
+              print(f'Untouched native archive verified: {source.name}; SHA256={os.environ["SOURCE_SHA256"]}')
+          PY
       - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
       - run: npm ci
       - run: npm ls --all
@@ -126,12 +164,20 @@ jobs:
           ffprobe -version
       - run: npm run validate
       - run: npm run build
-      - run: npm run browsers:install:webkit
-      - run: npm run test:e2e:webkit
+      - run: node scripts/playwright-invoke.mjs install webkit chrome
+      - run: npm run test:e2e:macos
       - name: Enable SafariDriver
         run: sudo /usr/bin/safaridriver --enable
-      - name: Real Safari WebDriver smoke
+      - name: Real Safari native files and mocked transcription acceptance
         run: npm run test:safari:real
+      - name: Preserve macOS browser evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-native-browser-evidence
+          path: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}/test-results/
+          if-no-files-found: warn
+          retention-days: 7
 
   windows-release:
     name: Windows toolchain + Chrome/Edge + staging-certified ZIP

@@ -6,7 +6,7 @@ Cosmic Transcriber Web is the browser-based edition of Cosmic Transcriber. It is
 
 **Bring your own OpenAI API key (BYOK).** There is no deployment-owner API-key fallback.
 
-> **Release status:** pre-release certification. Audit/source candidates marked `releaseReady:false` are intentionally non-deployable. A release is considered ready only after the complete Linux, Windows, macOS, real-Safari, Worker, integration, browser, security, dependency, packaging and fresh-ZIP verification gates pass.
+> **Release status:** pre-release certification. Audit candidates are non-deployable. A verified staging candidate has `releaseReady:false` with `certificationLevel:staging` and can deploy only to staging. Production requires a separately certified release ZIP after all platform and live staging gates pass.
 
 ## Highlights
 
@@ -70,16 +70,18 @@ See [`docs/BYOK_SECURITY_DESIGN.md`](docs/BYOK_SECURITY_DESIGN.md), [`docs/THREA
 
 The mature Windows desktop application remains a separate product and behavioral reference. Cosmic Transcriber Web does **not** replace the native Windows edition and is not a native macOS port. Its goal is to provide the same core transcription workflow through standards-based browsers, with Windows Chrome/Edge and macOS Safari/Chrome as primary targets.
 
+The prospective [browser release policy](docs/BROWSER_RELEASE_POLICY.md) requires Windows Chromium/Firefox/Chrome/Edge, all Linux engines, and macOS WebKit/mobile emulation/Chrome plus actual Safari native-file acceptance. Previous Windows Playwright WebKit native-file failures remain recorded failures; the revised policy must independently pass and does not change deployment eligibility.
+
 ## Release and deployment model
 
 The repository deliberately separates editable/audit source from certified deployable source.
 
 - Audit candidates remain `releaseReady:false`.
 - Certification resolves and reviews one dependency lock graph, verifies dependency lifecycle-script policy, audits dependencies, executes the complete test matrix, builds the frontend, packages an isolated source ZIP, freshly extracts it, performs `npm ci`, and reruns release verification.
-- Only a certified ZIP whose internal `RELEASE_MANIFEST.json` says `releaseReady:true` may be deployed.
+- Staging accepts a verified ZIP with `releaseReady:false` and `certificationLevel:staging`; production requires `releaseReady:true` and `certificationLevel:release`. Audit candidates satisfy neither condition.
 - Deployment provenance permits only the environment-specific Access team-domain/AUD, configured admin-email list, and private D1 database identifier to change after certification.
 
-For the guided Windows release path, use [`FIRST-DEPLOY-WINDOWS.ps1`](FIRST-DEPLOY-WINDOWS.ps1). It uses a project-controlled, SHA-256-verified portable Node/npm toolchain and does not modify the machine-wide Node installation.
+For this existing deployment upgrade, use the certification-only [`RELEASE-WINDOWS.ps1`](RELEASE-WINDOWS.ps1), then follow [the staging and production upgrade sequence](docs/CLOUDFLARE_DEPLOYMENT.md). Use the shipped private Node/npm toolchain. Do not use `FIRST-DEPLOY-WINDOWS.ps1` or `deploy:first:*`: those bootstrap paths are not the existing-upgrade route and may replace BYOK secrets.
 
 ## Cloudflare deployment targets
 

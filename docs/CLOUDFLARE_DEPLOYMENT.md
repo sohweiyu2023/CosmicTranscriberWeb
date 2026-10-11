@@ -1,8 +1,10 @@
-# Cloudflare Deployment — Cosmic Transcriber Web 1.1.1
+# Cloudflare Deployment — Cosmic Transcriber Web 1.2.0
 
 ## Deployment state
 
-The 1.1.1 line is an **upgrade** to already-established staging and production Workers. It adds the V1.1 D1 user/admin registry while preserving the existing Cloudflare Access applications and BYOK master secrets.
+The 1.2.0 line is an **upgrade** to already-established staging and production Workers. Preserve the existing Cloudflare Access applications, D1 data and BYOK master secrets.
+
+The upgrade sequence is: all CI gates pass for one exact staging ZIP, deploy that ZIP to staging, complete live staging acceptance, certify the same accepted source for production on Windows, then deploy its freshly extracted release ZIP. `FIRST-DEPLOY-WINDOWS.ps1` is not this route: its current bootstrap flow expects release-ready output after staging packaging and can create/replace secrets. Do not use it or `deploy:first:*` for an existing upgrade.
 
 Targets:
 
@@ -14,7 +16,7 @@ Both environments must keep `workers.dev` and Preview URLs disabled and use Work
 
 ## Never mutate a certified release casually
 
-A deployable release has `RELEASE_MANIFEST.json` with `releaseReady:true`. Post-certification configuration is intentionally limited to private deployment values:
+A staging-deployable ZIP has `RELEASE_MANIFEST.json` with `releaseReady:false` and `certificationLevel:staging`. Production instead requires `releaseReady:true` and `certificationLevel:release`. Both require valid certified source checksums and lock provenance; an audit candidate is not deployable. Post-certification configuration is intentionally limited to private deployment values:
 
 - environment Access team domain;
 - environment Access audience (AUD);
@@ -25,7 +27,7 @@ The helper scripts verify release provenance before and after those edits. Other
 
 ## Upgrade staging first
 
-From a **fresh extraction of the certified 1.1.1 ZIP**:
+After the final all-platform CI aggregator succeeds, use a **fresh extraction of that exact staging-certified 1.2.0 ZIP** and record its SHA-256. Do not substitute a working tree or an older candidate:
 
 1. Activate the shipped private Node/npm toolchain and run `npm ci`.
 2. Configure the existing staging Access values:
@@ -109,7 +111,11 @@ Record the new staging deployment/version ID for rollback.
 
 ## Upgrade production only after staging acceptance
 
-Repeat the same process using the existing production Access application and a **different production D1 database**:
+Before final packaging, verify the external Linux/macOS/Windows CI receipts, exact source/lock/fixture identities and live staging acceptance receipts. The Windows packager reruns local and native fresh-ZIP gates but does not itself verify external CI or live acceptance evidence; successful local packaging alone is insufficient.
+
+On Windows, activate the shipped private toolchain and run `npm run package:source` **without either candidate flag** from the exact accepted staging source. Preserve the accepted source and dependency graph; do not refresh dependencies or regenerate fixtures between acceptance and this step. The isolated packager produces the final `releaseReady:true`, `certificationLevel:release` ZIP only after its required verification. Never edit the manifest flag manually. Record the new archive SHA-256 and prove application source, lock and fixture bytes match the accepted staging source; only generated certification metadata/checksums change.
+
+Freshly extract that final ZIP, run `npm ci`, and repeat the environment configuration using the existing production Access application and a **different production D1 database**:
 
 ```powershell
 npm run configure:access:production
@@ -130,7 +136,7 @@ For the AUD, copy the production application's own AUD from Cloudflare. Never re
 
 When `configure:registry:production` asks for administrator email(s), use the exact Access email identity/identities that should administer production.
 
-Because production already exists by the time 1.1.1 is deployed, use **`npm run deploy:production`**, not `deploy:first:production`. The existing production `BYOK_SESSION_MASTER_KEY_CURRENT` must remain intact during an ordinary upgrade.
+Because production already exists, use **`npm run deploy:production`**, not `deploy:first:production`. The existing production `BYOK_SESSION_MASTER_KEY_CURRENT` must remain intact during an ordinary upgrade. Existing user authorization to promote after successful verification remains valid; these checks do not replace the required verification or require requesting the same authorization again.
 
 ## D1 migration and rollback notes
 

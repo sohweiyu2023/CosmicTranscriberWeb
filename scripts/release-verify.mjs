@@ -1,4 +1,5 @@
 import {invokeNpm} from './npm-invoke.mjs';
+import {browserGates,BROWSER_POLICY_REVISION} from './browser-platform-policy.mjs';
 
 const requireWindows=process.argv.includes('--release-package');
 const nodeParts=process.versions.node.split('.').map(Number);
@@ -31,12 +32,10 @@ const steps=[
   ['audit'],
   ['run','validate'],
   ['run','test:worker'],
-  ['run','test:integration'],
-  ['run','test:e2e:core']
+  ['run','test:integration']
 ];
-if(process.platform==='win32')steps.push(['run','test:e2e:firefox-key-stress']);
-if(process.platform==='win32')steps.push(['run','test:e2e:branded']);
-else console.log('Branded Chrome/Edge gate is Windows-only and was not executed on this platform.');
+console.log(`Browser certification policy: ${BROWSER_POLICY_REVISION}; platform: ${process.platform}`);
+for(const gate of browserGates(process.platform))steps.push(['run',gate]);
 steps.push(['run','build:inspect']);
 steps.push(['run','audit:secrets']);
 
@@ -48,4 +47,4 @@ for(const args of steps){
     process.exit(result.status||1);
   }
 }
-console.log(`Release verification PASS${process.platform==='win32'?' including branded Chrome/Edge':''}.`);
+console.log(`Release verification PASS for ${process.platform} under ${BROWSER_POLICY_REVISION}. Other platform and live acceptance gates remain separate.`);

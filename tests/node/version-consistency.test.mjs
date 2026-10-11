@@ -24,6 +24,22 @@ test('current release and runtime-test version surfaces are coherent',async()=>{
   assert.equal(await verifyVersionConsistency(root),'1.2.0');
 });
 
+for(const [label,eol] of [['LF','\n'],['CRLF','\r\n']]){
+  test(`README version validation supports ${label} without accepting a stale or extended heading`,async()=>{
+    const dir=await fixture();
+    try{
+      const file=path.join(dir,'README.md');
+      const valid=(await readFile(file,'utf8')).replace(/\r?\n/g,eol);
+      await writeFile(file,valid);
+      assert.equal(await verifyVersionConsistency(dir),'1.2.0');
+      await writeFile(file,valid.replace('# Cosmic Transcriber Web 1.2.0','# Cosmic Transcriber Web 1.1.1'));
+      await assert.rejects(verifyVersionConsistency(dir),/README.md heading/);
+      await writeFile(file,valid.replace('# Cosmic Transcriber Web 1.2.0','# Cosmic Transcriber Web 1.2.0-uncertified'));
+      await assert.rejects(verifyVersionConsistency(dir),/README.md heading/);
+    }finally{await rm(dir,{recursive:true,force:true})}
+  });
+}
+
 test('version consistency rejects stale Worker/integration runtime metadata',async()=>{
   const dir=await fixture();
   try{

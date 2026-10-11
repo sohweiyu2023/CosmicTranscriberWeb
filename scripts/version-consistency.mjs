@@ -49,7 +49,8 @@ export async function verifyVersionConsistency(base=root){
   requireVersion('public/js/models.js APP_VERSION',browserVersion,version);
   if(!indexText.includes(`id="versionText">v${version}<`))fail(`public/index.html footer does not declare v${version}`);
   if(!indexText.includes(`<strong>Web version ${version}</strong>`))fail(`public/index.html About dialog does not declare Web version ${version}`);
-  if(!readmeText.startsWith(`# Cosmic Transcriber Web ${version}\n`))fail(`README.md heading does not declare ${version}`);
+  const readmeHeading=`# Cosmic Transcriber Web ${version}`;
+  if(!readmeText.startsWith(`${readmeHeading}\n`)&&!readmeText.startsWith(`${readmeHeading}\r\n`))fail(`README.md heading does not declare ${version}`);
   const runtimeVersion=exactMatch(workerRuntimeText,/APP_VERSION\s*:\s*["']([^"']+)["']/,'tests/worker/runtime.test.js APP_VERSION');
   requireVersion('tests/worker/runtime.test.js APP_VERSION',runtimeVersion,version);
   requireAllLiteralVersions(e2eMockText,/\bversion\s*:\s*["']([^"']+)["']/g,'tests/e2e/mock-server.mjs runtime responses',version);

@@ -55,9 +55,9 @@ Official npm documentation retrieved 2026-08-10 lists **npm 12.0.2 as Latest**. 
 
 ## Playwright / Safari
 
-Playwright browser binaries must match the installed Playwright version. Cosmic resolves the installed `@playwright/test` CLI directly instead of allowing an `npx` fallback to download another package. The release browser matrix covers Chromium, Firefox, WebKit, Mobile Safari emulation, installed Chrome and installed Edge on Windows.
+Playwright browser binaries must match the installed Playwright version. Cosmic resolves the installed `@playwright/test` CLI directly instead of allowing an `npx` fallback to download another package. The historical release matrix covered Chromium, Firefox, WebKit, Mobile Safari emulation, installed Chrome and installed Edge on Windows. Its Windows WebKit native-file failures remain unresolved; they have not been relabeled PASS. The prospective [2026-10-11 platform policy](BROWSER_RELEASE_POLICY.md) retains Windows Chromium/Firefox/Chrome/Edge, all Linux engines and macOS WebKit/mobile/Chrome, adds substantive actual Safari native-file acceptance, and requires unchanged native ZIP extraction.
 
-Playwright WebKit is not branded Safari. A small real-macOS Safari acceptance remains a separate final gate.
+Playwright WebKit is not branded Safari. Actual SafariDriver native-file and mocked workflow acceptance on macOS and the separate authenticated/live Safari checklist remain required. Neither a shell-only smoke nor mobile emulation substitutes for them.
 
 Primary source retrieved 2026-08-10:
 - https://playwright.dev/docs/browsers

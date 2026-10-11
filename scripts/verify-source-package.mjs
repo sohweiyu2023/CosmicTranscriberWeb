@@ -30,7 +30,17 @@ if(!entries.some(e=>e.name===`${rootName}/package-lock.json`)){
 const packageTempParent=process.platform==='win32'?path.dirname(root):os.tmpdir();
 const tmp=await mkdtemp(path.join(packageTempParent,'.cosmic-package-'));
 try{
-  await extractStoredZip(zipPath,tmp);const extracted=path.join(tmp,rootName);await access(path.join(extracted,'tests','fixtures','ID3 Unicode 東京.mp3'));
+  // Check UTF-8 names, local headers and CRC before using the operating system
+  // extractor. Windows certification must test its real ZIP timestamps.
+  const integrityRoot=path.join(tmp,'integrity');
+  await extractStoredZip(zipPath,integrityRoot);
+  let extractionRoot=integrityRoot;
+  if(process.platform==='win32'){
+    extractionRoot=path.join(tmp,'native');
+    const native=spawnSync('pwsh',['-NoProfile','-NonInteractive','-File',path.join(root,'scripts/extract-source-package.ps1'),'-ZipPath',zipPath,'-Destination',extractionRoot],{stdio:'inherit'});
+    if(native.status!==0)throw new Error('Native Windows ZIP extraction/metadata verification failed.');
+  }
+  const extracted=path.join(extractionRoot,rootName);await access(path.join(extracted,'tests','fixtures','ID3 Unicode 東京.mp3'));
   const manifest=JSON.parse(await readFile(path.join(extracted,'RELEASE_MANIFEST.json'),'utf8'));
   if(manifest.version!==pkg.version)throw new Error(`Release manifest version ${manifest.version} does not match package ${pkg.version}.`);
   const lockPath=path.join(extracted,'package-lock.json');

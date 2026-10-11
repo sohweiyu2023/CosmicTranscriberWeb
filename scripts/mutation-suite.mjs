@@ -8,7 +8,7 @@ async function walk(dir) {
   for (const entry of await readdir(path.join(root, dir), { withFileTypes: true })) {
     const rel = path.join(dir, entry.name).replaceAll("\\", "/");
     if (entry.isDirectory()) await walk(rel);
-    else if (/\.(js|mjs|html|css|jsonc|sql)$/.test(entry.name) || rel === "public/_headers") files[rel] = await readFile(path.join(root, rel), "utf8");
+    else if (/\.(js|mjs|html|css|jsonc|sql|ps1)$/.test(entry.name) || rel === "public/_headers") files[rel] = await readFile(path.join(root, rel), "utf8");
   }
 }
 await walk("src");
@@ -22,6 +22,28 @@ const currentVersion = JSON.parse(files["package.json"]).version;
 const escapedVersion = currentVersion.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const mutations = [
+  ["use unavailable runner context in macOS job defaults", ".github/workflows/ci.yml", /working-directory: \$\{\{ github.workspace \}\}\/cosmic-native\//, "working-directory: ${{ runner.temp }}/cosmic-native/"],
+  ["replace real Safari native file command", "tests/safari/safari-smoke.mjs", /\/value`,\{text:fixture.file\}/, "/value`,{text:''}"],
+  ["remove real Safari full native byte verification", "tests/safari/native-file-contract.mjs", /assert.equal\(actual.sha256,fixture.before.sha256[^\n]+/, ""],
+  ["remove real Safari native sliced byte verification", "tests/safari/native-file-contract.mjs", /assert.deepEqual\(actual.slices,fixture.slices[^\n]+/, ""],
+  ["accept real Safari fallback duration", "tests/safari/native-file-contract.mjs", /Number.isFinite\(actual\)&&actual>=0.5/, "Number.isFinite(actual)&&actual>=0"],
+  ["remove real Safari application preparation duration verification", "tests/safari/native-file-contract.mjs", /assertDuration\(item.duration,fixture.expectedDuration[^\n]+/, ""],
+  ["allow real Safari fixture timestamp mutation", "tests/safari/safari-smoke.mjs", /assert.deepEqual\(after,fixture.before\)/, "void 0"],
+  ["allow ambiguous retry after Safari user declines", "tests/safari/safari-smoke.mjs", /assert.equal\(await count\(\),beforeCancel\+1,'Declining ambiguous retry cannot dispatch'\)/, "void 0"],
+  ["expose native mock controls without token", "tests/e2e/mock-server.mjs", /if\(!nativeAcceptance\|\|u.searchParams.get\('token'\)!==E2E_TOKEN\)/, "if(!nativeAcceptance)"],
+  ["bypass platform browser gates", "scripts/release-verify.mjs", /for\(const gate of browserGates\(process.platform\)\)steps.push\(\['run',gate\]\);/, "void 0;"],
+  ["remove Linux engine matrix", "scripts/browser-platform-policy.mjs", /linux: Object.freeze\(\['test:e2e:core'\]\)/, "linux: Object.freeze([])"],
+  ["remove real Safari from macOS release verification", "scripts/browser-platform-policy.mjs", /, 'test:safari:real'/, ""],
+  ["remove Windows Firefox coverage", "package.json", /--project=chromium --project=firefox\"/, '--project=chromium"'],
+  ["remove macOS mobile WebKit coverage", "package.json", /--project=webkit --project=mobile-safari --project=chrome/, "--project=webkit --project=chrome"],
+  ["remove macOS actual Chrome coverage", "package.json", /--project=webkit --project=mobile-safari --project=chrome/, "--project=webkit --project=mobile-safari"],
+  ["skip native Windows ZIP extraction failures", "scripts/verify-source-package.mjs", /if\(native.status!==0\)throw new Error/, "if(false)throw new Error"],
+  ["allow native Windows timestamp rewriting", "scripts/extract-source-package.ps1", /\$actual.LastWriteTimeUtc -ne \$entry.LastWriteTime.UtcDateTime/, "$false"],
+  ["remove macOS exact archive hash check", ".github/workflows/ci.yml", /if hashlib.sha256\(source.read_bytes\(\)\).hexdigest\(\) != os.environ\['SOURCE_SHA256'\]:/, "if False:"],
+  ["allow macOS native extraction timestamp changes", ".github/workflows/ci.yml", /if tuple\(time.localtime\(target.stat\(\).st_mtime\)\[:6\]\) != entry.date_time:/, "if False:"],
+  ["remove native full-file byte identity", "tests/e2e/native-files.spec.js", /expect\(native.sha256\).toBe\(sha256\(bytes\)\);/, ""],
+  ["remove native sliced byte identity", "tests/e2e/native-files.spec.js", /expect\(native.slices\).toEqual\(ranges.map[^\n]+/, ""],
+  ["allow zero-duration native preparation fallback", "tests/e2e/native-files.spec.js", /toHaveText\(fixture.duration\)/, "toBeVisible()"],
   ["remove HttpOnly", "src/byok.js", /HttpOnly/g, ""],
   ["remove Secure", "src/byok.js", /; Secure/g, ""],
   ["weaken SameSite", "src/byok.js", /SameSite=Strict/g, "SameSite=None"],
@@ -145,8 +167,8 @@ const mutations = [
   ["remove authenticated E2E server health probe", "tests/e2e/mock-server.mjs", /if\(u\.pathname==='\/__cosmic_e2e_health'\)\{[^\n]+\}\n/g, ""],
   ["blindly approve or ignore fsevents lock anomaly", "package.json", /"fsevents": false/g, '"fsevents": true'],
   ["let source packaging bypass full release verification", "scripts/package-source.mjs", /\['scripts\/release-verify\.mjs','--release-package'\]/g, "['scripts/deps-lock-verify.mjs']"],
-  ["drop integration from release verification", "scripts/release-verify.mjs", /  \['run','test:integration'\],\n/g, ""],
-  ["drop branded browsers from Windows release verification", "scripts/release-verify.mjs", /if\(process\.platform==='win32'\)steps\.push\(\['run','test:e2e:branded'\]\);/g, "if(false)steps.push(['run','test:e2e:branded']);"],
+  ["drop integration from release verification", "scripts/release-verify.mjs", /  \['run','test:integration'\],?\r?\n/g, ""],
+  ["drop branded browsers from Windows release verification", "scripts/browser-platform-policy.mjs", /, 'test:e2e:branded'/, ""],
   ["allow pre-dispatch checkpoint storage failure to continue", "public/js/retry-policy.js", /"checkpoint_persist_before_dispatch_failed",/g, ""],
   ["allow post-dispatch checkpoint storage failure to continue", "public/js/retry-policy.js", /"checkpoint_persist_after_dispatch_failed",/g, ""],
   ["leave completed transcript downloads in memory after Clear queue", "public/js/app.js", /;state\.downloads=\[\];renderDownloads\(\);renderQueue\(\);setProgress\(0,'Ready','Queue and in-memory transcript downloads cleared\. Saved checkpoints remain available for safe resume\.'\)/g, ";renderQueue();setProgress(0,'Ready','Queue cleared.')"],
@@ -249,7 +271,7 @@ const mutations = [
   ["remove fixture ffprobe provisioning from CI", ".github/workflows/ci.yml", /name: Provision audio fixture toolchain/g, "name: Removed MP3 fixture toolchain"],
   ["remove resolve-lock full validation from CI", ".github/workflows/ci.yml", /      - name: Full dependency-free adversarial gate\n        run: npm run validate\n/, ""],
   ["remove Linux full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,180}?run: npm run test:worker)/, ""],
-  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,260}?run: npm run browsers:install:webkit)/, ""],
+  ["remove macOS full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,260}?run: node scripts\/playwright-invoke.mjs install webkit chrome)/, ""],
   ["remove Windows full validation from CI", ".github/workflows/ci.yml", /(?:      - run: npm run validate|        run: npm run validate)\n(?=[\s\S]{0,260}?run: npm run browsers:install:branded)/, ""],
   ["remove explicit redirect status rejection -> redirect errors", "src/openai.js", /if \(response\.status >= 300 && response\.status <= 399\) \{\n\s*throw new Error\("Unexpected OpenAI redirect blocked after dispatch\."\);\n\s*\}/, ""],
   ["drop foreign harness Request header normalization -> integration normalizes foreign harness Request before MSW", "tests/integration/worker.test.js", /\s*init\.headers\.forEach\(\(value,name\)=>headers\.append\(name,value\)\);/, ""],
@@ -280,11 +302,11 @@ const mutations = [
   ["stop E2E from awaiting successful secure-key session response -> E2E secure key creation proves explicit button semantics and successful session response", "tests/e2e/app.spec.js", /await keySessionResponse;/, "void keySessionResponse;"],
   ["expose BYOK cookie to document -> E2E proves BYOK cookie secrecy and transmission without BrowserContext metadata", "tests/e2e/app.spec.js", /expect\(stores\.docCookie\)\.not\.toContain\('__Host-cosmic_byok'\);/, "expect(typeof stores.docCookie).toBe('string');"],
   ["drop runtime BYOK cookie transmission proof -> E2E proves BYOK cookie secrecy and transmission without BrowserContext metadata", "tests/e2e/app.spec.js", /expect\(sessionStatusHeaders\.cookie\?\?''\)\.toContain\('__Host-cosmic_byok='\);/, "expect(typeof sessionStatusHeaders).toBe('object');"],
-  ["downgrade real Safari mock origin to HTTP -> real Safari smoke uses HTTPS mock origin and explicit insecure-cert test capability", "tests/safari/safari-smoke.mjs", /https:\/\/127\.0\.0\.1:\$\{port\}/, "http://127.0.0.1:${port}"],
+  ["downgrade real Safari mock origin to HTTP -> real Safari smoke uses HTTPS mock origin and explicit insecure-cert test capability", "tests/safari/safari-smoke.mjs", /https:\/\/(?:localhost|127\.0\.0\.1):\$\{port\}/, "http://localhost:${port}"],
   ["restore real Safari Node certificate verification for ephemeral test cert -> real Safari smoke uses HTTPS mock origin and explicit insecure-cert test capability", "tests/safari/safari-smoke.mjs", /process\.env\.NODE_TLS_REJECT_UNAUTHORIZED='0'; \/\/ CTW_REAL_SAFARI_LOCALHOST_TLS_ONLY/, "process.env.NODE_TLS_REJECT_UNAUTHORIZED='1'; // CTW_REAL_SAFARI_LOCALHOST_TLS_ONLY"],
   ["disable real Safari insecure-cert session capability -> real Safari smoke uses HTTPS mock origin and explicit insecure-cert test capability", "tests/safari/safari-smoke.mjs", /acceptInsecureCerts:true/, "acceptInsecureCerts:false"],
   ["move Windows fresh extraction back to OS TEMP -> Windows fresh-extraction release verification stays isolated on the release drive", "scripts/verify-source-package.mjs", /const packageTempParent=process\.platform==='win32'\?path\.dirname\(root\):os\.tmpdir\(\);/, "const packageTempParent=os.tmpdir();"],
-  ["remove Firefox secure-key stress from Windows release verification -> Windows release stress-tests the repaired Firefox secure-key pointer path", "scripts/release-verify.mjs", /if\(process\.platform==='win32'\)steps\.push\(\['run','test:e2e:firefox-key-stress'\]\);/, "void 0;"],
+  ["remove Firefox secure-key stress from Windows release verification -> Windows release stress-tests the repaired Firefox secure-key pointer path", "scripts/browser-platform-policy.mjs", /, 'test:e2e:firefox-key-stress'/, ""],
   ["weaken Firefox secure-key stress from ten passes to one -> Windows release stress-tests the repaired Firefox secure-key pointer path", "package.json", /--repeat-each=10 --workers=1/, "--repeat-each=1 --workers=1"],
   ["re-resolve dependencies inside Windows release after lock review -> Windows release verifies dependency freshness without rewriting the reviewed graph", "RELEASE-WINDOWS.ps1", /  & npm run deps:check; Require-Success 'npm run deps:check'/, "  & npm run deps:latest; Require-Success 'npm run deps:latest'"],
   ["remove fail-closed dependency freshness check from Windows release -> Windows release verifies dependency freshness without rewriting the reviewed graph", "RELEASE-WINDOWS.ps1", /  & npm run deps:check; Require-Success 'npm run deps:check'/, "  Write-Host 'dependency freshness check removed'"],

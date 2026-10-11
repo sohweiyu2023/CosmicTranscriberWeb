@@ -20,6 +20,8 @@
     "test:integration": "npm run build && vitest run tests/integration --config vitest.integration.config.js",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:core": "npm run build && playwright test --project=chromium --project=firefox --project=webkit --project=mobile-safari",
+    "test:e2e:windows": "npm run build && playwright test --project=chromium --project=firefox",
+    "test:e2e:macos": "npm run build && playwright test --project=webkit --project=mobile-safari --project=chrome",
     "test:e2e:branded": "npm run build && playwright test --project=chrome --project=edge",
     "test:e2e:firefox-key-stress": "npm run build && node scripts/playwright-invoke.mjs test --project=firefox --grep \"secure key setup, native controls, queue, mocked transcript and downloads\" --repeat-each=10 --workers=1",
     "test:e2e:webkit": "npm run build && playwright test --project=webkit",

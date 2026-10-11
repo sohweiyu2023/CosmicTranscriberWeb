@@ -1,22 +1,22 @@
-# Testing Guide — Cosmic Transcriber Web 1.1.1
+# Testing Guide — Cosmic Transcriber Web 1.2.0
 
 ## Evidence discipline
 
-Never call a release gate PASS unless it actually ran successfully on the named artifact. The editable 1.1.1 candidate is **not release-certified**. During candidate authoring, the dependency-free validator has passed version consistency, syntax/module checks, **214 static/security/release safeguards**, secret scanning, **109 Node/ffprobe functional tests**, and **308/308 mutation safeguards**. These local checks do not substitute for the required Node 26.7.0 dependency-backed Worker, integration, browser, Windows release, macOS real-Safari and fresh-certified-ZIP gates.
+Never call a release gate PASS unless it actually ran successfully on the named artifact. The editable 1.2.0 candidate is **not release-certified**. Historical 1.1.1 receipts listed 214 static safeguards, 109 Node/ffprobe tests and 308 mutations; those counts are historical, not the current source's results. Current run receipts must establish the Node 26.7.0 dependency-backed Worker, integration, browser, Windows release, macOS real-Safari and native fresh-ZIP gates independently.
 
 The 1.0.15 release immediately preceding this candidate completed the full Linux + macOS WebKit/real Safari + Windows branded-browser/full-release + independent certified-ZIP matrix. V1.1 must independently repeat that matrix after resolving the current registry-latest dependency graph; prior 1.0.15 evidence is advisory only.
 
-## Windows first release — preferred one-command path
+## Windows existing-upgrade certification
 
 From the extracted audit-candidate project root in PowerShell 7 run:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\FIRST-DEPLOY-WINDOWS.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
 ```
 
-This is intentionally a **real script process**, not a long interactive paste. It activates the private reviewed Node/npm toolchain, calls the certification-only `RELEASE-WINDOWS.ps1`, and does not enter Access/Cloudflare deployment stages unless that child process really exits 0. A failure exits the guided script 1 and prints `STOPPED — DO NOT CONTINUE TO A LATER STAGE`.
+This certification-only process activates the shipped private toolchain and fails on any required Windows gate. It performs no deployment. Do not use `FIRST-DEPLOY-WINDOWS.ps1` or `deploy:first:*` for the existing staging/production upgrade; the bootstrap route expects release-ready output and can create or replace BYOK secrets.
 
-The script first validates the PowerShell deployment/toolchain scripts, activates the private exact Node 26.7.0/npm 12.0.2 toolchain and enforces public-registry/strict install-script prerequisites, then performs scripts-disabled dependency resolution, lock-wide install-script review/rebuild, clean `npm ci`, browser installation and `npm run package:source`. Normal package creation itself runs complete release verification before ZIP creation and again after fresh extraction. On success the PowerShell script also extracts the certified ZIP into a fresh `deploy\CosmicTranscriberWeb-1.1.1` directory and prints its exact path, so you should not invent or pre-create the deployment path.
+The script validates PowerShell, exact Node 26.7.0/npm 12.0.2 and registry/install policy, checks the reviewed dependency graph, performs clean `npm ci`, installs browsers and packages with `--staging-candidate`. Packaging runs Windows verification before ZIP creation and again after actual .NET extraction. The result stays `releaseReady:false`, `certificationLevel:staging`. CI must also finish Linux and macOS acceptance on the same inputs/artifact. Only then follow [the upgrade runbook](CLOUDFLARE_DEPLOYMENT.md) for staging deployment, live acceptance and final Windows `npm run package:source` without candidate flags on the same accepted source. The local packager does not independently check external CI/live receipts.
 
 ## Individual gates for debugging only
 
@@ -35,7 +35,7 @@ npm run release:verify
 
 `test:integration` builds first and uses Cloudflare `createTestHarness()` against the Wrangler production build/config. The suite starts the harness, resets it between tests, closes it after tests, uses signed test Access JWTs and an MSW JWKS/OpenAI network layer with unhandled requests rejected. The 1.1.1 whole-Worker integration source currently includes 12 scenarios, extending the established Access/BYOK/upstream coverage with registration/account/admin behaviors and D1 migration setup.
 
-`test:e2e:core` covers Chromium, Firefox, WebKit and Mobile Safari emulation. `test:e2e:branded` covers installed Chrome and Edge on Windows. The local web server uses a randomized port and authenticated health probe with no existing-server reuse.
+`test:e2e:core` covers Chromium, Firefox, WebKit and Mobile Safari emulation and remains mandatory on Linux. Windows release verification runs `test:e2e:windows` (Chromium/Firefox), Firefox stress and `test:e2e:branded` (installed Chrome/Edge). macOS runs `test:e2e:macos` (WebKit/mobile emulation/installed Chrome) and `test:safari:real` against an untouched extraction of the exact Windows staging ZIP. See [the prospective platform policy](BROWSER_RELEASE_POLICY.md): the old Windows WebKit failure remains a failure, and none of these changes constitute a new PASS. The local web server uses a randomized port and authenticated health probe with no existing-server reuse.
 
 ## Dependency maintenance
 
@@ -49,7 +49,7 @@ The reviewed npm install-script policy uses exact-version positive approvals and
 
 A release ZIP is built in an isolated staging tree; the editable tree remains `releaseReady:false`. Verification requires:
 
-- canonical ZIP root `CosmicTranscriberWeb-1.1.1/`;
+- canonical ZIP root `CosmicTranscriberWeb-1.2.0/`;
 - UTF-8 filename flag for every entry;
 - exact `tests/fixtures/ID3 Unicode 東京.mp3`;
 - CRC and SHA-256 verification;
@@ -62,11 +62,11 @@ If any release round-trip step fails, the failed release ZIP is deleted.
 
 ## Deployment is also a test boundary
 
-A deployable tree must have `releaseReady:true`, exact certified source-file membership and matching checksums. Only the eight explicitly certified private Access team/AUD, administrator-email and D1 UUID Wrangler fields may differ from certification. Extra source files fail provenance. Each deploy rebuilds and inspects `dist/public` immediately before Wrangler and uses `--strict`.
+A staging-deployable tree must have `releaseReady:false` with `certificationLevel:staging`; production requires `releaseReady:true` with `certificationLevel:release`. Both require exact certified source-file membership, verified lock provenance and matching checksums. Only the eight explicitly certified private Access team/AUD, administrator-email and D1 UUID Wrangler fields may differ from certification. Extra source files fail provenance. Each deploy rebuilds and inspects `dist/public` immediately before Wrangler and uses `--strict`.
 
 ## Safari statement
 
-Playwright WebKit is valuable automated engine coverage but is not branded Safari. A short real macOS Safari acceptance remains a separate final gate.
+Playwright WebKit is automated engine coverage, not branded Safari. Actual SafariDriver must exercise native disk files in all nine formats plus Unicode, byte/slice identity, meaningful preparation duration and mocked workflow safeguards. The authenticated real macOS Safari acceptance checklist remains separate; CI mock coverage cannot pass a live provider or final manual acceptance gate.
 ## Inherited 1.0.15 staging acceptance additions
 
 - Simulate a browser transport abort and verify it is not labeled user cancellation; retry requires explicit billing-risk confirmation.
