@@ -11,7 +11,7 @@ export default defineConfig({
  webServer:{
   command:'node tests/e2e/mock-server.mjs',
   url:`${origin}/__cosmic_e2e_health?token=${e2eToken}`,
-  env:{...process.env,COSMIC_E2E_PORT:String(e2ePort),COSMIC_E2E_TOKEN:e2eToken},
+  env:{...process.env,COSMIC_E2E_PORT:String(e2ePort),COSMIC_E2E_TOKEN:e2eToken,COSMIC_E2E_HTTP2:'1'},
   reuseExistingServer:false,ignoreHTTPSErrors:true,timeout:30000,stdout:'pipe',stderr:'pipe'
  },
  projects:[

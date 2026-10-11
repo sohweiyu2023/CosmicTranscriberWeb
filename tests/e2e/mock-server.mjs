@@ -1,4 +1,4 @@
-import https from 'node:https';
+import {createE2eTlsServer} from './tls-transport.mjs';
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -40,7 +40,7 @@ if(openssl.error||openssl.status!==0){
 }
 const tlsOptions={key:readFileSync(tlsKeyPath),cert:readFileSync(tlsCertPath)};
 rmSync(tlsDir,{recursive:true,force:true});
-const server=https.createServer(tlsOptions,async(req,res)=>{
+const requestHandler=async(req,res)=>{
   const u=new URL(req.url,ORIGIN);
   if(u.pathname==='/__cosmic_e2e_health'){if(u.searchParams.get('token')!==E2E_TOKEN){res.writeHead(403);return res.end('Forbidden')}return json(res,200,{ok:true,product:'cosmic-transcriber-web-e2e',version:'1.2.0'})}
   if(u.pathname==='/__cosmic_e2e_native_control'){
@@ -102,5 +102,11 @@ const server=https.createServer(tlsOptions,async(req,res)=>{
   const f=path.join(root,rel);
   try{const st=await stat(f);if(!st.isFile())throw new Error('not file');const ext=path.extname(f).slice(1);res.writeHead(200,{'Content-Type':ct[ext]||'application/octet-stream','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(await readFile(f))}
   catch{res.writeHead(404,{'Content-Type':'text/plain;charset=utf-8'});res.end('Not found')}
-});
-server.listen(PORT,'127.0.0.1',()=>console.log(`Cosmic E2E mock server ${ORIGIN}`));
+};
+// CTW_E2E_HTTP2_MULTIPLEX: Chromium/Firefox/Edge suites use a single
+// multiplexed TLS connection for the module graph, rather than creating
+// many short-lived Windows TCP sockets. Real SafariDriver retains the
+// original HTTP/1.1 server unless the Playwright-only flag is set.
+const http2Enabled=process.env.COSMIC_E2E_HTTP2==='1';
+const server=createE2eTlsServer(tlsOptions,requestHandler,{multiplex:http2Enabled});
+server.listen(PORT,'127.0.0.1',()=>console.log(`Cosmic E2E mock server ${ORIGIN} (${http2Enabled?'h2+http1':'http1'})`));
