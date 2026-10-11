@@ -152,3 +152,20 @@ test('video/mpeg hint still rejects malformed audio and MPEG video/program conta
     await assert.rejects(()=>validateWholeFile(file,'mpeg'),/signature\/container is invalid/,sample.name);
   }
 });
+
+import {probeOggVorbisDuration} from '../../public/js/ogg-duration.js';
+
+test('Ogg Vorbis duration uses native file granules when browser decoding is unavailable',async()=>{
+  const bytes=new Uint8Array(readFileSync(path.join(fixtureDir,'format.ogg')));
+  const duration=await probeOggVorbisDuration(new File([bytes],'format.ogg',{type:'audio/ogg'}));
+  assert.ok(Number.isFinite(duration)&&Math.abs(duration-1)<0.15,'independent Ogg Vorbis granules must report the actual one-second fixture');
+  const invalid=[
+    bytes.subarray(0,bytes.length-1),
+    concat(Uint8Array.from([0x4a]),bytes),
+    concat(bytes,Uint8Array.from([0x4a])),
+  ];
+  for(const altered of invalid) assert.equal(await probeOggVorbisDuration(new Blob([altered])),null,'invalid terminal Ogg structure must not receive an invented duration');
+  const badCodec=bytes.slice();const id=badCodec.indexOf(118);assert.ok(id>0);badCodec[id]=0;
+  assert.equal(await probeOggVorbisDuration(new Blob([badCodec])),null,'non-Vorbis header must fail closed');
+  assert.equal(await probeOggVorbisDuration(new Blob([Uint8Array.from([79,103,103,83])])),null,'truncated Ogg header must fail closed');
+});

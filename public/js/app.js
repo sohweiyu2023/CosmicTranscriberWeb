@@ -2,6 +2,7 @@ import {APP_VERSION,DEFAULT_PROMPT,MODELS} from './models.js';
 import {hashBlobStreaming,hashText} from './hash.js';
 import {inspectAndChunkMp3,materializeChunk,MP3_CHUNKER_REVISION} from './mp3.js';
 import {FILE_ACCEPT,fileAudioFormat,formatSpec,validateWholeFile,wholeFileInspection} from './audio-formats.js';
+import {probeOggVorbisDuration} from './ogg-duration.js';
 import {checkpointId,loadCheckpoint,saveCheckpoint,settingsIdentity} from './checkpoint.js';
 import {compatibleCheckpoint} from './checkpoint-identity.js';
 import {effectivePaidSettings} from './checkpoint-effective-settings.js';
@@ -116,7 +117,7 @@ async function prepareFile(file,item){
    for(let i=0;i<inspection.chunks.length;i++){const c=inspection.chunks[i];c.sha256=await hashBlobStreaming(materializeChunk(file,c));if(item.status==='inspecting')setProgress(10+((i+1)/inspection.chunks.length)*5,'Inspecting files',`Hashing ${safeDisplayName(file.name)} · prepared Part ${i+1} of ${inspection.chunks.length}…`)}
   }else{
    await validateWholeFile(file,audioFormat);
-   const duration=await probeMediaDuration(file);
+   const duration=await probeMediaDuration(file,audioFormat);
    inspection=wholeFileInspection(file,duration);inspection.chunks[0].sha256=fingerprint;
    inspectionKey=`whole|${audioFormat}|${formatSpec(audioFormat).processingRevision}`;
   }
@@ -157,7 +158,13 @@ async function refreshSession(){
 function settingsForIdentity(s,item){return effectivePaidSettings(s,item.audioFormat)}
 function processingRevision(item){return item.audioFormat==='mp3'?MP3_CHUNKER_REVISION:formatSpec(item.audioFormat).processingRevision}
 function chunkBlob(item,chunk){return item.audioFormat==='mp3'?materializeChunk(item.file,chunk):item.file.slice(chunk.sourceStart,chunk.sourceEnd,formatSpec(item.audioFormat).mime)}
-async function probeMediaDuration(file){return await new Promise(resolve=>{let settled=false;const audio=document.createElement('audio'),url=URL.createObjectURL(file);const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);audio.removeAttribute('src');try{audio.load()}catch{}URL.revokeObjectURL(url);resolve(Number.isFinite(value)&&value>0?value:0.001)};const timer=setTimeout(()=>finish(0.001),4000);audio.preload='metadata';audio.onloadedmetadata=()=>finish(audio.duration);audio.onerror=()=>finish(0.001);audio.src=url})}
+async function probeMediaDuration(file,format){
+ const measured=await new Promise(resolve=>{let settled=false;const audio=document.createElement('audio'),url=URL.createObjectURL(file);const finish=value=>{if(settled)return;settled=true;clearTimeout(timer);audio.removeAttribute('src');try{audio.load()}catch{}URL.revokeObjectURL(url);resolve(Number.isFinite(value)&&value>0?value:0.001)};const timer=setTimeout(()=>finish(0.001),4000);audio.preload='metadata';audio.onloadedmetadata=()=>finish(audio.duration);audio.onerror=()=>finish(0.001);audio.src=url});
+ if(format==='ogg' && measured<=0.001){
+  try{const derived=await probeOggVorbisDuration(file);if(Number.isFinite(derived)&&derived>0)return derived}catch{}
+ }
+ return measured;
+}
 function encodeMetadata(meta){const bytes=new TextEncoder().encode(JSON.stringify(meta));let bin='';for(const b of bytes)bin+=String.fromCharCode(b);return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 function newCheckpoint(item,cpid,sid){return {id:cpid,principalScope:state.principalScope,sourceFingerprint:item.fingerprint,sourceSize:item.file.size,settingsIdentity:sid,audioFormat:item.audioFormat,processingRevision:processingRevision(item),chunks:item.inspection.chunks.map(c=>({index:c.index,sourceStart:c.sourceStart,sourceEnd:c.sourceEnd,bytes:c.bytes,sha256:c.sha256,logicalStart:c.logicalStart,duration:c.duration,prerollDuration:c.prerollDuration,status:'pending',attempts:[]})),results:{},createdAt:nowIso()}}
 // CTW_CANCEL_RACE_REPAIR
@@ -210,7 +217,7 @@ async function ensureInspectionForSettings(item,s){
  if(item.inspectionKey===wanted&&item.inspection&&item.inspection.chunks.every(c=>/^[0-9a-f]{64}$/.test(c.sha256||'')))return;
  item.status='inspecting';renderQueue();
  if(item.audioFormat!=='mp3'){
-  await validateWholeFile(item.file,item.audioFormat);const duration=await probeMediaDuration(item.file);const inspection=wholeFileInspection(item.file,duration);inspection.chunks[0].sha256=item.fingerprint;Object.assign(item,{inspection,inspectionKey:wanted,duration:inspection.duration,chunkCount:1,status:'ready',error:null});renderQueue();return
+  await validateWholeFile(item.file,item.audioFormat);const duration=await probeMediaDuration(item.file,item.audioFormat);const inspection=wholeFileInspection(item.file,duration);inspection.chunks[0].sha256=item.fingerprint;Object.assign(item,{inspection,inspectionKey:wanted,duration:inspection.duration,chunkCount:1,status:'ready',error:null});renderQueue();return
  }
  const inspection=await inspectAndChunkMp3(item.file,{targetBytes:s.chunkMb*1_000_000,maxMinutes:s.maxMinutes,diarize:s.diarize,onProgress:p=>setProgress(Math.min(8,p*8),'Preparing chunks',`${safeDisplayName(item.file.name)} · validating frame boundaries…`)});for(let i=0;i<inspection.chunks.length;i++){const c=inspection.chunks[i];c.sha256=await hashBlobStreaming(materializeChunk(item.file,c));setProgress(8+((i+1)/inspection.chunks.length)*2,'Preparing chunks',`${safeDisplayName(item.file.name)} · hashing Part ${i+1} of ${inspection.chunks.length}…`)}Object.assign(item,{inspection,inspectionKey:wanted,duration:inspection.duration,chunkCount:inspection.chunks.length,status:'ready',error:null});renderQueue()
 }
