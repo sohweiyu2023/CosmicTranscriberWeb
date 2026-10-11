@@ -1,0 +1,28 @@
+{
+  "product": "Cosmic Transcriber Web",
+  "version": "1.2.0",
+  "generatedAt": "2026-10-11T04:13:27.770Z",
+  "releaseReady": false,
+  "certificationLevel": "audit",
+  "dependencyLock": {
+    "status": "present-unverified",
+    "sha256": "0be12a4cb1e23a7e856fed47492f766af0bf71198a2335292b207f0a3aa99aa3",
+    "registry": null
+  },
+  "unicodeFixture": "tests/fixtures/ID3 Unicode 東京.mp3",
+  "archiveEncoding": "UTF-8 filenames (general-purpose bit 11 set for every entry)",
+  "wranglerReleaseFingerprint": "b800753a194f4396016da6072f11c9901d155ed240cbc0edb933afec507f0477",
+  "wranglerMutableAfterRelease": [
+    "env.staging.vars.ACCESS_TEAM_DOMAIN",
+    "env.staging.vars.ACCESS_AUDIENCE",
+    "env.staging.vars.ADMIN_EMAILS",
+    "env.staging.d1_databases.USER_DB.database_id",
+    "env.production.vars.ACCESS_TEAM_DOMAIN",
+    "env.production.vars.ACCESS_AUDIENCE",
+    "env.production.vars.ADMIN_EMAILS",
+    "env.production.d1_databases.USER_DB.database_id"
+  ],
+  "notes": [
+    "This source package is an audit candidate and is blocked from deployment."
+  ]
+}

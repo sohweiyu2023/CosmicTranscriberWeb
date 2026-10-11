@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Cosmic Transcriber Web</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to transcription controls</a>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="logo" aria-hidden="true">✦</div>
+      <div><div class="brand">COSMIC TRANSCRIBER <span class="web-badge">WEB</span></div><div class="subtitle">Long-form OpenAI speech-to-text studio</div></div>
+    </div>
+    <div class="top-actions">
+      <span id="appStatus" class="pill neutral" role="status">Checking session…</span>
+      <button id="themeBtn" class="ghost" type="button" aria-label="Switch theme">Cosmic Paper</button>
+      <button id="aboutBtn" class="ghost" type="button">About</button>
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+    <section class="notice" aria-label="Browser lifecycle notice">
+      <strong>Keep this tab open while transcribing.</strong>
+      V1 checkpoints completed work locally, but active OpenAI calls do not continue after the browser is closed.
+    </section>
+
+    <section class="key-card card" aria-labelledby="keyHeading">
+      <div>
+        <p class="eyebrow">MODE B · YOUR OPENAI ACCOUNT</p>
+        <h1 id="keyHeading">Your API key, your usage</h1>
+        <p>The site owner does not provide OpenAI credits. Your key is sent once to the authenticated Worker, encrypted into a short-lived HttpOnly cookie, and is not retained in browser storage.</p>
+      </div>
+      <div class="key-actions">
+        <div><span class="label">API key</span><span id="keyStatus" class="key-state">Not configured</span></div>
+        <button id="configureKeyBtn" class="secondary" type="button">Configure API key</button>
+        <button id="testKeyBtn" class="ghost" type="button" disabled>Test transcription access</button>
+        <button id="forgetKeyBtn" class="danger-ghost" type="button" disabled>Forget API key</button>
+      </div>
+    </section>
+
+    <section id="accountCard" class="account-card card" aria-labelledby="accountHeading">
+      <div>
+        <p class="eyebrow">COSMIC ACCOUNT</p>
+        <h2 id="accountHeading">Access status</h2>
+        <p id="accountMessage" class="muted">Checking Cosmic registration…</p>
+      </div>
+      <div class="account-meta">
+        <span class="label">Signed in</span><strong id="accountEmail">—</strong>
+        <span class="label">Cosmic status</span><span id="accountState" class="mini-state ready">Checking</span>
+      </div>
+    </section>
+
+    <section id="adminCard" class="admin-card card" aria-labelledby="adminHeading" hidden>
+      <div class="section-head">
+        <div><p class="eyebrow">ADMIN</p><h2 id="adminHeading">Users & usage</h2></div>
+        <div class="inline-actions"><button id="adminRefreshBtn" class="ghost" type="button">Refresh</button></div>
+      </div>
+      <div class="admin-controls">
+        <label>Registration
+          <select id="registrationModeSelect">
+            <option value="open">Open — new users active immediately</option>
+            <option value="approval">Approval — new users pending</option>
+            <option value="closed">Closed — existing users only</option>
+          </select>
+        </label>
+        <p class="fineprint">Cloudflare Access remains the authentication layer. This setting controls Cosmic registration after Access login.</p>
+      </div>
+      <div id="adminStats" class="admin-stat-grid" aria-live="polite"></div>
+      <div class="admin-users-head"><h3>Model usage</h3><span class="muted">Aggregate operational counters only</span></div>
+      <div id="adminModels" class="admin-model-list muted">No transcription usage yet.</div>
+      <div class="admin-users-head"><h3>Users</h3><span id="adminUsersNote" class="muted"></span></div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Email</th><th>Status</th><th>Last seen</th><th>Jobs</th><th>Chunks</th><th>Audio</th><th>Action</th></tr></thead>
+          <tbody id="adminUsersBody"></tbody>
+        </table>
+      </div>
+      <div id="adminError" class="error-text" role="alert"></div>
+    </section>
+
+    <div class="workspace">
+      <section class="card queue-card" aria-labelledby="queueHeading">
+        <div class="section-head">
+          <div><p class="eyebrow">AUDIO QUEUE</p><h2 id="queueHeading">Files</h2></div>
+          <div class="inline-actions"><button id="addFilesBtn" class="secondary" type="button">+ Files</button><button id="clearQueueBtn" class="ghost" type="button">Clear</button></div>
+        </div>
+        <input id="fileInput" type="file" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.flac,.ogg" multiple hidden>
+        <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-describedby="dropHint">
+          <div class="drop-icon" aria-hidden="true">⇩</div>
+          <strong>Drop audio files here</strong>
+          <span id="dropHint">or choose Files · MP3, MP4, MPEG, MPGA, M4A, WAV, WebM, FLAC or OGG</span>
+        </div>
+        <div id="queueEmpty" class="empty-state">No audio files queued.</div>
+        <ol id="queueList" class="queue-list" aria-live="polite"></ol>
+      </section>
+
+      <section class="card settings-card" aria-labelledby="settingsHeading">
+        <div class="section-head"><div><p class="eyebrow">TRANSCRIPTION</p><h2 id="settingsHeading">Settings</h2></div><span id="costEstimate" class="price">Estimated $0.00</span></div>
+        <div class="form-grid">
+          <label class="full">Model
+            <select id="modelSelect"></select>
+            <small id="modelHelp"></small>
+          </label>
+          <label>Language hints <input id="languageInput" type="text" maxlength="128" placeholder="e.g. en, zh"></label>
+          <label>Chunk size <span id="chunkLabel" class="value-label">20 MB</span><input id="chunkRange" type="range" min="5" max="24" value="20"></label>
+          <label>Max chunk time <span id="durationLabel" class="value-label">5 min</span><input id="durationRange" type="range" min="3" max="5" value="5"></label>
+          <label>Safe retry count <select id="retrySelect"><option value="0">0 — safest</option><option value="1">1 — explicit 429 only</option><option value="2">2 — explicit 429 only</option><option value="3">3 — explicit 429 only</option></select></label>
+          <label class="full">Keywords / glossary <textarea id="keywordsInput" rows="3" maxlength="8000" placeholder="One keyword or name per line"></textarea><small>Used only by models that officially support keyword guidance.</small></label>
+          <label class="full">Prompt / context <textarea id="promptInput" rows="5" maxlength="12000"></textarea><small>Prompt and keyword text auto-save locally in this browser profile with your other non-secret settings. Avoid sensitive context on shared devices, or clear this site's browser data afterward.</small></label>
+          <label class="check"><input id="previousContext" type="checkbox" checked><span>Use previous chunk context when supported</span></label>
+          <label class="check"><input id="includeTimestamps" type="checkbox" checked><span>Include chunk/segment timestamps</span></label>
+          <label class="check"><input id="exportTxt" type="checkbox" checked><span>Prepare TXT download</span></label>
+          <label class="check"><input id="exportMd" type="checkbox" checked><span>Prepare Markdown download</span></label>
+          <label class="check"><input id="mergeFiles" type="checkbox"><span>Prepare combined transcript</span></label>
+          <label class="check"><input id="continueOnError" type="checkbox" checked><span>Continue to next file after a failure</span></label>
+        </div>
+      </section>
+    </div>
+
+    <section class="card run-card" aria-labelledby="runHeading">
+      <div class="section-head">
+        <div><p class="eyebrow">RUN</p><h2 id="runHeading">Transcription</h2></div>
+        <div class="inline-actions"><button id="rerunCompletedBtn" class="secondary" type="button" disabled>Run completed again</button><button id="cancelBtn" class="danger-ghost" type="button" disabled>Cancel</button><button id="startBtn" class="primary" type="button" disabled>Start transcription</button></div>
+      </div>
+      <div class="progress-layout">
+        <div class="progress-main"><div class="progress-row"><span id="progressTitle">Ready</span><span id="progressPercent">0%</span></div><progress id="progressBar" max="100" value="0"></progress><p id="progressDetail" class="muted" role="status" aria-live="polite">Add audio files and configure your API key.</p></div>
+        <div class="stat-grid"><div><span class="stat-label">Files</span><strong id="fileCountStat">0</strong></div><div><span class="stat-label">Duration</span><strong id="durationStat">0:00</strong></div><div><span class="stat-label">Completed</span><strong id="completedStat">0</strong></div></div>
+      </div>
+      <div id="downloads" class="downloads" hidden><h3>Downloads</h3><div id="downloadButtons" class="download-buttons"></div></div>
+    </section>
+
+    <section class="privacy-line">Audio path in V1: <strong>browser → Cloudflare Worker → OpenAI → Cloudflare Worker → browser</strong>. Cosmic Transcriber Web does not intentionally persist source audio server-side.</section>
+  </main>
+
+  <footer>Cosmic Transcriber Web <span id="versionText">v1.2.0</span> · Desktop behavioral baseline 1.0.27 · <button id="diagnosticsBtn" class="link-button" type="button">Download detailed diagnostics</button></footer>
+
+  <dialog id="keyDialog" aria-labelledby="keyDialogTitle">
+    <form id="keyForm" method="dialog" class="dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">SECURE BYOK SESSION</p><h2 id="keyDialogTitle">Configure OpenAI API key</h2></div><button id="closeKeyBtn" class="icon-btn" type="button" aria-label="Close">×</button></div>
+      <p>Use a dedicated OpenAI Project and a restricted key where practical. ChatGPT subscription billing and OpenAI API billing are separate.</p>
+      <label>OpenAI API key <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" maxlength="512" required></label>
+      <p class="fineprint">The plaintext key is posted once over HTTPS to this site's Worker. It is never stored in localStorage, sessionStorage or IndexedDB, and the encrypted credential cookie is HttpOnly.</p>
+      <div id="keyDialogError" class="error-text" role="alert"></div>
+      <div class="dialog-actions"><button class="ghost" value="cancel" type="button" id="cancelKeyBtn">Cancel</button><button id="createKeyBtn" class="primary" type="button">Create secure session</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle">
+    <div class="dialog-card"><div class="dialog-head"><h2 id="confirmTitle">Confirm retry</h2></div><p id="confirmText"></p><div class="dialog-actions"><button id="confirmNo" class="ghost" type="button">Do not retry</button><button id="confirmYes" class="danger" type="button">Retry and accept possible charge</button></div></div>
+  </dialog>
+
+  <dialog id="aboutDialog" aria-labelledby="aboutTitle"><div class="dialog-card"><div class="dialog-head"><div><p class="eyebrow">ABOUT</p><h2 id="aboutTitle">Cosmic Transcriber Web</h2></div><button id="closeAboutBtn" class="icon-btn" aria-label="Close">×</button></div><p>A browser/Cloudflare adaptation of Cosmic Transcriber for Windows, preserving the desktop application's correctness-first approach while using browser-native downloads and local checkpoints.</p><p><strong>Web version 1.2.0</strong><br>Behavioral baseline: Cosmic Transcriber for Windows 1.0.27.</p><p class="fineprint">Release certification includes Playwright WebKit coverage plus a real SafariDriver smoke test on macOS; live staging acceptance remains required before production promotion.</p></div></dialog>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
