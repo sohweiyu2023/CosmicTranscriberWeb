@@ -185,9 +185,11 @@ async function selectNative(fixture){
       // Picker unavailability is reported but never turns a failure into PASS.
       try{
         const pickerPrevious=await evaluate(()=>window.__ctwSafariAcceptance.selections.length);
-        // SafariDriver can keep a WebDriver click pending until the native
-        // panel closes; submit the real panel while that click is outstanding.
-        const clickSettled=click('#fileInput').then(()=>null,error=>String(error?.message||error));
+        // SafariDriver rejects direct WebDriver clicks on <input type=file>.
+        // Click the application's genuine '+ Files' button; its trusted
+        // handler opens the original native file chooser. The click may
+        // remain pending until the modal closes, so overlap osascript.
+        const clickSettled=click('#addFilesBtn').then(()=>null,error=>String(error?.message||error));
         await sleep(500);
         submitRealMacOSFilePanel(fixture.file);
         const clickError=await clickSettled;
