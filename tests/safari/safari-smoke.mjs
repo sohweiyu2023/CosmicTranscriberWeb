@@ -128,9 +128,30 @@ async function downloadPayload(selector){
 async function diagnostics(){return JSON.parse((await downloadPayload('#diagnosticsBtn')).text)}
 async function selectNative(fixture){
   const beforeCount=await count(),previous=await evaluate(()=>window.__ctwSafariAcceptance.selections.length);
-  // Apple documents native file upload through WebDriver Element Send Keys.
-  // A rejected command fails this test; there is deliberately no buffer fallback.
-  await command(`/element/${await element('#fileInput')}/value`,{text:fixture.file});
+  // SafariDriver's file-input sendKeys must use the same interactable native
+  // control available to a user, not an offscreen hidden input. The app leaves
+  // this input hidden; expose it ONLY during genuine WebDriver file selection.
+  // This never modifies input.files, constructs File/Blob or injects test bytes.
+  const visibility=await evaluate(()=>{
+    const input=document.querySelector('#fileInput');
+    if(!input||input.type!=='file'||!input.hidden)throw new Error('Expected original hidden native file input');
+    input.hidden=false;
+    Object.assign(input.style,{display:'block',position:'fixed',top:'16px',left:'16px',width:'260px',height:'44px',zIndex:'2147483647'});
+    const bounds=input.getBoundingClientRect();
+    return {type:input.type,multiple:input.multiple,width:bounds.width,height:bounds.height,visible:getComputedStyle(input).visibility==='visible'&&getComputedStyle(input).display!=='none'};
+  });
+  assert.equal(visibility.visible,true,'Real Safari native file picker must be rendered');
+  assert.ok(visibility.width>0&&visibility.height>0,'Real Safari native file input has nonzero dimensions');
+  try{
+    // Only SafariDriver Element Send Keys is permitted; there is deliberately
+    // no constructed-file fallback if Safari cannot access disk-backed bytes.
+    await command(`/element/${await element('#fileInput')}/value`,{text:fixture.file});
+  }finally{
+    await evaluate(()=>{
+      const input=document.querySelector('#fileInput');
+      input.hidden=true;input.removeAttribute('style');
+    });
+  }
   const observed=await until(`${fixture.name} native bytes and media metadata`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,previous),value=>value?.done);
   const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
   assertNativeObservation(observed.result,fixture);
