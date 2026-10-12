@@ -555,7 +555,7 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: reviewed-release-inputs
-          path: .
+          path: reviewed-inputs
       - name: Run bounded nine-format paid staging acceptance, no ambiguous retries
         run: node scripts/staging-live-acceptance.mjs
       - name: Preserve sanitized nine-format paid receipts
