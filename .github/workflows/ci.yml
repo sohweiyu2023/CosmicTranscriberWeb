@@ -99,6 +99,9 @@ jobs:
     name: macOS native ZIP + WebKit/mobile + Chrome + real Safari
     needs: windows-release
     runs-on: macos-26
+    outputs:
+      native_safari_outcome: ${{ steps.real-safari.outcome }}
+      safari_staging_waiver_outcome: ${{ steps.safari-staging-waiver.outcome }}
     defaults:
       run:
         working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}
@@ -169,7 +172,13 @@ jobs:
       - name: Enable SafariDriver
         run: sudo /usr/bin/safaridriver --enable
       - name: Real Safari native files and mocked transcription acceptance
+        id: real-safari
+        continue-on-error: true
         run: npm run test:safari:real
+      - name: Verify narrowly documented SafariDriver 26.6.2 failure for STAGING ONLY
+        id: safari-staging-waiver
+        if: ${{ steps.real-safari.outcome == 'failure' }}
+        run: node scripts/safari-staging-waiver.mjs test-results/safari-native-acceptance.json
       - name: Preserve macOS browser evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -308,21 +317,32 @@ jobs:
           retention-days: 7
 
   all-green:
-    name: ALL RELEASE GATES GREEN - staging candidate only
+    name: STAGING PREFLIGHT - reviewed Safari26 automation exception, no final release
     needs: [linux-full, macos-safari, windows-release]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require every platform gate to have succeeded
+      - name: Require every platform staging gate; only known Safari26 exception permitted
         shell: bash
         env:
           LINUX_RESULT: ${{ needs.linux-full.result }}
           MACOS_RESULT: ${{ needs.macos-safari.result }}
           WINDOWS_RESULT: ${{ needs.windows-release.result }}
+          NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}
+          SAFARI_WAIVER_OUTCOME: ${{ needs.macos-safari.outputs.safari_staging_waiver_outcome }}
         run: |
+          set -euo pipefail
           test "$LINUX_RESULT" = success
           test "$MACOS_RESULT" = success
           test "$WINDOWS_RESULT" = success
+          if test "$NATIVE_SAFARI_OUTCOME" = success; then
+            echo 'Native Safari real-file acceptance PASS.'
+          else
+            test "$NATIVE_SAFARI_OUTCOME" = failure
+            test "$SAFARI_WAIVER_OUTCOME" = success
+            echo 'STAGING ONLY: known SafariDriver 26.6.2 native-file failure waived; real Safari NOT CERTIFIED.'
+            echo 'Safari26 automation waiver active; final release still blocked. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ needs.windows-release.outputs.artifact-name }}
@@ -359,11 +379,26 @@ jobs:
           if lock.get('status') != 'verified' or lock.get('sha256') != lock_digest:
               raise SystemExit('Staging candidate dependency-lock provenance is invalid.')
           print(f'{digest}  {source}')
-          print('ALL RELEASE GATES GREEN - staging candidate only; live staging acceptance and production approval remain pending.')
+          print('STAGING PREFLIGHT PASS only; native Safari may be explicitly waived and final release remains NOT CERTIFIED.')
           PY
 
+  strict-real-safari-release:
+    name: STRICT genuine Safari certification - required for FINAL release
+    needs: [macos-safari]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse final release without genuine native Safari PASS
+        shell: bash
+        env:
+          MACOS_RESULT: ${{ needs.macos-safari.result }}
+          NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}
+        run: |
+          test "$MACOS_RESULT" = success
+          test "$NATIVE_SAFARI_OUTCOME" = success
+
   deploy-staging-certified:
-    name: Deploy exact all-green 1.2 ZIP to STAGING ONLY
+    name: Deploy exact staging-verified 1.2 ZIP to STAGING ONLY
     needs: [all-green, windows-release]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.all-green.result == 'success' }}
     runs-on: ubuntu-latest
