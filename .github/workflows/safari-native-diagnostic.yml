@@ -70,3 +70,28 @@ jobs:
             test-results/safari-disk-access-probe.json
           if-no-files-found: warn
           retention-days: 7
+
+  ordinary-safari-gui-diagnostic:
+    name: Real ordinary Safari file picker (no WebDriver; diagnostic only)
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Verify exact checked-in disk fixture and test sources
+        run: sha256sum -c SHA256SUMS.txt
+      - name: Use ordinary Safari and genuine native macOS file chooser (not WebDriver)
+        run: node tests/safari/ordinary-native-gui-probe.mjs
+      - name: Preserve ordinary Safari native picker evidence even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ordinary-safari-native-picker-diagnostic
+          path: |
+            test-results/ordinary-safari-native-picker.json
+            test-results/ordinary-safari-native-picker.png
+          if-no-files-found: warn
+          retention-days: 7
