@@ -2,21 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http2 from 'node:http2';
 import https from 'node:https';
-import {spawnSync} from 'node:child_process';
-import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import path from 'node:path';
 import {createE2eTlsServer} from '../e2e/tls-transport.mjs';
+import {createEphemeralLocalhostTlsOptions} from '../e2e/ephemeral-tls.mjs';
 
-function ephemeralTls(){
-  const dir=mkdtempSync(path.join(tmpdir(),'ctw-h2-test-'));
-  try{
-    const key=path.join(dir,'key.pem'),cert=path.join(dir,'cert.pem');
-    const generated=spawnSync('openssl',['req','-x509','-newkey','rsa:2048','-sha256','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],{timeout:15000,windowsHide:true});
-    assert.equal(generated.status,0,'Local E2E TLS transport requires OpenSSL (also required by the real mock server)');
-    return {key:readFileSync(key),cert:readFileSync(cert)};
-  }finally{rmSync(dir,{recursive:true,force:true})}
-}
+// Use the SAME temporary localhost certificate generator as the real HTTPS
+// mock server. The former duplicate Windows spawnSync OpenSSL setup could
+// time out during concurrent CI tests despite the real server generator
+// passing. Keep genuine certificate generation, ALPN and HTTP/1.1 tests.
+const ephemeralTls=()=>createEphemeralLocalhostTlsOptions();
 async function listen(server){await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});return server.address().port}
 function getHttp1(port,resource){return new Promise((resolve,reject)=>{
   https.get({hostname:'127.0.0.1',port,path:resource,rejectUnauthorized:false,ALPNProtocols:['http/1.1']},res=>{
@@ -29,7 +22,7 @@ function getHttp2(client,resource){return new Promise((resolve,reject)=>{
   stream.on('end',()=>resolve({status,body:Buffer.concat(data).toString()}));stream.on('error',reject);stream.end();
 })}
 
-test('Playwright TLS transport multiplexes concurrent modules over one HTTP/2 session and keeps HTTP/1.1 fallback', {timeout:20000},async()=>{
+test('Playwright TLS transport multiplexes concurrent modules over one HTTP/2 session and keeps HTTP/1.1 fallback', {timeout:60000},async()=>{
   const seen=[];
   const server=createE2eTlsServer(ephemeralTls(),(req,res)=>{
     seen.push(req.url);
@@ -51,7 +44,7 @@ test('Playwright TLS transport multiplexes concurrent modules over one HTTP/2 se
   }finally{client.close();await new Promise(resolve=>server.close(resolve))}
 });
 
-test('Real SafariDriver transport remains native HTTPS/1.1 when HTTP/2 is not enabled', {timeout:20000},async()=>{
+test('Real SafariDriver transport remains native HTTPS/1.1 when HTTP/2 is not enabled', {timeout:60000},async()=>{
   const server=createE2eTlsServer(ephemeralTls(),(req,res)=>{res.writeHead(200);res.end('original-safari-http1')});
   const port=await listen(server);
   try{const result=await getHttp1(port,'/native-file');assert.equal(result.status,200);assert.equal(result.body,'original-safari-http1')}

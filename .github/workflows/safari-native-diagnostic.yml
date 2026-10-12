@@ -61,6 +61,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: independent-real-safari-diagnostics
-          path: test-results/safari-native-acceptance.json
+          path: |
+            test-results/safari-native-acceptance.json
+            test-results/safari-native-picker-panel.png
           if-no-files-found: warn
           retention-days: 7

@@ -50,6 +50,10 @@ test('native Safari fallback focuses the real app button and never queues a moda
   assert.doesNotMatch(source,/clickSettled=click\('#addFilesBtn'\)/);
   assert.doesNotMatch(source,/input\.files\s*=/,'The native picker must not inject a FileList');
   assert.match(source,/assertNativeObservation\(observed\.result,fixture\)/);
+  assert.match(source,/osPanelAfterFailure:captureStuckNativeOpenPanel\(\)/,
+    'A stalled genuine native file picker must retain macOS panel evidence, never silently pass');
+  assert.match(source,/safari-native-picker-panel\.png/,
+    'The native picker screenshot is captured only after an actual modal failure');
   const app=readFileSync(new URL('../../public/js/app.js',import.meta.url),'utf8');
   const html=readFileSync(new URL('../../public/index.html',import.meta.url),'utf8');
   assert.match(app,/UI\.addFilesBtn\.addEventListener\('click',\(\)=>UI\.fileInput\.click\(\)\)/,'OS Space must activate the original app-owned file picker');

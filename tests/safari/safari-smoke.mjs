@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
+import {mkdirSync} from 'node:fs';
 import {randomBytes,randomInt} from 'node:crypto';
 import {chmod,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -159,6 +160,32 @@ async function downloadPayload(selector){
   assert.equal(entry.error,undefined,entry.error);return entry;
 }
 async function diagnostics(){return JSON.parse((await downloadPayload('#diagnosticsBtn')).text)}
+// Capture the REAL macOS Open-panel state ONLY after a genuine picker attempt
+// has already failed. Neither screenshot nor accessibility inspection changes
+// File objects, injects audio bytes, dispatches paid work, or decides PASS.
+// SafariDriver itself may be blocked while the OS modal is still visible.
+function captureStuckNativeOpenPanel(){
+  const evidence={capturedAfterFailure:true};
+  const screenshot=path.join(root,'test-results','safari-native-picker-panel.png');
+  try{
+    mkdirSync(path.dirname(screenshot),{recursive:true});
+    const image=spawnSync('/usr/sbin/screencapture',['-x',screenshot],{encoding:'utf8',timeout:10000,windowsHide:true});
+    evidence.screenshot=image.status===0?'safari-native-picker-panel.png':`unavailable: ${String(image.error?.message||image.stderr||image.status).slice(0,180)}`;
+  }catch(error){evidence.screenshot=`unavailable: ${String(error?.message||error).slice(0,180)}`;}
+  const inspectScript=`tell application "System Events"
+  set frontApp to first application process whose frontmost is true
+  set frontName to name of frontApp
+  try
+    set windowNames to name of every window of frontApp
+    return frontName & ": " & (windowNames as text)
+  on error errMsg
+    return frontName & ": AX window inspection unavailable: " & errMsg
+  end try
+end tell`;
+  const ax=spawnSync('/usr/bin/osascript',['-e',inspectScript],{encoding:'utf8',timeout:6000,windowsHide:true});
+  evidence.frontWindowSummary=(ax.status===0?ax.stdout:ax.error?.message||ax.stderr||'AX unavailable').trim().slice(0,350);
+  return evidence;
+}
 async function selectNative(fixture){
   const beforeCount=await count(),previous=await evaluate(()=>window.__ctwSafariAcceptance.selections.length);
   // SafariDriver's file-input sendKeys must use the same interactable native
@@ -228,7 +255,10 @@ async function selectNative(fixture){
         const pickerObserved=await until(`${fixture.name} native open-panel bytes`,()=>evaluate(index=>window.__ctwSafariAcceptance.selections[index]||null,pickerPrevious),entry=>entry?.done,{timeout:12000});
         nativePickerDiagnostic={mode:'native-macOS-keyboard-open-panel',frontApp:pickerFrontApp||'unknown',result:pickerObserved.result?.error||'read-completed'};
         if(!pickerObserved.result?.error){observed=pickerObserved;nativeSelectionMode='native-macOS-keyboard-open-panel'}
-      }catch(error){nativePickerDiagnostic={...(nativePickerDiagnostic||{mode:'native-macOS-keyboard-open-panel'}),error:String(error?.message||error).slice(0,300)}}
+      }catch(error){
+        nativePickerDiagnostic={...(nativePickerDiagnostic||{mode:'native-macOS-keyboard-open-panel'}),error:String(error?.message||error).slice(0,300),
+          osPanelAfterFailure:captureStuckNativeOpenPanel()};
+      }
     }
   const evidence={name:fixture.name,format:fixture.format,expectedDuration:fixture.expectedDuration,expectedDispatch:fixture.expectedDispatch,before:fixture.before,native:observed.result,nativeSelectionMode,nativePickerDiagnostic,nativePreparationStatus:'RUNNING',workflowStatus:'NOT RUN'};report.fixtures.push(evidence);
   assertNativeObservation(observed.result,fixture);
