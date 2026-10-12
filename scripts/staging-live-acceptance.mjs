@@ -8,20 +8,21 @@ let accessCookie='',authHeader='',byokCookie='';
 const safeError=e=>String(e?.code||'unknown').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64);
 function configureAccess(s){
  s=String(s||'').trim();assert.ok(s.length>0&&s.length<=16384,'Missing secure staging identity');
- if(/^Authorization:\s*Bearer\s+\S+$/i.test(s))authHeader=s.replace(/^Authorization:\s*/i,'');
- else if(/^Bearer\s+\S+$/i.test(s))authHeader=s;
+ if(/^Authorization:\s*Bearer\s+\S+$/i.test(s))authHeader=s.replace(/^Authorization:\s*Bearer\s+/i,'');
+ else if(/^Bearer\s+\S+$/i.test(s))authHeader=s.replace(/^Bearer\s+/i,'');
  else if(/^Cookie:\s*CF_Authorization=[A-Za-z0-9._-]+$/i.test(s))accessCookie=s.replace(/^Cookie:\s*/i,'');
  else if(/^CF_Authorization=[A-Za-z0-9._-]+$/.test(s))accessCookie=s;
  else if(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(s))accessCookie='CF_Authorization='+s;
  else throw Error('Staging Access credential format not supported');
+ if(authHeader&&!/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authHeader)){const e=Error('Access bearer credential must be a JWT');e.code='access_token_not_jwt';throw e}
 }
 async function api(route,method='GET',body=null,headers={}){
  assert.ok(route.startsWith('/api/'),'Only staging API permitted');
  const h={...headers};const cookie=[accessCookie,byokCookie].filter(Boolean).join('; ');
- if(cookie)h.Cookie=cookie;if(authHeader)h.Authorization=authHeader;
+ if(cookie)h.Cookie=cookie;if(authHeader)h['Cf-Access-Token']=authHeader;
  if(method!=='GET')h.Origin=ORIGIN;
  const response=await fetch(ORIGIN+route,{method,body,headers:h,redirect:'manual',signal:AbortSignal.timeout(90000)});
- assert.ok(response.status<300||response.status>=400,'Cloudflare Access redirect not authenticated');
+ if(response.status>=300&&response.status<400){const e=Error('Cloudflare Access returned a redirect');e.code='access_redirect';e.httpStatus=response.status;throw e}
  assert.ok(response.headers.get('content-type')?.includes('application/json'),'Staging Worker JSON required');
  const t=await response.text();assert.ok(t.length<=131072,'Staging response size invalid');
  let j;try{j=JSON.parse(t)}catch{throw Error('Invalid Worker JSON')}
@@ -50,8 +51,11 @@ async function run(){
  }
  report.phase='access-status';
  const status=(await api('/api/session/status')).j;
+ report.phase='access-version';
  assert.equal(status.version,'1.2.0','Wrong staging Worker version');
+ report.phase='access-account';
  assert.ok(status.account?.isAdmin===true||status.account?.status==='active','Cloudflare Access account not active');
+ report.phase='access-principal';
  assert.ok(typeof status.principalScope==='string'&&status.principalScope.length>5,'Verified identity missing');
  report.access='PASS';
  if(status.account?.isAdmin){report.phase='admin-overview';assert.equal((await api('/api/admin/overview')).j.ok,true);report.adminReadOnly='PASS'}
