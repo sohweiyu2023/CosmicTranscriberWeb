@@ -18,6 +18,7 @@ const report={schema:'cosmic-ordinary-safari-file-probe-1',role:'diagnostic-only
 const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 async function identity(file){const [bytes,s]=await Promise.all([readFile(file),stat(file,{bigint:true})]);return {size:bytes.length,sha256:hash(bytes),sliceSha256:hash(bytes.subarray(0,Math.min(1024,bytes.length))),mtimeNs:String(s.mtimeNs)}}
 const run=(cmd,args,timeout=16000)=>spawnSync(cmd,args,{encoding:'utf8',timeout,windowsHide:true});
+const stageScreenshot=label=>`   do shell script ${JSON.stringify('/usr/sbin/screencapture -x '+JSON.stringify(path.join(root,'test-results',`ordinary-safari-stage-${label}.png`)))}`;
 const scriptForPicker=(dir,name)=>`tell application "Safari" to activate
  delay 1.0
  tell application "System Events"
@@ -27,15 +28,21 @@ const scriptForPicker=(dir,name)=>`tell application "Safari" to activate
    -- real native picker, with no WebDriver automation glass pane.
    key code 49
    delay 1.25
+${stageScreenshot('after-space')}
    keystroke "g" using {command down, shift down}
    delay 0.7
+${stageScreenshot('after-go-to-folder')}
    keystroke ${JSON.stringify(dir)}
    delay 0.8
    key code 36
    delay 1.1
+${stageScreenshot('after-directory')}
    keystroke ${JSON.stringify(name)}
    delay 0.7
+${stageScreenshot('before-open')}
    key code 36
+   delay 1.0
+${stageScreenshot('after-open')}
  end tell
  return frontApp`;
 function page(token){return `<!doctype html><meta charset="utf-8"><title>Genuine ordinary Safari file picker</title>
@@ -82,8 +89,8 @@ try{
  const url=`http://127.0.0.1:${server.address().port}/`;report.origin='loopback-http-test-only';
  const browser=run('/usr/bin/open',['-a','Safari',url],10000);assert.equal(browser.status,0,'Could not open ordinary Safari');
  await delay(3500);
- const picker=run('/usr/bin/osascript',['-e',scriptForPicker(folder,'format.mp3')],16000);
- report.guiPicker={status:picker.status,stdout:(picker.stdout||'').trim().slice(0,200),stderr:(picker.error?.message||picker.stderr||'').trim().slice(0,300)};
+ const picker=run('/usr/bin/osascript',['-e',scriptForPicker(folder,'format.mp3')],30000);
+ report.guiPicker={stages:['after-space','after-go-to-folder','after-directory','before-open','after-open'],status:picker.status,stdout:(picker.stdout||'').trim().slice(0,200),stderr:(picker.error?.message||picker.stderr||'').trim().slice(0,300)};
  if(picker.status!==0)throw Error('Ordinary Safari OS picker keys failed: '+report.guiPicker.stderr);
  const native=await Promise.race([answer,delay(23000).then(()=>({error:'Real native picker callback timeout'}))]);
  report.native=native;report.status=isOrdinarySafariGenuineFile(native,expected)?'PASS':'FAIL';

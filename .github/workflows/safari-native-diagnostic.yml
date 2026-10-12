@@ -93,5 +93,6 @@ jobs:
           path: |
             test-results/ordinary-safari-native-picker.json
             test-results/ordinary-safari-native-picker.png
+            test-results/ordinary-safari-stage-*.png
           if-no-files-found: warn
           retention-days: 7
