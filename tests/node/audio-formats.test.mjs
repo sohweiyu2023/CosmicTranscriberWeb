@@ -165,7 +165,11 @@ test('Ogg Vorbis duration uses native file granules when browser decoding is una
     concat(bytes,Uint8Array.from([0x4a])),
   ];
   for(const altered of invalid) assert.equal(await probeOggVorbisDuration(new Blob([altered])),null,'invalid terminal Ogg structure must not receive an invented duration');
-  const badCodec=bytes.slice();const id=badCodec.indexOf(118);assert.ok(id>0);badCodec[id]=0;
+  // The serial/CRC fields vary across ffmpeg runs and can contain 0x76 before
+  // the actual 'vorbis' identifier. Corrupt the verified identification packet.
+  const codecOffset=27+bytes[26]+1;
+  assert.equal(Buffer.from(bytes.subarray(codecOffset,codecOffset+6)).toString('ascii'),'vorbis','test fixture must identify Vorbis at the first Ogg page payload');
+  const badCodec=bytes.slice();badCodec[codecOffset]=0;
   assert.equal(await probeOggVorbisDuration(new Blob([badCodec])),null,'non-Vorbis header must fail closed');
   assert.equal(await probeOggVorbisDuration(new Blob([Uint8Array.from([79,103,103,83])])),null,'truncated Ogg header must fail closed');
 });
