@@ -54,6 +54,9 @@ jobs:
           command -v ffprobe
       - name: Enable installed macOS SafariDriver
         run: sudo /usr/bin/safaridriver --enable
+      - name: Probe genuine SafariDriver disk-file access across macOS locations (diagnostic only)
+        continue-on-error: true
+        run: node tests/safari/disk-access-probe.mjs
       - name: Run genuine SafariDriver disk-file/format/BYOK diagnostic
         run: npm run test:safari:real
       - name: Preserve native Safari evidence even on failure
@@ -64,5 +67,6 @@ jobs:
           path: |
             test-results/safari-native-acceptance.json
             test-results/safari-native-picker-panel.png
+            test-results/safari-disk-access-probe.json
           if-no-files-found: warn
           retention-days: 7
