@@ -326,6 +326,8 @@ const mutations = [
   ["stop CI from sharing one reviewed lock across platforms", ".github/workflows/ci.yml", /name: reviewed-release-inputs/g, "name: per-platform-inputs"],
   ["remove real SafariDriver execution from macOS CI", ".github/workflows/ci.yml", /        run: npm run test:safari:real\n/g, ""],
   ["allow final CI release gate without macOS Safari", ".github/workflows/ci.yml", /needs: \[linux-full, macos-safari, windows-release\]/g, "needs: [linux-full, windows-release]"],
+  ["remove real paid staging gate -> real nine-format paid staging acceptance is same-run staging-only with a nine-call ceiling", ".github/workflows/ci.yml", /staging-live-nine-formats:/, "staging-no-paid-gate:"],
+  ["remove paid-call limit -> real nine-format paid staging acceptance is same-run staging-only with a nine-call ceiling", "scripts/staging-live-acceptance.mjs", /report\.attempted<9/, "report.attempted<99"],
   ["allow Safari26 staging exception for any browser version -> CI limits Safari26 exception to staging and requires strict native Safari for final release", "scripts/safari-staging-waiver.mjs", /report\?\.capabilities\?\.browserVersion,'26\.6\.2'/, "report?.capabilities?.browserVersion,'27.0'"],
   ["allow staging despite unknown Safari failure -> CI limits Safari26 exception to staging and requires strict native Safari for final release", ".github/workflows/ci.yml", /test "\$NATIVE_SAFARI_OUTCOME" = failure/, "test \"$NATIVE_SAFARI_OUTCOME\" != skipped"],
   ["disable genuine Safari hard final-release gate -> CI limits Safari26 exception to staging and requires strict native Safari for final release", ".github/workflows/ci.yml", /strict-real-safari-release:/, "strict-real-safari-waived:"],

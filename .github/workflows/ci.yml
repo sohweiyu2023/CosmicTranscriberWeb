@@ -534,3 +534,35 @@ jobs:
           test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
           test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
           echo 'STAGING deployment only. Production remains blocked until live staging acceptance passes.'
+
+  staging-live-nine-formats:
+    name: Actual authenticated STAGING paid nine-format acceptance
+    needs: [deploy-staging-certified]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.deploy-staging-certified.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+      STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+      COSMIC_PAID_STAGING_MODE: exact-nine-real-requests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reviewed-release-inputs
+          path: .
+      - name: Run bounded nine-format paid staging acceptance, no ambiguous retries
+        run: node scripts/staging-live-acceptance.mjs
+      - name: Preserve sanitized nine-format paid receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: staging-live-nine-format-evidence
+          path: test-results/staging-live-acceptance.json
+          if-no-files-found: warn
+          retention-days: 7
