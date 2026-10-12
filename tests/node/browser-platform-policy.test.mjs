@@ -25,3 +25,12 @@ test('unknown platforms fail closed and callers cannot mutate required gates', (
   copy.length = 0;
   assert.equal(browserGates('win32').length, 3);
 });
+
+test('Playwright E2E listener avoids default Windows ephemeral port range even in fresh ZIP revalidation', async () => {
+  const config=await readFile(new URL('../../playwright.config.js',import.meta.url),'utf8');
+  assert.match(config,/process\.env\.COSMIC_E2E_PORT \|\|= String\(randomInt\(20000,45000\)\)/);
+  assert.doesNotMatch(config,/randomInt\(20000,60000\)/);
+  assert.ok(45000<49152,'Random port upper limit must precede the observed Windows dynamic TCP start');
+  assert.match(config,/reuseExistingServer:false/);
+  assert.match(config,/const origin=`https:\/\/localhost:\$\{e2ePort\}`;/);
+});

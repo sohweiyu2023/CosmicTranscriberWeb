@@ -1,7 +1,9 @@
 import {defineConfig,devices} from '@playwright/test';
 import {randomBytes,randomInt} from 'node:crypto';
 
-const e2ePort=Number(process.env.COSMIC_E2E_PORT ||= String(randomInt(20000,60000)));
+// Windows hosted runners reserve dynamic TCP ports starting at 49152 (observed by netsh in CI).
+// Keep random HTTPS E2E listener allocation below this range, including fresh-ZIP reruns.
+const e2ePort=Number(process.env.COSMIC_E2E_PORT ||= String(randomInt(20000,45000)));
 const e2eToken=process.env.COSMIC_E2E_TOKEN ||= randomBytes(16).toString('hex');
 const origin=`https://localhost:${e2ePort}`;
 
