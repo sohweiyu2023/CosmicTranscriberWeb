@@ -18,33 +18,52 @@ const report={schema:'cosmic-ordinary-safari-file-probe-1',role:'diagnostic-only
 const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 async function identity(file){const [bytes,s]=await Promise.all([readFile(file),stat(file,{bigint:true})]);return {size:bytes.length,sha256:hash(bytes),sliceSha256:hash(bytes.subarray(0,Math.min(1024,bytes.length))),mtimeNs:String(s.mtimeNs)}}
 const run=(cmd,args,timeout=16000)=>spawnSync(cmd,args,{encoding:'utf8',timeout,windowsHide:true});
-const stageScreenshot=label=>`   do shell script ${JSON.stringify('/usr/sbin/screencapture -x '+JSON.stringify(path.join(root,'test-results',`ordinary-safari-stage-${label}.png`)))}`;
-const scriptForPicker=(dir,name)=>`tell application "Safari" to activate
- delay 1.0
- tell application "System Events"
-   set frontApp to name of first application process whose frontmost is true
-   if frontApp is not "Safari" then error "Real Safari is not frontmost"
-   -- A trusted Space keypress on a focused ordinary file input invokes the
-   -- real native picker, with no WebDriver automation glass pane.
-   key code 49
-   delay 1.25
-${stageScreenshot('after-space')}
-   keystroke "g" using {command down, shift down}
-   delay 0.7
-${stageScreenshot('after-go-to-folder')}
-   keystroke ${JSON.stringify(dir)}
-   delay 0.8
-   key code 36
-   delay 1.1
-${stageScreenshot('after-directory')}
-   keystroke ${JSON.stringify(name)}
-   delay 0.7
-${stageScreenshot('before-open')}
-   key code 36
-   delay 1.0
-${stageScreenshot('after-open')}
- end tell
- return frontApp`;
+// Apple documents System Events UI scripting of the actual process. The
+// macOS runner screenshots show the visible Choose File control at {210,100}
+// in its 1024x768 ordinary Safari window. A native OS click (NOT WebDriver or
+// JS .click()) is used, followed by real Open-panel key navigation. Captures
+// are obtained by Node after each action, so no AppleScript child process can
+// silently omit an intermediate GUI screenshot.
+function pickerSteps(dir,name){return [
+  {name:'native-mouse-click',pause:1400,script:`tell application "Safari" to activate
+  delay 0.35
+  tell application "System Events" to tell process "Safari"
+    set frontmost to true
+    click at {210, 100}
+  end tell`},
+  {name:'go-to-folder-sheet',pause:1000,script:`tell application "System Events"
+    keystroke "g" using {command down, shift down}
+  end tell`},
+  {name:'native-parent-directory',pause:1400,script:`tell application "System Events"
+    keystroke ${JSON.stringify(dir)}
+    delay 0.6
+    key code 36
+  end tell`},
+  {name:'native-filename',pause:900,script:`tell application "System Events"
+    keystroke ${JSON.stringify(name)}
+  end tell`},
+  {name:'native-open',pause:1100,script:`tell application "System Events"
+    key code 36
+  end tell`},
+]}
+async function performOrdinaryNativePicker(dir,name){
+  const stages=[];
+  for(const stage of pickerSteps(dir,name)){
+    const command=run('/usr/bin/osascript',['-e',stage.script],12000);
+    await delay(stage.pause);
+    const dest=path.join(root,'test-results',`ordinary-safari-stage-${stage.name}.png`);
+    const screen=run('/usr/sbin/screencapture',['-x',dest],8000);
+    let imageBytes=0;try{imageBytes=(await stat(dest)).size}catch{}
+    const recorded={stage:stage.name,osascriptStatus:command.status,
+      osascriptError:String(command.error?.message||command.stderr||'').trim().slice(0,250),
+      screenshotStatus:screen.status,screenshotBytes:imageBytes};
+    stages.push(recorded);
+    // Failure is never reported as success or hidden by later file-dialog keys.
+    if(command.status!==0||screen.status!==0||imageBytes<1000)
+      throw Object.assign(new Error(`Native picker stage ${stage.name} failed`),{stages});
+  }
+  return stages;
+}
 function page(token){return `<!doctype html><meta charset="utf-8"><title>Genuine ordinary Safari file picker</title>
 <label for="diskFile">Choose genuine disk MP3</label>
 <input id="diskFile" type="file" accept=".mp3,audio/mpeg" autofocus>
@@ -89,9 +108,8 @@ try{
  const url=`http://127.0.0.1:${server.address().port}/`;report.origin='loopback-http-test-only';
  const browser=run('/usr/bin/open',['-a','Safari',url],10000);assert.equal(browser.status,0,'Could not open ordinary Safari');
  await delay(3500);
- const picker=run('/usr/bin/osascript',['-e',scriptForPicker(folder,'format.mp3')],30000);
- report.guiPicker={stages:['after-space','after-go-to-folder','after-directory','before-open','after-open'],status:picker.status,stdout:(picker.stdout||'').trim().slice(0,200),stderr:(picker.error?.message||picker.stderr||'').trim().slice(0,300)};
- if(picker.status!==0)throw Error('Ordinary Safari OS picker keys failed: '+report.guiPicker.stderr);
+ report.guiPicker={method:'genuine-System-Events-mouse-click-and-open-panel',stages:[]};
+ try{report.guiPicker.stages=await performOrdinaryNativePicker(folder,'format.mp3')}catch(error){if(error?.stages)report.guiPicker.stages=error.stages;throw error}
  const native=await Promise.race([answer,delay(23000).then(()=>({error:'Real native picker callback timeout'}))]);
  report.native=native;report.status=isOrdinarySafariGenuineFile(native,expected)?'PASS':'FAIL';
  if(report.status!=='PASS')throw Error('Ordinary Safari native File identity/bytes/duration not verified: '+String(native.error||'mismatch'));
