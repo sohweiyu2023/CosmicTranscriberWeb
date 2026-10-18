@@ -11,7 +11,6 @@ test('Safari diagnostics export bounded counters, never raw log contents or path
     const sensitive='https://private.example/?token=SECRET_ABC /Users/someone/private.mp3';
     const log=path.join(dir,'driver.log');
     await writeFile(log,`sandbox denied file read NotReadableError ${sensitive}\n`);
-    await symlink(log,path.join(dir,'log-symlink'));
     const result=await summarizeSafariDiagnostics({directory:dir,since:Date.now()-60000});
     assert.equal(result.available,true);
     assert.equal(result.filesFound,1);
@@ -31,4 +30,31 @@ test('Missing Safari diagnostic directory is nonfatal and does not pass certific
   const result=await summarizeSafariDiagnostics({directory:path.join(tmpdir(),'cosmic-does-not-exist-98765')});
   assert.equal(result.available,false);
   assert.equal(result.errorCode,'ENOENT');
+});
+
+// Keep privacy assertions above unconditional. Only the separate symlink
+// exclusion coverage is unsupported when Windows denies symlink creation.
+test('Safari diagnostics never follow file symlinks',async(t)=>{
+  const tempRoot=path.resolve(tmpdir());
+  const dir=await mkdtemp(path.join(tempRoot,'cosmic-safari-symlink-'));
+  assert.ok(path.resolve(dir).startsWith(tempRoot+path.sep));
+  try{
+    const log=path.join(dir,'driver.log');
+    await writeFile(log,'NotReadableError sandbox denied file read\n');
+    try{
+      await symlink(log,path.join(dir,'log-symlink'));
+    }catch(error){
+      if(process.platform==='win32'&&['EPERM','EACCES'].includes(error?.code)){
+        t.skip(`Windows symlink privilege unavailable (${error.code}); symlink exclusion NOT RUN`);
+        return;
+      }
+      throw error;
+    }
+    const result=await summarizeSafariDiagnostics({directory:dir,since:Date.now()-60000});
+    assert.equal(result.available,true);
+    assert.equal(result.filesFound,1);
+    assert.equal(result.filesInspected,1);
+    assert.equal(result.counts.notReadableError,1);
+    assert.ok(!JSON.stringify(result).includes(dir));
+  }finally{await rm(dir,{recursive:true,force:true})}
 });

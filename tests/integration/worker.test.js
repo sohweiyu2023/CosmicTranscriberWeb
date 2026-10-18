@@ -446,3 +446,32 @@ describe('whole-Worker integration against real Wrangler entry/config',()=>{
     expect(await r.text()).not.toContain(key);
   });
 });
+
+it('normalizes fully verified MPEG Layer III without mutating bytes or permitting duplicate dispatch',async()=>{
+  let hits=0,seen=null;
+  network.use(http.post('https://api.openai.com/v1/audio/transcriptions',async({request})=>{
+    hits++;const form=await request.clone().formData();const file=form.get('file');
+    seen={name:file.name,type:file.type,bytes:new Uint8Array(await file.arrayBuffer())};
+    return HttpResponse.json({text:'MPEG accepted'});
+  }));
+  const cookie=await createSession('mpeg-layer3-filename-key'),audio=twoFrameMpeg();
+  const identity=metadata({audioFormat:'mpeg',jobId:'job-mpeg-layer3',fileId:'file-mpeg-layer3',attemptId:'attempt-mpeg-layer3'});
+  const accepted=await transcribe(cookie,identity,{'Content-Type':'audio/mpeg'},audio);
+  expect(accepted.status,await accepted.clone().text()).toBe(200);
+  expect(seen.name).toBe('audio.mp3');expect(seen.type).toBe('audio/mpeg');expect(seen.bytes).toEqual(audio);
+  expect(identity.audioFormat).toBe('mpeg');expect(hits).toBe(1);
+  const duplicate=await transcribe(cookie,identity,{'Content-Type':'audio/mpeg'},audio);
+  expect(duplicate.status).toBe(409);expect(hits).toBe(1);
+});
+
+it('retains MPEG Layer II filename instead of falsely relabeling it as MP3',async()=>{
+  let name=null;
+  network.use(http.post('https://api.openai.com/v1/audio/transcriptions',async({request})=>{
+    const form=await request.clone().formData();name=form.get('file').name;return HttpResponse.json({text:'Layer II preserved'});
+  }));
+  const cookie=await createSession('mpeg-layer2-filename-key');
+  const audio=new Uint8Array(834);audio.set([0xff,0xfd,0x80,0x64]);audio.set([0xff,0xfd,0x80,0x64],417);
+  const identity=metadata({audioFormat:'mpeg',jobId:'job-mpeg-layer2',fileId:'file-mpeg-layer2',attemptId:'attempt-mpeg-layer2'});
+  const accepted=await transcribe(cookie,identity,{'Content-Type':'audio/mpeg'},audio);
+  expect(accepted.status,await accepted.clone().text()).toBe(200);expect(name).toBe('audio.mpeg');
+});

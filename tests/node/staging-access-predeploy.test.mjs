@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 const root=path.resolve(fileURLToPath(new URL('../..',import.meta.url)));
 const fixture=`
 import {writeFileSync} from 'node:fs';
@@ -44,7 +44,7 @@ for(const [name,scenario,credential,expected,overrides={}] of cases){
    const mock=path.join(dir,'mock.mjs');const log=path.join(dir,'calls.json');
    writeFileSync(mock,fixture);writeFileSync(log,'[]');
    const env={...process.env,GITHUB_EVENT_NAME:'push',GITHUB_RUN_ATTEMPT:'1',GITHUB_RUN_ID:'38224473067',GITHUB_REF:'refs/heads/ci/v1.2.0-production-readiness',GITHUB_SHA:'2a52e2020cfe159454697b3077a0c5ed21d6a14b',STAGING_CF_AUTHORIZATION:credential,PREFLIGHT_SCENARIO:scenario,PREFLIGHT_LOG_PATH:log,...overrides};
-   const child=spawnSync(process.execPath,['--import',mock,path.join(root,'scripts/staging-access-preflight.mjs')],{cwd:root,env,encoding:'utf8',timeout:20000});
+   const child=spawnSync(process.execPath,['--import',pathToFileURL(mock).href,path.join(root,'scripts/staging-access-preflight.mjs')],{cwd:root,env,encoding:'utf8',timeout:20000});
    assert.equal(child.error,undefined,String(child.error));
    assert.equal(child.status,expected,child.stderr);
    const calls=JSON.parse(readFileSync(log,'utf8'));

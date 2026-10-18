@@ -6,7 +6,7 @@
   "certificationLevel": "audit",
   "dependencyLock": {
     "status": "present-unverified",
-    "sha256": "0be12a4cb1e23a7e856fed47492f766af0bf71198a2335292b207f0a3aa99aa3",
+    "sha256": "93dd9e49bcbec84b21472d0a11f5af36f6e9b9075012d55ab67c538c268c7732",
     "registry": null
   },
   "unicodeFixture": "tests/fixtures/ID3 Unicode 東京.mp3",

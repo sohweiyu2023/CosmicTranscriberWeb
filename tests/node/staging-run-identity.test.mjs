@@ -4,7 +4,7 @@ import {spawnSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,copyFileSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 
 const root=path.resolve(fileURLToPath(new URL('../..',import.meta.url)));
 const fixtureNames=['mp3','flac','mp4','mpeg','mpga','m4a','ogg','webm'].map(ext=>'staging-speech.'+ext).concat('staging-wav-diarization.wav');
@@ -24,7 +24,7 @@ for(const [label,overrides] of [
    copyFileSync(path.join(root,'SHA256SUMS.txt'),path.join(dir,'SHA256SUMS.txt'));
    for(const name of fixtureNames)copyFileSync(path.join(root,'tests','fixtures',name),path.join(dir,'tests','fixtures',name));
    const log=path.join(dir,'calls.json');
-   const child=spawnSync(process.execPath,['--import',path.join(root,'tests','node','staging-live-mock-fetch.mjs'),path.join(root,'scripts','staging-live-acceptance.mjs')],{
+   const child=spawnSync(process.execPath,['--import',pathToFileURL(path.join(root,'tests','node','staging-live-mock-fetch.mjs')).href,path.join(root,'scripts','staging-live-acceptance.mjs')],{
     cwd:dir,encoding:'utf8',timeout:30000,
     env:{...process.env,
      COSMIC_MOCK_SCENARIO:'all-pass',COSMIC_MOCK_LOG:log,

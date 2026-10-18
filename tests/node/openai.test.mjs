@@ -64,3 +64,28 @@ test('validated MPGA uses the MP3 upstream filename without rewriting audio or j
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()),audio);
   assert.equal(metadata.audioFormat,'mpga');assert.equal(requestId,`ctw-${metadata.attemptId}`);
 });
+
+test('server-verified MPEG Layer III uses an MP3 upstream label with unchanged bytes and identity',async()=>{
+  const frame=new Uint8Array(417);frame.set([0xff,0xfb,0x90,0x64]);
+  const audio=new Uint8Array(834);audio.set(frame);audio.set(frame,417);
+  const metadata=Object.freeze({...meta('gpt-4o-mini-transcribe','mpeg'),declaredBytes:audio.length});
+  let file,requestId;
+  await dispatchTranscription({requestBody:body(audio),metadata,verifiedMpegLayer3:true,apiKey:'test-only',fetchImpl:async(url,init)=>{
+    const request=new Request(url,{method:'POST',headers:init.headers,body:await collect(init.body)});
+    file=(await request.formData()).get('file');requestId=init.headers['X-Client-Request-Id'];
+    return new Response('{"text":"ok"}',{status:200});
+  }});
+  assert.equal(file.name,'audio.mp3');assert.equal(file.type,'audio/mpeg');
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()),audio);
+  assert.equal(metadata.audioFormat,'mpeg');assert.equal(requestId,`ctw-${metadata.attemptId}`);
+});
+
+test('untrusted MPEG metadata cannot opt into the server-only Layer III proof',async()=>{
+  let file;
+  const metadata=Object.freeze({...meta('gpt-4o-mini-transcribe','mpeg'),verifiedMpegLayer3:true});
+  await dispatchTranscription({requestBody:body(),metadata,apiKey:'test-only',fetchImpl:async(url,init)=>{
+    const request=new Request(url,{method:'POST',headers:init.headers,body:await collect(init.body)});
+    file=(await request.formData()).get('file');return new Response('{"text":"ok"}',{status:200});
+  }});
+  assert.equal(file.name,'audio.mpeg');assert.equal(metadata.audioFormat,'mpeg');
+});
