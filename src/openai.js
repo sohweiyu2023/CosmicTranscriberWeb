@@ -20,7 +20,7 @@ function formField(name, value) {
   return `Content-Disposition: form-data; name="${name}"\r\n\r\n${String(value)}\r\n`;
 }
 
-function buildMultipartPrefix(boundary, metadata) {
+function buildMultipartPrefix(boundary, metadata, verifiedMpegLayer3 = false) {
   const model = MODELS[metadata.model];
   const parts = [];
   const add = (name, value) => parts.push(`--${boundary}\r\n${formField(name, value)}`);
@@ -39,7 +39,10 @@ function buildMultipartPrefix(boundary, metadata) {
   // III before reserving a billable attempt. Only the upstream file label
   // changes here; original bytes and MPGA metadata/checkpoint identity stay put.
   const audioFormat = metadata.audioFormat || "mp3";
-  const audio = formatSpec(audioFormat === "mpga" ? "mp3" : audioFormat);
+  // MPEG can contain other layers: only a server-computed full-body Layer III
+  // proof may opt it into the compatible MP3 upstream label.
+  const upstreamFormat = audioFormat === "mpga" || (audioFormat === "mpeg" && verifiedMpegLayer3 === true) ? "mp3" : audioFormat;
+  const audio = formatSpec(upstreamFormat);
   parts.push(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.${audio.extension}"\r\nContent-Type: ${audio.mime}\r\n\r\n`);
   return utf8(parts.join(""));
 }
@@ -103,9 +106,9 @@ function classifyOpenAiStatus(status, bodyText = "") {
   return ["openai_error", "OpenAI could not complete the request."];
 }
 
-export async function dispatchTranscription({ requestBody, metadata, apiKey, signal, fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS }) {
+export async function dispatchTranscription({ requestBody, metadata, apiKey, signal, verifiedMpegLayer3 = false, fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS }) {
   const boundary = `ctw-${crypto.randomUUID().replace(/-/g, "")}`;
-  const prefix = buildMultipartPrefix(boundary, metadata);
+  const prefix = buildMultipartPrefix(boundary, metadata, verifiedMpegLayer3);
   const suffix = utf8(`\r\n--${boundary}--\r\n`);
   const { stream } = buildMultipartStream(requestBody, prefix, suffix, metadata.declaredBytes);
   const clientRequestId = `ctw-${metadata.attemptId}`.slice(0, 512);
