@@ -6,6 +6,7 @@ import {chmod,mkdir,mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {isOrdinarySafariGenuineFile} from './ordinary-native-file-contract.mjs';
+import {sanitizeOrdinarySafariReport} from './ordinary-native-report-sanitize.mjs';
 
 // Never start or connect to SafariDriver here. This isolated macOS runner
 // operates an ordinary Safari window and its genuine macOS file chooser.
@@ -55,7 +56,7 @@ async function performOrdinaryNativePicker(dir,name){
     const screen=run('/usr/sbin/screencapture',['-x',dest],8000);
     let imageBytes=0;try{imageBytes=(await stat(dest)).size}catch{}
     const recorded={stage:stage.name,osascriptStatus:command.status,
-      osascriptError:String(command.error?.message||command.stderr||'').trim().slice(0,250),
+      osascriptErrorCode:command.status===0?null:(command.error?.name||'UnclassifiedError'),
       screenshotStatus:screen.status,screenshotBytes:imageBytes};
     stages.push(recorded);
     // Failure is never reported as success or hidden by later file-dialog keys.
@@ -113,14 +114,17 @@ try{
  const native=await Promise.race([answer,delay(23000).then(()=>({error:'Real native picker callback timeout'}))]);
  report.native=native;report.status=isOrdinarySafariGenuineFile(native,expected)?'PASS':'FAIL';
  if(report.status!=='PASS')throw Error('Ordinary Safari native File identity/bytes/duration not verified: '+String(native.error||'mismatch'));
-}catch(error){report.status='FAIL';report.error=String(error?.stack||error).slice(0,1000);
+}catch(error){report.status='FAIL';report.errorCode=error?.name||'UnclassifiedError';
  if(process.platform==='darwin'){
-  try{await mkdir(path.dirname(screenshot),{recursive:true});const shot=run('/usr/sbin/screencapture',['-x',screenshot],8000);report.failureScreenshot=shot.status===0?path.basename(screenshot):String(shot.stderr||shot.error?.message||'unavailable').slice(0,200)}catch(e){report.failureScreenshot=String(e)}
+  try{await mkdir(path.dirname(screenshot),{recursive:true});const shot=run('/usr/sbin/screencapture',['-x',screenshot],8000);report.failureScreenshot=shot.status===0?path.basename(screenshot):null;report.screenshotErrorCode=shot.status===0?null:(shot.error?.name||'UnclassifiedError')}catch(e){report.failureScreenshot=null;report.screenshotErrorCode=e?.name||'UnclassifiedError'}
  }
 }finally{
  if(process.platform==='darwin')run('/usr/bin/osascript',['-e','tell application "Safari" to quit'],9000);
  if(server)await new Promise(resolve=>server.close(resolve));
- if(folder)await rm(folder,{recursive:true,force:true}).catch(e=>{report.cleanupError=String(e)});
- report.finishedAt=new Date().toISOString();await mkdir(path.dirname(output),{recursive:true});await writeFile(output,JSON.stringify(report,null,2)+'\n');console.log(`ORDINARY_SAFARI_NATIVE_FILE_REPORT=${JSON.stringify(report)}`);
+ if(folder)await rm(folder,{recursive:true,force:true}).catch(e=>{report.cleanupErrorCode=e?.name||'UnclassifiedError'});
+ report.finishedAt=new Date().toISOString();
+ const publicReport=sanitizeOrdinarySafariReport(report);
+ await mkdir(path.dirname(output),{recursive:true});await writeFile(output,JSON.stringify(publicReport,null,2)+'\n');
+ console.log(`ORDINARY_SAFARI_NATIVE_FILE_REPORT=${JSON.stringify(publicReport)}`);
  if(report.status!=='PASS')process.exitCode=1;
 }

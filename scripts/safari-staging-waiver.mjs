@@ -4,6 +4,9 @@ import {readFileSync,appendFileSync} from 'node:fs';
 // STAGING ONLY: user-authorized 2026-10-12 known SafariDriver 26.6.2
 // disk File sandbox failure. Never certifies real Safari or production.
 export const SAFARI26_WAIVER_ID='safaridriver-26.6.2-native-disk-not-readable';
+// The staging exception applies to the reviewed fixture bytes, not merely
+// a file with the same name and size. Keep this pinned to SHA256SUMS.txt.
+const REVIEWED_MP3_SHA256='e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55';
 export function verifyNarrowSafari26StagingWaiver(report){
   assert.equal(report?.schema,'cosmic-real-safari-native-acceptance-1');
   assert.equal(report?.status,'FAIL');
@@ -19,7 +22,7 @@ export function verifyNarrowSafari26StagingWaiver(report){
   assert.equal(item.nativePreparationStatus,'FAIL');
   assert.equal(item.workflowStatus,'NOT RUN');
   assert.deepEqual(item.after,item.before,'Original native source SHA256/mtime must remain intact');
-  assert.match(item.before.sha256,/^[a-f0-9]{64}$/);
+  assert.equal(item.before.sha256,REVIEWED_MP3_SHA256,'Only the exact reviewed MP3 SHA-256 can use this staging waiver');
   assert.equal(item.before.size,16941,'Only the exact reviewed MP3 fixture can use this waiver');
   const native=item.native;
   assert.match(native?.error||'',/^NotReadableError: The I\/O read operation failed\./);

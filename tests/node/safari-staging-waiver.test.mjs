@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {verifyNarrowSafari26StagingWaiver,SAFARI26_WAIVER_ID} from '../../scripts/safari-staging-waiver.mjs';
 const makeReport=()=>({
  schema:'cosmic-real-safari-native-acceptance-1',status:'FAIL',platform:'darwin',
@@ -37,4 +39,19 @@ test('staging-only Safari26 waiver denies unexpected browsers, source mutations,
   r=>{r.fixtures.push(r.fixtures[0])},r=>{r.fixtures[0].before.sha256='0'.repeat(64)}
  ];
  for(const mutate of changes){const r=makeReport();mutate(r);assert.throws(()=>verifyNarrowSafari26StagingWaiver(r))}
+});
+
+test('staging-only Safari26 waiver rejects a same-sized substituted disk fixture even when before/after match',()=>{
+ const r=makeReport();
+ const substitutedDigest='0'.repeat(64);
+ r.fixtures[0].before.sha256=substitutedDigest;
+ r.fixtures[0].after.sha256=substitutedDigest;
+ assert.throws(()=>verifyNarrowSafari26StagingWaiver(r),/reviewed MP3 SHA-256/);
+});
+
+test('reviewed Safari26 waiver digest is pinned to the actual bundled MP3 bytes',async()=>{
+ const bytes=await readFile(new URL('../fixtures/format.mp3',import.meta.url));
+ const sha256=createHash('sha256').update(bytes).digest('hex');
+ assert.equal(bytes.length,16941);
+ assert.equal(sha256,makeReport().fixtures[0].before.sha256);
 });

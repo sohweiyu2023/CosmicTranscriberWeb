@@ -19,7 +19,7 @@ function safeZipName(name){
   return n;
 }
 function localHeader(nameBytes,size,crc){const b=Buffer.alloc(30);b.writeUInt32LE(LOCAL_SIG,0);b.writeUInt16LE(20,4);b.writeUInt16LE(UTF8_FLAG,6);b.writeUInt16LE(STORE,8);b.writeUInt16LE(0,10);b.writeUInt16LE(0x21,12);b.writeUInt32LE(crc,14);b.writeUInt32LE(size,18);b.writeUInt32LE(size,22);b.writeUInt16LE(nameBytes.length,26);b.writeUInt16LE(0,28);return b;}
-function centralHeader(nameBytes,size,crc,offset){const b=Buffer.alloc(46);b.writeUInt32LE(CENTRAL_SIG,0);b.writeUInt16LE(0x0314,4);b.writeUInt16LE(20,6);b.writeUInt16LE(UTF8_FLAG,8);b.writeUInt16LE(STORE,10);b.writeUInt16LE(0,12);b.writeUInt16LE(0x21,14);b.writeUInt32LE(crc,16);b.writeUInt32LE(size,20);b.writeUInt32LE(size,24);b.writeUInt16LE(nameBytes.length,28);b.writeUInt16LE(0,30);b.writeUInt16LE(0,32);b.writeUInt16LE(0,34);b.writeUInt16LE(0,36);b.writeUInt32LE(0,38);b.writeUInt32LE(offset,42);return b;}
+function centralHeader(nameBytes,size,crc,offset){const b=Buffer.alloc(46);b.writeUInt32LE(CENTRAL_SIG,0);b.writeUInt16LE(0x0314,4);b.writeUInt16LE(20,6);b.writeUInt16LE(UTF8_FLAG,8);b.writeUInt16LE(STORE,10);b.writeUInt16LE(0,12);b.writeUInt16LE(0x21,14);b.writeUInt32LE(crc,16);b.writeUInt32LE(size,20);b.writeUInt32LE(size,24);b.writeUInt16LE(nameBytes.length,28);b.writeUInt16LE(0,30);b.writeUInt16LE(0,32);b.writeUInt16LE(0,34);b.writeUInt16LE(0,36);b.writeUInt32LE((0o100644<<16)>>>0,38);b.writeUInt32LE(offset,42);return b;}
 
 export async function collectFiles(root,{excludeDirs=new Set(),excludeFiles=new Set()}={}){
   const rows=[];

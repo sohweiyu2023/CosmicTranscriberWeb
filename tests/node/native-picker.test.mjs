@@ -35,35 +35,18 @@ test('native picker cannot run on an unrelated non-macOS platform',()=>{
   assert.throws(()=>submitRealMacOSFilePanel('/Users/Shared/test.mp3'),/genuine macOS/);
 });
 
-test('native Safari fallback focuses the real app button and never queues a modal-blocking WebDriver click',()=>{
+test('strict SafariDriver native-file gate does not attempt unsupported external picker fallback',()=>{
   const source=readFileSync(new URL('../safari/safari-smoke.mjs',import.meta.url),'utf8');
-  assert.match(source,/input\.value='';/,'A stale failed SafariDriver selection must be cleared before selecting the same real path');
-  assert.match(source,/selectionCleared:input\.files\.length===0/);
-  assert.match(source,/waitForRejectedQueue:\(\)=>until/,'Wait for the original application inspection to finish');
-  const helper=readFileSync(new URL('../safari/native-picker.mjs',import.meta.url),'utf8');
-  assert.match(helper,/status:'Needs attention'/,'Do not conceal a failed original native read');
-  assert.match(source,/clickClear:\(\)=>click\('#clearQueueBtn'\)/,'Remove the original failed queue item through the real app control');
-  assert.match(helper,/assert.equal\(await countPaid\(\),beforePaidCount/,'Unreadable selection must not dispatch paid work');
-  assert.ok(source.indexOf('await clearRejectedNativeSelection(')<source.indexOf('submitRealMacOSFilePanel(fixture.file)'),'Clear the failed item before genuine OS selection');
-  assert.match(source,/button\.focus\(\)/);
-  assert.match(source,/submitRealMacOSFilePanel\(fixture\.file\)/);
-  assert.doesNotMatch(source,/clickSettled=click\('#addFilesBtn'\)/);
-  assert.doesNotMatch(source,/input\.files\s*=/,'The native picker must not inject a FileList');
-  assert.match(source,/assertNativeObservation\(observed\.result,fixture\)/);
-  assert.match(source,/osPanelAfterFailure:captureStuckNativeOpenPanel\(\)/,
-    'A stalled genuine native file picker must retain macOS panel evidence, never silently pass');
-  assert.match(source,/safari-native-picker-panel\.png/,
-    'The native picker screenshot is captured only after an actual modal failure');
+  assert.match(source,/\/value`,\{text:fixture\.file\}/,'Only genuine disk-backed WebDriver file selection is allowed');
+  assert.match(source,/assertNativeObservation\(observed\.result,fixture\)/,'Native read failure must fail the strict gate');
+  assert.match(source,/report\.fixtures\.push\(evidence\)/,'Preserve native read failure evidence before asserting');
+  assert.match(source,/mode:'not-attempted'/,'Record why unsupported picker fallback was not attempted');
+  assert.doesNotMatch(source,/submitRealMacOSFilePanel\(fixture\.file\)/,'Do not use AppleScript during SafariDriver');
+  assert.doesNotMatch(source,/clearRejectedNativeSelection\(/,'Do not mutate app queue to conceal failed native selection');
+  assert.doesNotMatch(source,/input\.files\s*=/,'Never inject a synthetic FileList');
   const app=readFileSync(new URL('../../public/js/app.js',import.meta.url),'utf8');
-  const html=readFileSync(new URL('../../public/index.html',import.meta.url),'utf8');
-  assert.match(app,/UI\.addFilesBtn\.addEventListener\('click',\(\)=>UI\.fileInput\.click\(\)\)/,'OS Space must activate the original app-owned file picker');
-  assert.match(app,/item\.status='error';item\.error=safeError\(e\)/,'Real app must mark unreadable native files as errored');
-  assert.match(app,/item\.status==='error'\?'Needs attention'/,'The native failure must have a visible app error state');
-  assert.match(app,/UI\.clearQueueBtn\.addEventListener\('click',/,'Cleanup must use the real app clear queue handler');
-  assert.match(html,/<button id="addFilesBtn"[^>]*type="button"/,'OS Space must target a genuine button');
-  assert.match(html,/<input id="fileInput" type="file"[^>]*hidden>/,'The original disk-backed file input must remain part of the application');
+  assert.match(app,/item\.status='error';item\.error=safeError\(e\)/,'The app must visibly report native-file errors');
 });
-
 
 // Exercise actual fail-closed queue invariants, not merely source-string markers.
 // The genuine macOS picker remains an external mandatory acceptance gate.
