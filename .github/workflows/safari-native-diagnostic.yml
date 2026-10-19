@@ -1,0 +1,98 @@
+name: V1.2 Independent Native Safari Investigation
+
+# Diagnostic only; this workflow is never a release or staging gate.
+# It runs separately from Windows ZIP certification to expose genuine
+# native SafariDriver failures while Windows infrastructure is blocked.
+on:
+  push:
+    branches: [ci/v1.2.0-production-readiness]
+    paths:
+      - '.github/workflows/safari-native-diagnostic.yml'
+      - 'tests/safari/**'
+      - 'tests/e2e/**'
+      - 'public/js/**'
+      - 'scripts/generate-test-fixtures.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-safari-diagnostic:
+    name: Real SafariDriver diagnostics (not release certification)
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Activate pinned npm and check toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+      - name: Verify source identity and install reviewed dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum -c SHA256SUMS.txt
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+      - name: Provision genuine native audio oracle
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+      - name: Enable installed macOS SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Probe genuine SafariDriver disk-file access across macOS locations (diagnostic only)
+        continue-on-error: true
+        run: node tests/safari/disk-access-probe.mjs
+      - name: Run genuine SafariDriver disk-file/format/BYOK diagnostic
+        run: npm run test:safari:real
+      - name: Preserve native Safari evidence even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: independent-real-safari-diagnostics
+          path: |
+            test-results/safari-native-acceptance.json
+            test-results/safari-native-picker-panel.png
+            test-results/safari-disk-access-probe.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  ordinary-safari-gui-diagnostic:
+    name: Real ordinary Safari file picker (no WebDriver; diagnostic only)
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Verify exact checked-in disk fixture and test sources
+        run: sha256sum -c SHA256SUMS.txt
+      - name: Use ordinary Safari and genuine native macOS file chooser (not WebDriver)
+        run: node tests/safari/ordinary-native-gui-probe.mjs
+      - name: Preserve ordinary Safari native picker evidence even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ordinary-safari-native-picker-diagnostic
+          path: |
+            test-results/ordinary-safari-native-picker.json
+            test-results/ordinary-safari-native-picker.png
+            test-results/ordinary-safari-stage-*.png
+          if-no-files-found: warn
+          retention-days: 7

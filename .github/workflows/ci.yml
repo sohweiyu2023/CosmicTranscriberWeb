@@ -1,0 +1,567 @@
+name: Cosmic Transcriber Web Release CI
+
+on:
+  push:
+    branches: [main, 'release/**', 'ci/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-lock:
+    name: Resolve one reviewed dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Activate reviewed npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify tool versions
+        run: |
+          node --version
+          test "$(node --version)" = "v26.7.0"
+          test "$(npm --version)" = "12.0.2"
+      - name: Refresh all direct dependencies to registry latest and resolve one graph
+        run: node scripts/deps-latest.mjs
+      - name: Verify reviewed install-script policy
+        run: npm run deps:install-scripts:verify
+      - name: Verify complete installed dependency tree
+        run: npm ls --all
+      - name: Audit resolved graph
+        run: npm audit
+      - name: Require direct dependencies to be current
+        run: npm outdated --depth=0
+      - name: Provision audio fixture toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - name: Generate deterministic MP3 and nine-format fixtures
+        run: node scripts/generate-test-fixtures.mjs
+      - name: Full dependency-free adversarial gate
+        run: npm run validate
+      - name: Upload reviewed lock and fixtures
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: reviewed-release-inputs
+          path: |
+            package.json
+            package-lock.json
+            tests/fixtures/
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-full:
+    name: Linux Worker + integration + browser matrix
+    needs: resolve-lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reviewed-release-inputs
+          path: .
+      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - run: npm run validate
+      - run: npm run test:worker
+      - run: npm run test:integration
+      - run: npm run browsers:install:ci
+      - run: npm run test:e2e:core
+      - run: npm run build:inspect
+
+  macos-safari:
+    name: macOS native ZIP + WebKit/mobile + Chrome + real Safari
+    needs: windows-release
+    runs-on: macos-26
+    outputs:
+      native_safari_outcome: ${{ steps.real-safari.outcome }}
+      safari_staging_waiver_outcome: ${{ steps.safari-staging-waiver.outcome }}
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.windows-release.outputs.artifact-name }}
+          path: ${{ runner.temp }}/cosmic-archive
+      - name: Verify and natively extract the exact Windows staging ZIP
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}
+          SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}
+          RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, time, zipfile
+          source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'cosmic-archive' / os.environ['SOURCE_FILE']
+          if hashlib.sha256(source.read_bytes()).hexdigest() != os.environ['SOURCE_SHA256']:
+              raise SystemExit('Windows staging archive identity mismatch.')
+          destination = pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'cosmic-native'
+          if destination.exists():
+              raise SystemExit('Native extraction destination must be fresh.')
+          root = f"CosmicTranscriberWeb-{os.environ['RELEASE_VERSION']}"
+          with zipfile.ZipFile(source) as archive:
+              for entry in archive.infolist():
+                  parts = pathlib.PurePosixPath(entry.filename).parts
+                  if not parts or parts[0] != root or '..' in parts or entry.filename.startswith('/') or '\\' in entry.filename:
+                      raise SystemExit('Unsafe or unexpected archive entry.')
+              if archive.testzip() is not None:
+                  raise SystemExit('Archive CRC verification failed.')
+              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))
+              if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':
+                  raise SystemExit('macOS must test the unchanged staging-only archive.')
+              subprocess.run(['/usr/bin/ditto', '-xk', str(source), str(destination)], check=True)
+              for entry in archive.infolist():
+                  target = destination / entry.filename
+                  if target.read_bytes() != archive.read(entry.filename):
+                      raise SystemExit(f'Native extraction byte mismatch: {entry.filename}')
+                  if tuple(time.localtime(target.stat().st_mtime)[:6]) != entry.date_time:
+                      raise SystemExit(f'Native extraction timestamp mismatch: {entry.filename}')
+              print(f'Untouched native archive verified: {source.name}; SHA256={os.environ["SOURCE_SHA256"]}')
+          PY
+      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - name: Provision media validation toolchain
+        shell: bash
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -version
+          ffprobe -version
+      - run: npm run validate
+      - run: npm run build
+      - run: node scripts/playwright-invoke.mjs install webkit chrome
+      - run: npm run test:e2e:macos
+      - name: Enable SafariDriver
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Real Safari native files and mocked transcription acceptance
+        id: real-safari
+        continue-on-error: true
+        run: npm run test:safari:real
+      - name: Verify narrowly documented SafariDriver 26.6.2 failure for STAGING ONLY
+        id: safari-staging-waiver
+        if: ${{ steps.real-safari.outcome == 'failure' }}
+        run: node scripts/safari-staging-waiver.mjs test-results/safari-native-acceptance.json
+      - name: Preserve macOS browser evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-native-browser-evidence
+          path: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}/test-results/
+          if-no-files-found: warn
+          retention-days: 7
+
+  windows-release:
+    name: Windows toolchain + Chrome/Edge + staging-certified ZIP
+    needs: resolve-lock
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.certified.outputs.version }}
+      artifact-name: ${{ steps.certified.outputs.artifact-name }}
+      source-file: ${{ steps.certified.outputs.source-file }}
+      source-sha256: ${{ steps.certified.outputs.source-sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: reviewed-release-inputs
+          path: .
+      - name: Activate reviewed npm for shared-lock preflight
+        shell: pwsh
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm ci
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - name: Execute private Windows toolchain regression/smoke test
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\WINDOWS-TOOLCHAIN-SELFTEST.ps1
+      - name: Provision media validation toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "ffmpeg provisioning failed with exit code $LASTEXITCODE." }
+          }
+          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }
+          & $ffmpeg.Source -version
+          if ($LASTEXITCODE -ne 0) { throw "ffmpeg verification failed with exit code $LASTEXITCODE." }
+          & $ffprobe.Source -version
+          if ($LASTEXITCODE -ne 0) { throw "ffprobe verification failed with exit code $LASTEXITCODE." }
+      - run: npm run validate
+      - run: npm run build
+      - run: npm run browsers:install:branded
+      - run: npm run test:e2e:branded
+      - run: npm run build:inspect
+      - name: Inspect Windows runner socket exhaustion without altering networking
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          Write-Output 'Windows TCP ephemeral port ranges:'
+          & netsh int ipv4 show dynamicport tcp
+          & netsh int ipv6 show dynamicport tcp
+          Write-Output 'Socket counts by TCP state:'
+          try {
+            Get-NetTCPConnection -ErrorAction Stop |
+              Group-Object State |
+              Sort-Object Name |
+              Select-Object Name,Count |
+              Format-Table -AutoSize
+          } catch { Write-Warning ('TCP diagnostic unavailable: ' + $_.Exception.Message) }
+          Write-Output 'Branded browser process counts:'
+          try {
+            Get-Process -Name chrome,msedge,firefox -ErrorAction SilentlyContinue |
+              Group-Object ProcessName |
+              Select-Object Name,Count |
+              Format-Table -AutoSize
+          } catch { Write-Warning ('Browser process diagnostic unavailable: ' + $_.Exception.Message) }
+      - name: Record reviewed lock hash
+        id: lock-before
+        shell: pwsh
+        run: "Write-Output ('hash=' + (Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT"
+      - name: Run complete Windows certification for staging candidate
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
+      - name: Prove certification did not alter the reviewed dependency graph
+        shell: pwsh
+        env:
+          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}
+        run: |
+          $after=(Get-FileHash .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($after -ne $env:LOCK_BEFORE) { throw "Release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after" }
+      - name: Verify versioned staging-certified ZIP
+        id: certified
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = Get-Content -LiteralPath .\package.json -Raw | ConvertFrom-Json
+          $version = [string]$pkg.version
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid release package version.' }
+          $rootName = "CosmicTranscriberWeb-$version"
+          $sourceFile = "$rootName-source.zip"
+          $zip = Resolve-Path -LiteralPath (Join-Path .. $sourceFile)
+          if (-not (Test-Path -LiteralPath $zip.Path -PathType Leaf)) { throw 'Staging-certified ZIP missing.' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.Path)
+          try {
+            $entry = $archive.GetEntry("$rootName/RELEASE_MANIFEST.json")
+            if ($null -eq $entry) { throw 'Staging-certified manifest missing from versioned ZIP root.' }
+            $reader = [System.IO.StreamReader]::new($entry.Open())
+            try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json }
+            finally { $reader.Dispose() }
+          } finally { $archive.Dispose() }
+          if ($manifest.version -cne $version -or $manifest.releaseReady -isnot [bool] -or $manifest.releaseReady -ne $false -or $manifest.certificationLevel -cne 'staging') {
+            throw 'CI may publish only a matching staging candidate with releaseReady:false.'
+          }
+          $lockHash = (Get-FileHash -LiteralPath .\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.dependencyLock.status -ne 'verified' -or $manifest.dependencyLock.sha256 -ne $lockHash) {
+            throw 'Staging candidate does not contain the reviewed dependency graph.'
+          }
+          $sourceHash = (Get-FileHash -LiteralPath $zip.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output ('path=' + $zip.Path) >> $env:GITHUB_OUTPUT
+          Write-Output ('version=' + $version) >> $env:GITHUB_OUTPUT
+          Write-Output ('artifact-name=' + $rootName + '-staging-certified') >> $env:GITHUB_OUTPUT
+          Write-Output ('source-file=' + $sourceFile) >> $env:GITHUB_OUTPUT
+          Write-Output ('source-sha256=' + $sourceHash) >> $env:GITHUB_OUTPUT
+      - name: Upload staging-certified candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.certified.outputs.artifact-name }}
+          path: ${{ steps.certified.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  all-green:
+    name: STAGING PREFLIGHT - reviewed Safari26 automation exception, no final release
+    needs: [linux-full, macos-safari, windows-release]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every platform staging gate; only known Safari26 exception permitted
+        shell: bash
+        env:
+          LINUX_RESULT: ${{ needs.linux-full.result }}
+          MACOS_RESULT: ${{ needs.macos-safari.result }}
+          WINDOWS_RESULT: ${{ needs.windows-release.result }}
+          NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}
+          SAFARI_WAIVER_OUTCOME: ${{ needs.macos-safari.outputs.safari_staging_waiver_outcome }}
+        run: |
+          set -euo pipefail
+          test "$LINUX_RESULT" = success
+          test "$MACOS_RESULT" = success
+          test "$WINDOWS_RESULT" = success
+          if test "$NATIVE_SAFARI_OUTCOME" = success; then
+            echo 'Native Safari real-file acceptance PASS.'
+          else
+            test "$NATIVE_SAFARI_OUTCOME" = failure
+            test "$SAFARI_WAIVER_OUTCOME" = success
+            echo 'STAGING ONLY: known SafariDriver 26.6.2 native-file failure waived; real Safari NOT CERTIFIED.'
+            echo 'Safari26 automation waiver active; final release still blocked. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.windows-release.outputs.artifact-name }}
+          path: certified
+      - name: Require unchanged staging-certified ZIP after every CI gate
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}
+          SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}
+          SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, zipfile
+          version = os.environ['RELEASE_VERSION']
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
+              raise SystemExit('Invalid release package version.')
+          root = f'CosmicTranscriberWeb-{version}'
+          filename = f'{root}-source.zip'
+          if os.environ['SOURCE_FILE'] != filename:
+              raise SystemExit('Unexpected staging candidate filename.')
+          source = pathlib.Path('certified') / filename
+          digest = hashlib.sha256(source.read_bytes()).hexdigest()
+          if digest != os.environ['SOURCE_SHA256']:
+              raise SystemExit('Staging candidate checksum changed after Windows certification.')
+          with zipfile.ZipFile(source) as archive:
+              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))
+              package = json.loads(archive.read(f'{root}/package.json'))
+              lock_digest = hashlib.sha256(archive.read(f'{root}/package-lock.json')).hexdigest()
+          if manifest.get('version') != version or package.get('version') != version:
+              raise SystemExit('Staging candidate version does not match its package.')
+          if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':
+              raise SystemExit('CI artifact must remain staging-only with releaseReady:false.')
+          lock = manifest.get('dependencyLock', {})
+          if lock.get('status') != 'verified' or lock.get('sha256') != lock_digest:
+              raise SystemExit('Staging candidate dependency-lock provenance is invalid.')
+          print(f'{digest}  {source}')
+          print('STAGING PREFLIGHT PASS only; native Safari may be explicitly waived and final release remains NOT CERTIFIED.')
+          PY
+
+  strict-real-safari-release:
+    name: STRICT genuine Safari certification - required for FINAL release
+    needs: [macos-safari]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse final release without genuine native Safari PASS
+        shell: bash
+        env:
+          MACOS_RESULT: ${{ needs.macos-safari.result }}
+          NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}
+        run: |
+          test "$MACOS_RESULT" = success
+          test "$NATIVE_SAFARI_OUTCOME" = success
+
+  deploy-staging-certified:
+    name: Deploy exact staging-verified 1.2 ZIP to STAGING ONLY
+    needs: [all-green, windows-release]
+    if: ${{ github.event_name == 'push' && github.run_attempt == '1' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.all-green.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_WORKER_NAME: cosmic-transcriber-web-staging
+      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+      SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}
+      SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}
+      RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+      - name: Install exact npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Fail closed unless staging Cloudflare credentials are available
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing staging environment secret CLOUDFLARE_API_TOKEN' >&2; exit 1; }
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing staging environment secret CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
+      - name: Verify legitimate staging Access before deployment or D1 migration
+        run: node scripts/staging-access-preflight.mjs
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.windows-release.outputs.artifact-name }}
+          path: certified
+      - name: Use exact Windows all-green staging source, never a historical artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RELEASE_VERSION" = '1.2.0'
+          test "$SOURCE_FILE" = 'CosmicTranscriberWeb-1.2.0-source.zip'
+          test "$SOURCE_SHA256" != ''
+          printf '%s  %s\n' "$SOURCE_SHA256" "certified/$SOURCE_FILE" | sha256sum -c -
+          test "$(git ls-remote origin refs/heads/ci/v1.2.0-production-readiness | cut -f1)" = "$GITHUB_SHA" || { echo 'Ref advanced after CI; stale candidate must not deploy.' >&2; exit 1; }
+          root="$RUNNER_TEMP/v12-staging"
+          mkdir -p "$root/source"
+          unzip -q "certified/$SOURCE_FILE" -d "$root/source"
+          candidate="$root/source/CosmicTranscriberWeb-1.2.0"
+          chmod -R u+rwX "$candidate"
+          test -f "$candidate/package.json"
+          test -f "$candidate/RELEASE_MANIFEST.json"
+          echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
+      - name: Verify staging-certified non-final identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          test "$(node -p "require('./package.json').version")" = '1.2.0'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').dependencyLock.status")" = 'verified'
+          lock_expected="$(node -p "require('./RELEASE_MANIFEST.json').dependencyLock.sha256")"
+          test "$(sha256sum package-lock.json | awk '{print $1}')" = "$lock_expected"
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+          npm outdated --depth=0
+      - name: Reuse approved private bindings from current staging deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          settings="$RUNNER_TEMP/current-staging-settings.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${STAGING_WORKER_NAME}/settings" > "$settings"
+          SETTINGS_FILE="$settings" node --input-type=module <<'NODE'
+          import {readFile, writeFile} from 'node:fs/promises';
+          import path from 'node:path';
+          import {pathToFileURL} from 'node:url';
+          const root=process.env.CANDIDATE;
+          const response=JSON.parse(await readFile(process.env.SETTINGS_FILE,'utf8'));
+          if(response?.success!==true||!response?.result||!Array.isArray(response.result.bindings)) throw new Error('Could not read current staging Worker bindings.');
+          const bindings=response.result.bindings;
+          const plain=name=>{const b=bindings.find(x=>x?.name===name&&x?.type==='plain_text'); if(!b||typeof b.text!=='string'||!b.text.trim())throw new Error(`Current staging binding ${name} is unavailable.`); return b.text;};
+          const d1=bindings.find(x=>x?.name==='USER_DB'&&x?.type==='d1');
+          const databaseId=d1?.database_id||d1?.id;
+          if(typeof databaseId!=='string'||!/^[0-9a-f-]{36}$/i.test(databaseId)) throw new Error('Current staging USER_DB binding is unavailable.');
+          const {applyAccessValues}=await import(pathToFileURL(path.join(root,'scripts/configure-access.mjs')).href);
+          const {applyRegistryValues}=await import(pathToFileURL(path.join(root,'scripts/configure-registry.mjs')).href);
+          const configPath=path.join(root,'wrangler.jsonc');
+          const config=JSON.parse(await readFile(configPath,'utf8'));
+          applyAccessValues(config,'staging',plain('ACCESS_TEAM_DOMAIN'),plain('ACCESS_AUDIENCE'));
+          applyRegistryValues(config,'staging',databaseId,plain('ADMIN_EMAILS'));
+          await writeFile(configPath,JSON.stringify(config,null,2)+'\n','utf8');
+          console.log('Reused current staging Access/admin/D1 bindings without printing private values.');
+          NODE
+          cd "$CANDIDATE"
+          node scripts/deploy-verify.mjs staging
+      - name: Confirm existing staging BYOK secret without replacing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          node scripts/wrangler-invoke.mjs secret list --env staging --format json > "$RUNNER_TEMP/v12-staging-secret-names.json"
+          node -e "const x=require(process.argv[1]); if (!Array.isArray(x)||!x.some(y=>y?.name==='BYOK_SESSION_MASTER_KEY_CURRENT'))process.exit(1)" "$RUNNER_TEMP/v12-staging-secret-names.json" || { echo 'Existing staging BYOK master secret missing; refusing to deploy.' >&2; exit 1; }
+          rm -f "$RUNNER_TEMP/v12-staging-secret-names.json"
+      - name: Record known-good staging version for rollback
+        shell: bash
+        run: |
+          cd "$CANDIDATE"
+          node scripts/wrangler-invoke.mjs deployments list --env staging
+      - name: Deploy STAGING ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run deploy:staging
+      - name: Staging reachability smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 https://transcriber-staging.awakeningtoreality.com/)"
+          case "$code" in
+            2*|3*|401|403) echo "Staging endpoint reachable through expected app/Access boundary: HTTP $code" ;;
+            *) echo "Unexpected staging HTTP status: $code" >&2; exit 1 ;;
+          esac
+      - name: Record newly deployed staging version
+        shell: bash
+        run: |
+          cd "$CANDIDATE"
+          node scripts/wrangler-invoke.mjs deployments list --env staging
+      - name: Reassert release boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          echo 'STAGING deployment only. Production remains blocked until live staging acceptance passes.'
+
+  staging-live-nine-formats:
+    name: Actual authenticated STAGING paid nine-format acceptance
+    needs: [deploy-staging-certified]
+    if: ${{ github.event_name == 'push' && github.run_attempt == '1' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.deploy-staging-certified.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+      STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+      COSMIC_PAID_STAGING_MODE: exact-nine-real-requests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Run bounded nine-format paid staging acceptance, no ambiguous retries
+        run: node scripts/staging-live-acceptance.mjs
+      - name: Preserve sanitized nine-format paid receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: staging-live-nine-format-evidence
+          path: test-results/staging-live-acceptance.json
+          if-no-files-found: warn
+          retention-days: 7

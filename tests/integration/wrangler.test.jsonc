@@ -1,0 +1,27 @@
+{
+  "name":"cosmic-transcriber-web-integration-test",
+  "main":"../../src/index.js",
+  "compatibility_date":"2026-08-08",
+  "workers_dev":false,
+  "preview_urls":false,
+  "assets":{"directory":"../../dist/public","binding":"ASSETS","run_worker_first":true},
+  "vars":{
+    "APP_VERSION":"1.2.0",
+    "DEPLOYMENT_ENV":"development",
+    "APP_ORIGIN":"http://localhost",
+    "ACCESS_TEAM_DOMAIN":"https://test.cloudflareaccess.com",
+    "ACCESS_AUDIENCE":"test-aud",
+    "ADMIN_EMAILS":"admin@example.test",
+    "REGISTRY_SCHEMA_REVISION":"2",
+    "BYOK_KEY_VERSION_CURRENT":"1",
+    "BYOK_KEY_VERSION_PREVIOUS":"",
+    "LOCAL_AUTH_BYPASS":"false"
+  },
+  "d1_databases":[{
+    "binding":"USER_DB",
+    "database_name":"cosmic-transcriber-web-integration-test-users",
+    "database_id":"00000000-0000-0000-0000-000000000002",
+    "preview_database_id":"00000000-0000-0000-0000-000000000002",
+    "migrations_dir":"../../migrations"
+  }]
+}

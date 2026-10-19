@@ -1,0 +1,28 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {validateDeploymentConfig} from '../../scripts/deploy-verify.mjs';
+
+function limits(prefix){return [
+  {name:'RL_KEY_SESSION',namespace_id:`${prefix}01`,simple:{limit:8,period:60}},
+  {name:'RL_KEY_TEST',namespace_id:`${prefix}02`,simple:{limit:5,period:60}},
+  {name:'RL_TRANSCRIBE',namespace_id:`${prefix}03`,simple:{limit:30,period:60}},
+  {name:'RL_ADMIN',namespace_id:`${prefix}04`,simple:{limit:60,period:60}}
+]}
+function base(){return {
+  workers_dev:false,preview_urls:false,
+  observability:{enabled:true,logs:{enabled:true,invocation_logs:false,head_sampling_rate:0.1}},
+  assets:{directory:'./dist/public',binding:'ASSETS',run_worker_first:true},
+  secrets:{required:['BYOK_SESSION_MASTER_KEY_CURRENT']},
+  env:{
+    staging:{workers_dev:false,preview_urls:false,observability:{enabled:true,logs:{enabled:true,invocation_logs:false,head_sampling_rate:1},traces:{enabled:true,head_sampling_rate:1}},routes:[{pattern:'transcriber-staging.awakeningtoreality.com',custom_domain:true}],vars:{APP_VERSION:'1.1.1',DEPLOYMENT_ENV:'staging',APP_ORIGIN:'https://transcriber-staging.awakeningtoreality.com',ACCESS_TEAM_DOMAIN:'https://citeledger.cloudflareaccess.com',ACCESS_AUDIENCE:'staging-audience-123',ADMIN_EMAILS:'admin@example.test',REGISTRY_SCHEMA_REVISION:'2',LOCAL_AUTH_BYPASS:'false'},secrets:{required:['BYOK_SESSION_MASTER_KEY_CURRENT']},ratelimits:limits('11'),d1_databases:[{binding:'USER_DB',database_name:'cosmic-transcriber-web-staging-users',database_id:'11111111-1111-4111-8111-111111111111',migrations_dir:'migrations'}]},
+    production:{workers_dev:false,preview_urls:false,observability:{enabled:true,logs:{enabled:true,invocation_logs:false,head_sampling_rate:0.1},traces:{enabled:true,head_sampling_rate:0.05}},routes:[{pattern:'transcriber.awakeningtoreality.com',custom_domain:true}],vars:{APP_VERSION:'1.1.1',DEPLOYMENT_ENV:'production',APP_ORIGIN:'https://transcriber.awakeningtoreality.com',ACCESS_TEAM_DOMAIN:'https://citeledger.cloudflareaccess.com',ACCESS_AUDIENCE:'production-audience-123',ADMIN_EMAILS:'admin@example.test',REGISTRY_SCHEMA_REVISION:'2',LOCAL_AUTH_BYPASS:'false'},secrets:{required:['BYOK_SESSION_MASTER_KEY_CURRENT']},ratelimits:limits('22'),d1_databases:[{binding:'USER_DB',database_name:'cosmic-transcriber-web-production-users',database_id:'22222222-2222-4222-8222-222222222222',migrations_dir:'migrations'}]}
+  }
+}}
+
+test('deployment verifier accepts a locked Worker-first Access + D1 registry configuration',()=>{assert.deepEqual(validateDeploymentConfig(base(),'staging',{packageVersion:'1.1.1'}),[])});
+test('deployment verifier blocks worker-first exposure, auth bypass, route drift and namespace collisions',()=>{const c=base();c.assets.run_worker_first=['/api/*'];c.env.staging.vars.LOCAL_AUTH_BYPASS='true';c.env.staging.routes[0].pattern='wrong.example.com';c.env.production.ratelimits[0].namespace_id=c.env.staging.ratelimits[0].namespace_id;const errors=validateDeploymentConfig(c,'staging',{packageVersion:'1.1.1'}).join('|');assert.match(errors,/run Worker first/);assert.match(errors,/LOCAL_AUTH_BYPASS/);assert.match(errors,/route and APP_ORIGIN/);assert.match(errors,/staging and production rate-limit namespace IDs/)});
+test('deployment verifier rejects malformed Access/admin/registry configuration and environment-shared D1',()=>{const c=base();c.env.production.vars.ACCESS_TEAM_DOMAIN='https://user:pass@citeledger.cloudflareaccess.com:443/path';c.env.production.vars.ADMIN_EMAILS='bad';c.env.production.vars.REGISTRY_SCHEMA_REVISION='0';c.env.production.d1_databases[0].database_id=c.env.staging.d1_databases[0].database_id;c.env.production.vars.APP_VERSION='1.0.15';const errors=validateDeploymentConfig(c,'production',{packageVersion:'1.1.1'}).join('|');assert.match(errors,/ACCESS_TEAM_DOMAIN/);assert.match(errors,/ADMIN_EMAILS/);assert.match(errors,/REGISTRY_SCHEMA_REVISION/);assert.match(errors,/distinct/);assert.match(errors,/APP_VERSION/)});
+test('deployment verifier blocks D1 binding/name/migration drift and placeholders',()=>{const c=base();c.env.staging.d1_databases[0].binding='OTHER';c.env.staging.d1_databases[0].database_name='wrong';c.env.staging.d1_databases[0].migrations_dir='other';c.env.staging.vars.ADMIN_EMAILS='REPLACE_WITH_STAGING_ADMIN_EMAILS';const errors=validateDeploymentConfig(c,'staging',{packageVersion:'1.1.1'}).join('|');assert.match(errors,/placeholder deployment/);assert.match(errors,/exactly one USER_DB/)});
+test('deployment verifier keeps privacy-safe detailed staging telemetry and sampled production telemetry',()=>{const c=base();c.env.staging.observability.logs.invocation_logs=true;c.env.staging.observability.logs.head_sampling_rate=0.1;c.env.staging.observability.traces.enabled=false;let errors=validateDeploymentConfig(c,'staging',{packageVersion:'1.1.1'}).join('|');assert.match(errors,/invocation logs must remain disabled/);assert.match(errors,/staging custom log sampling must be 1/);assert.match(errors,/staging automatic tracing/);c.env.staging=base().env.staging;c.env.production.observability.logs.head_sampling_rate=1;c.env.production.observability.traces.head_sampling_rate=1;errors=validateDeploymentConfig(c,'production',{packageVersion:'1.1.1'}).join('|');assert.match(errors,/production custom log sampling must be 0.1/);assert.match(errors,/production trace sampling must be 0.05/)});
+
+test('deployment verifier rejects an Access AUD longer than Cloudflare maximum',()=>{const c=base();c.env.staging.vars.ACCESS_AUDIENCE='a'.repeat(65);assert.match(validateDeploymentConfig(c,'staging',{packageVersion:'1.1.1'}).join('|'),/ACCESS_AUDIENCE/)});

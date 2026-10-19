@@ -1,0 +1,1 @@
+import {rm} from 'node:fs/promises';import path from 'node:path';const r=path.resolve(import.meta.dirname,'..');for(const d of ['dist','artifacts','playwright-report','test-results','.wrangler'])await rm(path.join(r,d),{recursive:true,force:true});
