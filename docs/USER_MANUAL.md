@@ -1,7 +1,7 @@
 # Comprehensive User Manual
 
 ## Product scope
-Cosmic Transcriber Web 1.1.1 is an MP3 completed-file transcription application. It preserves the applicable behavior of Windows 1.0.27 while using browser-native downloads and IndexedDB checkpoints instead of desktop output folders and DPAPI.
+Cosmic Transcriber Web 1.2.0 is a completed-file transcription application for MP3, FLAC, MP4, MPEG, MPGA, M4A, OGG, WAV and WebM. See [the beginner guide](BEGINNERS_GUIDE.md) for setup and a first transcription. It preserves the applicable behavior of Windows 1.0.27 while using browser-native downloads and IndexedDB checkpoints instead of desktop output folders and DPAPI.
 
 ## API-key status
 The header shows whether a short-lived secure key session is configured and its expiry. **Replace API key** overwrites the browser’s credential session only while no transcription job is active; credential replacement is locked during a run so one job cannot silently switch billing credentials between chunks. **Forget API key** clears the cookie on this browser; with a stateless cookie this cannot retroactively invalidate a copied token. If compromise is suspected, revoke/rotate the OpenAI key at OpenAI.
@@ -9,7 +9,7 @@ The header shows whether a short-lived secure key session is configured and its 
 **Test key** performs a disclosed tiny 0.25-second transcription request because unrelated OpenAI endpoints can be denied to an otherwise valid Restricted transcription key. It may incur minimal API usage and requires explicit confirmation.
 
 ## Files
-V1 accepts MP3 and uses tolerant frame recovery for real-world files: leading/trailing non-audio bytes, embedded junk between recoverable frame runs, standard ID3 metadata, and a decoder-tolerable partial terminal frame no longer make an otherwise usable recording fail import. Files with no recoverable MPEG audio frames still fail. Queue duplicate prevention uses content fingerprint + size, not filename alone, including when the existing prepared row previously failed. Same filename with different content remains allowed. Files are sorted naturally. The queue ceiling is 10,000 files, matching the desktop safety invariant.
+Version 1.2 accepts all nine formats listed above. Non-MP3 formats use whole-file uploads within the application upload limit; MPGA requires complete MPEG Layer III. MP3 uses tolerant frame recovery for real-world files: leading/trailing non-audio bytes, embedded junk between recoverable frame runs, standard ID3 metadata, and a decoder-tolerable partial terminal frame no longer make an otherwise usable recording fail import. Files with no recoverable MPEG audio frames still fail. Queue duplicate prevention uses content fingerprint + size, not filename alone, including when the existing prepared row previously failed. Same filename with different content remains allowed. Files are sorted naturally. The queue ceiling is 10,000 files, matching the desktop safety invariant.
 
 ## Models
 - GPT Transcribe: recommended general completed-file option; multiple expected-language hints, keyword hints and prompt/context. Language hints accept syntactically valid two- or three-letter lower-case codes plus `zh-cn`, `zh-tw`, and `zh-hk`; OpenAI remains authoritative for which three-letter codes the current service actually supports.

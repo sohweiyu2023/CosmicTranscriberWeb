@@ -1,5 +1,7 @@
 # Cosmic Transcriber Web 1.2.0
 
+Start with the [beginner setup and user guide](docs/BEGINNERS_GUIDE.md). Production 1.2.0 was deployed on 18 October 2026 with the [disclosed owner-accepted desktop Safari verification exception](docs/RELEASE_EXCEPTION_2026-10-18.md). Strict desktop Safari remains FAIL/unverified. This editable source is an audit candidate, not a certified deployment ZIP; the archived production package and deployment have their own provenance.
+
 **Secure, cross-platform audio transcription in your browser — powered by OpenAI and protected by Cloudflare.**
 
 Cosmic Transcriber Web is the browser-based edition of Cosmic Transcriber. It is designed for people who want high-quality file transcription and optional speaker diarization without installing a native desktop app. Audio is prepared in the browser, sent through a tightly scoped Cloudflare Worker to OpenAI's Transcriptions API, then returned to the browser as downloadable TXT or Markdown.
