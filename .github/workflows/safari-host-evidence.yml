@@ -1,0 +1,39 @@
+name: Bounded Safari host file-access diagnostics
+on:
+  push:
+    branches: ['diagnostics/safari-native-access-20261021']
+    paths: ['.github/workflows/safari-host-evidence.yml', 'scripts/safari-host-evidence.mjs', 'tests/node/safari-host-evidence.test.mjs']
+permissions:
+  contents: read
+jobs:
+  evidence:
+    name: Collect redacted Safari evidence (not acceptance)
+    runs-on: macos-26
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Verify exact source and redaction/collection tests
+        run: |
+          sha256sum -c SHA256SUMS.txt
+          node --test tests/node/safari-host-evidence.test.mjs
+      - name: Enable existing Apple-supported automation prerequisite
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Run one bounded independent disk probe and collect redacted host evidence
+        run: node scripts/safari-host-evidence.mjs
+      - name: Verify source remains unchanged after the diagnostic
+        if: ${{ always() }}
+        run: sha256sum -c SHA256SUMS.txt
+      - name: Preserve only sanitized JSON evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: safari-redacted-host-evidence
+          path: |
+            test-results/safari-host-evidence.json
+            test-results/safari-disk-access-probe.json
+          if-no-files-found: warn
+          retention-days: 7
