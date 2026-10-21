@@ -1,0 +1,27 @@
+# Third-party notices
+
+The root MIT license covers Soh Wei Yu's original code and documentation only.
+These components retain their own grants; this document does not relicense them.
+
+## Runtime components
+
+| Component | Exact version | Copyright | License text | Distribution |
+| --- | --- | --- | --- | --- |
+| @noble/hashes | 2.4.0 | Copyright (c) 2022 Paul Miller (https://paulmillr.com) | [MIT](licenses/noble-hashes-MIT.txt) | Browser vendor JavaScript |
+| jose | 6.2.12 | Copyright (c) 2018 Filip Skokan | [MIT](licenses/jose-MIT.txt) | Worker imports, bundled by the Worker build tool |
+
+Texts were copied verbatim from archives verified against package-lock.json SHA-512 integrity values. Build output includes both texts and this notice under `dist/public/`; source packages include the root LICENSE, this file and `licenses/`. Preserve them in redistributed Worker and browser bundles, including separately packaged bundles.
+
+## Development and test components
+
+The complete locked graph, including optional platform packages, is recorded in [docs/DEPENDENCY_LICENSE_INVENTORY.json](docs/DEPENDENCY_LICENSE_INVENTORY.json). That inventory records package metadata, not substitute license grants. Installed dependencies and downloaded tools retain their own license/NOTICE files.
+
+The locked development graph includes MIT, Apache-2.0, ISC, BSD, MPL-2.0 and LGPL-3.0-or-later components, among other declared expressions. In particular, Lightning CSS uses MPL-2.0 and Sharp/libvips platform packages declare LGPL obligations. They are not covered by the root MIT grant. The source packager excludes node_modules, dist and downloaded tooling. If redistributing development tools, native libraries, browser engines or their modified sources, first review and satisfy their complete upstream notices and source/relinking obligations; this source-only inventory does not clear redistribution of those binaries.
+
+`tests/safari/native-file-contract.mjs` cites Microsoft Playwright as evidence of Linux WebKit timestamp behavior. That small behavior observation is not a vendored Playwright source file. Playwright itself is an Apache-2.0 development dependency and retains its upstream license.
+
+## Media and services
+
+All binary assets and audio fixtures are outside the new MIT grant. The fixture generator documents synthetic tone generation, but the original two-speaker recording's ownership/performer consent is not established by the repository. The staging speech files derive from it; see docs/STAGING_SPEECH_ACCEPTANCE.md. Preserve existing rights; obtain the relevant rights before redistributing recordings.
+
+OpenAI and Cloudflare services, names and trademarks are not licensed by this project. System runtimes and separately downloaded encoders, browsers and toolchains have their own terms.

@@ -1,5 +1,11 @@
 # Cosmic Transcriber Web 1.2.0
 
+## License
+
+Soh Wei Yu's original code and documentation are available under the [MIT License](LICENSE), copyright (c) 2026 Soh Wei Yu. This includes commercial reuse, modification and redistribution subject to its notice and warranty terms.
+
+Third-party components retain their own licenses and copyright notices; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and the [licensing audit](docs/LICENSING_AUDIT_2026-10-21.md). The MIT grant does not cover third-party code, dependency distributions, audio recordings/fixtures, other binary assets, or external services. No recording or speaker rights are granted by this license. Preserve the included notices when distributing source or builds. OpenAI and Cloudflare service terms apply separately.
+
 Start with the [beginner setup and user guide](docs/BEGINNERS_GUIDE.md). Production 1.2.0 was deployed on 18 October 2026 with the [disclosed owner-accepted desktop Safari verification exception](docs/RELEASE_EXCEPTION_2026-10-18.md). Strict desktop Safari remains FAIL/unverified. This editable source is an audit candidate, not a certified deployment ZIP; the archived production package and deployment have their own provenance.
 
 **Secure, cross-platform audio transcription in your browser — powered by OpenAI and protected by Cloudflare.**

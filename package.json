@@ -2,6 +2,7 @@
   "name": "cosmic-transcriber-web",
   "version": "1.2.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Cloudflare-hosted universal web edition of Cosmic Transcriber; behavioral baseline desktop 1.0.27.",
   "engines": {

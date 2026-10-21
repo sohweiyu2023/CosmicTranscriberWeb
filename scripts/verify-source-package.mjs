@@ -20,6 +20,9 @@ const rootName=entries[0].name.split('/')[0];
 const expectedRoot=`CosmicTranscriberWeb-${pkg.version}`;
 if(rootName!==expectedRoot)throw new Error(`ZIP top-level root must be exactly ${expectedRoot}; found ${rootName}.`);
 if(entries.some(e=>e.name.split('/')[0]!==rootName))throw new Error('ZIP contains multiple top-level roots.');
+for(const legal of ['LICENSE','THIRD-PARTY-NOTICES.md','licenses/noble-hashes-MIT.txt','licenses/jose-MIT.txt','docs/DEPENDENCY_LICENSE_INVENTORY.json']){
+  if(!entries.some(e=>e.name===`${rootName}/${legal}`))throw new Error(`Required licensing file missing from ZIP: ${legal}`);
+}
 const unicode=`${rootName}/tests/fixtures/ID3 Unicode 東京.mp3`;
 if(!entries.some(e=>e.name===unicode))throw new Error(`Exact Unicode fixture missing from ZIP: ${unicode}`);
 for(const e of entries){if(/(?:^|\/)(?:node_modules|dist|artifacts|\.git|\.wrangler|playwright-report|test-results)(?:\/|$)/.test(e.name))throw new Error(`Forbidden release path: ${e.name}`);if(/(?:^|\/)(?:\.dev\.vars|\.env(?:\..*)?)$/.test(e.name))throw new Error(`Forbidden secret file: ${e.name}`);}
