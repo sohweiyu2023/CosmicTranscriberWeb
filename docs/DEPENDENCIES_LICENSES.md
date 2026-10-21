@@ -1,5 +1,9 @@
 # Dependency and Licensing Notices
 
+## Current 21 October 2026 qualification
+
+The checked-in graph was refreshed through the documented lifecycle-disabled workflow for the owner-approved exact `workerd@1.20261019.1` qualification. See [the source/native provenance review](WORKERD_QUALIFICATION_2026-10-21.md), [artifact hashes](WORKERD_QUALIFICATION_2026-10-21.json), and [complete current lock inventory](DEPENDENCY_LICENSE_INVENTORY.json). The historical proposal below is retained as dated evidence; its version table does not describe the current graph. Only the new exact workerd version was added to positive script approvals; strict policy and the fsevents denial remain unchanged.
+
 ## V1.2 dependency refresh under review
 
 The 2026-10-11 V1.2 refresh uses the exact reviewed **Node 26.7.0 / npm 12.0.2** toolchain. The package engine ranges are compatibility bounds, not permission to substitute a different runtime during certification. Use the private toolchain; do not replace the machine's global Node/npm installation.

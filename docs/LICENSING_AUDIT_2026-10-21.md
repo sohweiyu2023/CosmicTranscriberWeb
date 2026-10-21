@@ -1,5 +1,7 @@
 # Licensing audit — 21 October 2026
 
+Follow-up: the owner subsequently authorized qualification and execution of exact workerd 1.20261019.1. The current lock and notices include the documented dependency refresh, including jose 6.2.13 with unchanged MIT text. See [WORKERD_QUALIFICATION_2026-10-21.md](WORKERD_QUALIFICATION_2026-10-21.md) for the current evidence. The original audit findings below describe the initial licensing baseline; no third-party grant or media exclusion was broadened by the refresh.
+
 ## Identity and scope
 
 Reviewed public repository: https://github.com/sohweiyu2023/CosmicTranscriberWeb, main at `45c1ef4b1579d3870a3dbdd97b1701156d2b1e92`, web edition 1.2.0. This is distinct from the Windows desktop download linked by the Cosmic Transcriber blog post. This change does not license or replace that download.

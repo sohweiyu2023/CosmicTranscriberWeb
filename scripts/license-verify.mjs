@@ -14,7 +14,7 @@ assert.ok(owner.includes('Permission is hereby granted, free of charge'));
 assert.ok(owner.includes('THE SOFTWARE IS PROVIDED "AS IS"'));
 const entries=Object.entries(lock.packages).filter(([p])=>p).sort(([a],[b])=>a.localeCompare(b,'en')).map(([path,p])=>({path,version:p.version,license:p.license||null,dev:!!p.dev,optional:!!p.optional,resolved:p.resolved||null,integrity:p.integrity||null}));
 assert.deepEqual(JSON.parse(await read('docs/DEPENDENCY_LICENSE_INVENTORY.json')).entries,entries,'License inventory must match every exact lock entry');
-const runtime=[['@noble/hashes','2.4.0','LICENSE','licenses/noble-hashes-MIT.txt'],['jose','6.2.12','LICENSE.md','licenses/jose-MIT.txt']];
+const runtime=[['@noble/hashes','2.4.0','LICENSE','licenses/noble-hashes-MIT.txt'],['jose','6.2.13','LICENSE.md','licenses/jose-MIT.txt']];
 assert.deepEqual(Object.keys(pkg.dependencies).sort(),runtime.map(([name])=>name).sort(),'Review legal files for changed runtime dependencies');
 for(const [name,version,upstream,notice] of runtime){
   const p=lock.packages[`node_modules/${name}`];

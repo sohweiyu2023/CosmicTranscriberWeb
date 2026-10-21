@@ -1,12 +1,12 @@
 {
   "product": "Cosmic Transcriber Web",
   "version": "1.2.0",
-  "generatedAt": "2026-10-18T04:15:40.647Z",
+  "generatedAt": "2026-10-21T01:46:17.140Z",
   "releaseReady": false,
   "certificationLevel": "audit",
   "dependencyLock": {
     "status": "present-unverified",
-    "sha256": "93dd9e49bcbec84b21472d0a11f5af36f6e9b9075012d55ab67c538c268c7732",
+    "sha256": "d4e07550a11a9ec060a9246330413d422e98b6346d1426a6bc56a34564992bd4",
     "registry": null
   },
   "unicodeFixture": "tests/fixtures/ID3 Unicode 東京.mp3",

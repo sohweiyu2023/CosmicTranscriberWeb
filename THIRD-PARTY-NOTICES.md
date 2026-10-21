@@ -8,7 +8,7 @@ These components retain their own grants; this document does not relicense them.
 | Component | Exact version | Copyright | License text | Distribution |
 | --- | --- | --- | --- | --- |
 | @noble/hashes | 2.4.0 | Copyright (c) 2022 Paul Miller (https://paulmillr.com) | [MIT](licenses/noble-hashes-MIT.txt) | Browser vendor JavaScript |
-| jose | 6.2.12 | Copyright (c) 2018 Filip Skokan | [MIT](licenses/jose-MIT.txt) | Worker imports, bundled by the Worker build tool |
+| jose | 6.2.13 | Copyright (c) 2018 Filip Skokan | [MIT](licenses/jose-MIT.txt) | Worker imports, bundled by the Worker build tool |
 
 Texts were copied verbatim from archives verified against package-lock.json SHA-512 integrity values. Build output includes both texts and this notice under `dist/public/`; source packages include the root LICENSE, this file and `licenses/`. Preserve them in redistributed Worker and browser bundles, including separately packaged bundles.
 
