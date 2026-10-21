@@ -1,0 +1,113 @@
+{
+  "version": "1.20261019.1",
+  "sourceCommit": "781048bc05cb205c92e503c1062ef3266ab959b5",
+  "installerIntegrity": "sha512-UUYRUq/7DmeCl11YriNbcVbjUZVLtt8uuCXFu+nz77hGFf8d4DEVXoCYtnA+MlBatE4+wxoj47DVqzK3xGBAiw==",
+  "installerRegistrySignatureVerified": true,
+  "release": "https://github.com/cloudflare/workerd/releases/tag/v1.20261019.1",
+  "platforms": [
+    {
+      "name": "@cloudflare/workerd-darwin-64",
+      "version": "1.20261019.1",
+      "gitHead": "781048bc05cb205c92e503c1062ef3266ab959b5",
+      "license": "Apache-2.0",
+      "os": [
+        "darwin"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "integrity": "sha512-5ZILbAta/fBQvhmAYeCE7dKMMYIr7N9wJEX50fEGLKSIwGtvT0HzSfHNIK/O7cBQ4gHQ2WfIiPClvwcye6E0fA==",
+      "registrySignatureVerified": true,
+      "releaseAsset": "https://github.com/cloudflare/workerd/releases/download/v1.20261019.1/workerd-darwin-64.gz",
+      "releaseAssetSha256": "sha256:2ad5f99a596d26fb3b16136834e7b469e398dba5fd7d6d433e645cb60ed15e40",
+      "binarySha256": "fab3de26a22f9931cb6c8bc5d21ca51bbaaf768d4a9af9cbfdefc611165c45fb",
+      "npmAndGitHubBinaryMatch": true
+    },
+    {
+      "name": "@cloudflare/workerd-darwin-arm64",
+      "version": "1.20261019.1",
+      "gitHead": "781048bc05cb205c92e503c1062ef3266ab959b5",
+      "license": "Apache-2.0",
+      "os": [
+        "darwin"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "integrity": "sha512-cww2Ab6lVMxpTiEEjKmPI58p5EMo0vYTZSH+3WkqXJdQgc3ES66GuL247+U2B2YWajhhu2tqj7jySrXneU749g==",
+      "registrySignatureVerified": true,
+      "releaseAsset": "https://github.com/cloudflare/workerd/releases/download/v1.20261019.1/workerd-darwin-arm64.gz",
+      "releaseAssetSha256": "sha256:e30d7f798d4f6450db0f8ce6044b73c05c5f4108b03373ab2d06b7240b8e4322",
+      "binarySha256": "3684a329a3d598a1e5879ee3cf74d8fd88cc0ab9639905f25a305aa9e0d57ea0",
+      "npmAndGitHubBinaryMatch": true
+    },
+    {
+      "name": "@cloudflare/workerd-linux-64",
+      "version": "1.20261019.1",
+      "gitHead": "781048bc05cb205c92e503c1062ef3266ab959b5",
+      "license": "Apache-2.0",
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "integrity": "sha512-4++VRi9vkQROYqrpZYOixIJuVDmujkwrT4kszsxNFlvcmsX6Mr2GumvxIN3gIixS3vJUh3Umdtkthqj5X0S3Xw==",
+      "registrySignatureVerified": true,
+      "releaseAsset": "https://github.com/cloudflare/workerd/releases/download/v1.20261019.1/workerd-linux-64.gz",
+      "releaseAssetSha256": "sha256:ddf34551fb6283cf1020f6f417026d386e660fee7573fbfc18e989282e2d848a",
+      "binarySha256": "d7ce7f7de38dba233a2924b777b51c65a407e524154d9b66fa8d2bc0a1ff5dcf",
+      "npmAndGitHubBinaryMatch": true
+    },
+    {
+      "name": "@cloudflare/workerd-linux-arm64",
+      "version": "1.20261019.1",
+      "gitHead": "781048bc05cb205c92e503c1062ef3266ab959b5",
+      "license": "Apache-2.0",
+      "os": [
+        "linux"
+      ],
+      "cpu": [
+        "arm64"
+      ],
+      "integrity": "sha512-75PVtJOwfjScQ53sbLtQXI7D8yP1c21t+WEUPaYbqkzaz4ZqfR5wAd+zuWs8G5Q7kOj2SQIvEfY5Sn8Y+UVrnA==",
+      "registrySignatureVerified": true,
+      "releaseAsset": "https://github.com/cloudflare/workerd/releases/download/v1.20261019.1/workerd-linux-arm64.gz",
+      "releaseAssetSha256": "sha256:16db7cfad660cd0954b9649b1e5d8682617af78a720e0c64e2b9a3631e09fc41",
+      "binarySha256": "03e974f579ddba9a3c5bc9d8f4a5e337e42fd47e03c66899b37f2678376cccd8",
+      "npmAndGitHubBinaryMatch": true
+    },
+    {
+      "name": "@cloudflare/workerd-windows-64",
+      "version": "1.20261019.1",
+      "gitHead": "781048bc05cb205c92e503c1062ef3266ab959b5",
+      "license": "Apache-2.0",
+      "os": [
+        "win32"
+      ],
+      "cpu": [
+        "x64"
+      ],
+      "integrity": "sha512-z49fvKTETMCnG6wnMcQwxx9CpryFceiKz04FRjq26EkhCyzRNJ6c3UXhyZz3r5f1CXnnBZc5DcU8ZouPkUJCqw==",
+      "registrySignatureVerified": true,
+      "releaseAsset": "https://github.com/cloudflare/workerd/releases/download/v1.20261019.1/workerd-windows-64.gz",
+      "releaseAssetSha256": "sha256:c4f0f6990dd4bf2abd194e4ff0c62e3ee66e15050072d381c0071af534047f57",
+      "binarySha256": "40dca3fc6876cc5cc204af7f5d92b7d52533ffa561632cf6dcac65f4bc5328ec",
+      "npmAndGitHubBinaryMatch": true
+    }
+  ],
+  "execution": "No installer or native binary executed by this qualification script.",
+  "installerSourceSha256": "ce74b04ae2721b7c6602a808a19301464c8a7645e552ea92a48175f0d2f1f3fa",
+  "npmAuditSignatures": {
+    "installedPackagesVerified": 123,
+    "attestationsVerified": 64
+  },
+  "authorization": "Owner approved exact workerd1.20261019.1 qualification and installer execution on 21 October 2026; no future-version approval.",
+  "nativeExecution": {
+    "platform": "win32-x64",
+    "versionOutput": "workerd 2026-10-19",
+    "installedBytesMatchedQualifiedArtifacts": true,
+    "exactInstallerCompleted": true,
+    "additionalLifecycle": "esbuild@0.28.2 retained existing approval"
+  }
+}

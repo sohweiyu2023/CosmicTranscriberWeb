@@ -1,0 +1,26 @@
+name: Exact-source licensing
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  licensing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Activate reviewed npm
+        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Install exact runtime graph without lifecycle scripts
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Check source and built license preservation
+        run: |
+          node scripts/license-verify.mjs
+          node scripts/build.mjs
+          node scripts/license-verify.mjs --build
+          node scripts/inspect-build.mjs
