@@ -31,6 +31,12 @@ test('Unknown records and arbitrary strings cannot become OS denial evidence',()
   const r=summarizeUnifiedText('not JSON deny SECRET\n'+JSON.stringify({processImagePath:'/SECRET/unknown',eventMessage:'deny file-read-data SECRET'}));
   assert.equal(r.unparsedLines,1);assert.equal(r.matchingEvents,0);assert.ok(!JSON.stringify(r).includes('SECRET'));
 });
+test('Pre-probe denial noise cannot hide later fixture-related OS evidence',()=>{
+  const old=JSON.stringify({process:'tccd',timestamp:'2026-10-21T02:35:00Z',eventMessage:'denied SECRET kTCCServiceScreenCapture'});
+  const relevant=JSON.stringify({process:'com.apple.WebKit.WebContent',timestamp:'2026-10-21T02:37:45Z',eventMessage:'deny(1) file-read-data /SECRET/ctw-safari-real-disk-SECRET/format.mp3'});
+  const r=summarizeUnifiedText([...Array(40).fill(old),relevant].join('\n'),{since:Date.parse('2026-10-21T02:37:44Z'),until:Date.parse('2026-10-21T02:38:00Z')});
+  assert.equal(r.outsideProbeWindow,40);assert.equal(r.matchingEvents,1);assert.equal(r.events.length,1);assert.equal(r.events[0].mentionsTestFixture,true);assert.equal(r.operationCounts['file-read-data'],1);assert.ok(!JSON.stringify(r).includes('SECRET'));
+});
 test('Missing log roots are reported without exposing the root path',async()=>{
   const r=await inspectDriverLogs({directory:path.join(tmpdir(),'missing-SECRET-host-evidence')});assert.equal(r.available,false);assert.equal(r.errorCode,'ENOENT');assert.ok(!JSON.stringify(r).includes('SECRET'));
 });

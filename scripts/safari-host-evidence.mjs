@@ -11,6 +11,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 // command output or session identifiers. Never change macOS privacy settings.
 const processes=['Safari','safaridriver','webdriverd','sandboxd','tccd','com.apple.WebKit.WebContent','com.apple.WebKit.Networking'];
 const operations=['file-read-data','file-read-metadata','file-read-xattr','file-issue-extension','mach-lookup'];
+const services=['kTCCServiceSystemPolicyAllFiles','kTCCServiceSystemPolicyDownloadsFolder','kTCCServiceSystemPolicyDocumentsFolder','kTCCServiceSystemPolicyDesktopFolder','kTCCServiceAppleEvents','kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceListenEvent','kTCCServiceDeveloperTool'];
 function processClass(value){
   const name=String(value||'').split('/').at(-1);
   return processes.includes(name)?name:/WebContent/.test(name)?'com.apple.WebKit.WebContent':/Networking/.test(name)?'com.apple.WebKit.Networking':'other';
@@ -20,11 +21,12 @@ export function redactEvidence(message,process=''){
   if(!/NotReadableError|\bdeny(?:\(|\b)|\bdenied\b|file-issue-extension/i.test(message))return null;
   const category=/NotReadableError/.test(message)?'not-readable':/\bdeny(?:\(|\b)|\bdenied\b/i.test(message)?'denial':'extension-event';
   return {category,process:processClass(process),operation:operations.find(op=>message.includes(op))||'other',
+    service:services.find(service=>message.includes(service))||'other',
     mentionsTestFixture:message.includes('ctw-safari-real-disk-')||message.includes('format.mp3'),
     mentionsReadExtension:message.includes('com.apple.app-sandbox.read')};
 }
-export function summarizeUnifiedText(text,{since=0}={}){
-  const summary={parsedEvents:0,unparsedLines:0,matchingEvents:0,events:[]};
+export function summarizeUnifiedText(text,{since=0,until=Infinity}={}){
+  const summary={parsedEvents:0,unparsedLines:0,outsideProbeWindow:0,unknownTimeEvents:0,matchingEvents:0,processCounts:{},operationCounts:{},serviceCounts:{},events:[]};
   for(const line of String(text).split(/\r?\n/)){
     if(!line.trim())continue;
     let item;try{item=JSON.parse(line)}catch{summary.unparsedLines++;continue}
@@ -34,10 +36,17 @@ export function summarizeUnifiedText(text,{since=0}={}){
     if(process==='other')continue;
     const event=redactEvidence(item.eventMessage,process);if(!event)continue;
     const time=Date.parse(String(item.timestamp||''));
-    event.time=Number.isFinite(time)?new Date(time).toISOString():null;
-    event.withinProbeWindow=Number.isFinite(time)?time>=since-30000:null;
-    summary.matchingEvents++;if(summary.events.length<32)summary.events.push(event);
+    if(!Number.isFinite(time)){summary.unknownTimeEvents++;continue}
+    if(time<since-1000||time>until+1000){summary.outsideProbeWindow++;continue}
+    event.time=new Date(time).toISOString();event.withinProbeWindow=true;
+    summary.matchingEvents++;
+    summary.processCounts[event.process]=(summary.processCounts[event.process]||0)+1;
+    summary.operationCounts[event.operation]=(summary.operationCounts[event.operation]||0)+1;
+    summary.serviceCounts[event.service]=(summary.serviceCounts[event.service]||0)+1;
+    summary.events.push(event);
   }
+  summary.events.sort((a,b)=>Number(b.mentionsTestFixture)-Number(a.mentionsTestFixture)||Number(b.operation!=='other')-Number(a.operation!=='other'));
+  summary.events=summary.events.slice(0,32);
   return summary;
 }
 export async function inspectDriverLogs({directory,since=0,maxDepth=4,maxFiles=48,maxBytes=4*1024*1024}={}){
@@ -93,6 +102,7 @@ async function main(){
   let driverCount=safeProcessCount();for(let i=0;i<20&&driverCount;i++){await delay(250);driverCount=safeProcessCount()}
   const after={};for(const [name,directory] of scopes)after[name]=await inspectDriverLogs({directory,since});
   const predicate='(process == "sandboxd" OR process == "tccd" OR process CONTAINS[c] "Safari" OR process CONTAINS[c] "WebKit" OR process CONTAINS[c] "webdriver") AND (eventMessage CONTAINS[c] "deny" OR eventMessage CONTAINS[c] "denied" OR eventMessage CONTAINS[c] "sandbox" OR eventMessage CONTAINS[c] "permission" OR eventMessage CONTAINS[c] "file")';
+  const probeWindowEnd=Date.now();
   const osLog=spawnSync('/usr/bin/log',['show','--last','5m','--style','ndjson','--info','--debug','--predicate',predicate],{encoding:'utf8',timeout:20000,maxBuffer:8*1024*1024});
   let native;try{native=JSON.parse(await readFile(path.join(root,'test-results/safari-disk-access-probe.json'),'utf8'))}catch{}
   const originalAfter=await fixtureIdentity();
@@ -105,7 +115,7 @@ async function main(){
     driverProcessesRemaining:driverCount,logLayoutBefore:before,logLayoutAfter:after,
     unifiedLog:{exitCode:osLog.status,errorCode:osLog.error?.code||null,
       permissionUnavailable:/not permitted|permission denied|requires root/i.test(String(osLog.stderr)),
-      ...summarizeUnifiedText(osLog.stdout||'',{since})}};
+      ...summarizeUnifiedText(osLog.stdout||'',{since,until:probeWindowEnd})}};
   await mkdir(path.join(root,'test-results'),{recursive:true});
   await writeFile(path.join(root,'test-results/safari-host-evidence.json'),JSON.stringify(report,null,2)+'\n');
   console.log(JSON.stringify(report));
