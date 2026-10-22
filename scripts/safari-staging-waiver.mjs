@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,appendFileSync} from 'node:fs';
 
 // STAGING ONLY: user-authorized 2026-10-12 known SafariDriver 26.6.2
-// disk File sandbox failure. Never certifies real Safari or production.
+// disk File sandbox failure. This verifier alone never certifies Safari or production.
 export const SAFARI26_WAIVER_ID='safaridriver-26.6.2-native-disk-not-readable';
 // The staging exception applies to the reviewed fixture bytes, not merely
 // a file with the same name and size. Keep this pinned to SHA256SUMS.txt.
@@ -44,8 +44,8 @@ if(process.argv[1]?.endsWith('/safari-staging-waiver.mjs')){
   const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
   const verified=verifyNarrowSafari26StagingWaiver(report);
   console.log('STAGING ONLY native Safari automation waiver accepted for exact known issue: '+verified);
-  console.log('Real Safari is NOT CERTIFIED; production/final release remains blocked.');
+  console.log('Real Safari is NOT CERTIFIED; this staging waiver alone does not authorize final release.');
   if(process.env.GITHUB_STEP_SUMMARY){
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY,'\n### Staging-only known SafariDriver exception\n\nSafariDriver 26.6.2 genuine native disk MP3 read FAILED with reviewed NotReadableError signature. This is NOT a passing Safari test, and final release remains uncertified. All other macOS tests must still pass. Tracking: https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6\n');
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY,'\n### Staging-only known SafariDriver exception\n\nSafariDriver 26.6.2 genuine native disk MP3 read FAILED with reviewed NotReadableError signature. This is NOT a passing Safari test. This staging waiver alone does not authorize final release; any separate owner-approved release exception and all unrelated gates must be verified independently. All other macOS tests must still pass. Tracking: https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6\n');
   }
 }
