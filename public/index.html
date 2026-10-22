@@ -27,6 +27,17 @@
       V1 checkpoints completed work locally, but active OpenAI calls do not continue after the browser is closed.
     </section>
 
+    <details class="card quick-start" id="quickStart">
+      <summary>New here? Setup, file limits and saving your transcript</summary>
+      <ol>
+        <li><strong>Configure your API key.</strong> You need an active Cosmic account and your own OpenAI API billing. A ChatGPT subscription does not include API credits. The displayed cost is an estimate, not a spending cap.</li>
+        <li><strong>Add a saved audio file.</strong> MP3 files can be split into chunks for long recordings. Other supported formats must be 24 MB or smaller; MP4 and WebM files must contain usable audio. This edition imports files and does not record from a microphone.</li>
+        <li><strong>Check the queue, then start.</strong> Fix any “Needs attention” message before retrying that file. Keep the tab open. Cancel stops further work, but a request already sent to OpenAI may still be charged; an uncertain retry can incur another charge.</li>
+        <li><strong>Save the result.</strong> After completion, click a TXT or Markdown download button. Files go to your browser’s configured download folder, usually Downloads, or to the location you choose in its save dialog. Download your transcript before clearing the queue or closing the tab.</li>
+      </ol>
+      <p class="fineprint">Completed transcript checkpoints and non-secret settings are stored in this browser profile. After a reload, add the same source file again to resume matching completed chunks. Prompt and glossary text also save locally; avoid sensitive text on a shared device.</p>
+    </details>
+
     <section class="key-card card" aria-labelledby="keyHeading">
       <div>
         <p class="eyebrow">MODE B · YOUR OPENAI ACCOUNT</p>
@@ -93,6 +104,7 @@
           <strong>Drop audio files here</strong>
           <span id="dropHint">or choose Files · MP3, MP4, MPEG, MPGA, M4A, WAV, WebM, FLAC or OGG</span>
         </div>
+        <p class="fineprint">Long recordings: use MP3 for automatic chunking. Other formats: 24 MB maximum per file. No microphone recording.</p>
         <div id="queueEmpty" class="empty-state">No audio files queued.</div>
         <ol id="queueList" class="queue-list" aria-live="polite"></ol>
       </section>
@@ -126,10 +138,10 @@
         <div class="inline-actions"><button id="rerunCompletedBtn" class="secondary" type="button" disabled>Run completed again</button><button id="cancelBtn" class="danger-ghost" type="button" disabled>Cancel</button><button id="startBtn" class="primary" type="button" disabled>Start transcription</button></div>
       </div>
       <div class="progress-layout">
-        <div class="progress-main"><div class="progress-row"><span id="progressTitle">Ready</span><span id="progressPercent">0%</span></div><progress id="progressBar" max="100" value="0"></progress><p id="progressDetail" class="muted" role="status" aria-live="polite">Add audio files and configure your API key.</p></div>
+        <div class="progress-main"><div class="progress-row"><span id="progressTitle">Ready</span><span id="progressPercent">0%</span></div><progress id="progressBar" aria-labelledby="runHeading" max="100" value="0"></progress><p id="progressDetail" class="muted" role="status" aria-live="polite">Add audio files and configure your API key.</p></div>
         <div class="stat-grid"><div><span class="stat-label">Files</span><strong id="fileCountStat">0</strong></div><div><span class="stat-label">Duration</span><strong id="durationStat">0:00</strong></div><div><span class="stat-label">Completed</span><strong id="completedStat">0</strong></div></div>
       </div>
-      <div id="downloads" class="downloads" hidden><h3>Downloads</h3><div id="downloadButtons" class="download-buttons"></div></div>
+      <div id="downloads" class="downloads" hidden><h3>Downloads</h3><p class="fineprint">Click a format to save it to your browser’s download folder or chosen location. Save before clearing the queue or closing this tab.</p><div id="downloadButtons" class="download-buttons"></div></div>
     </section>
 
     <section class="privacy-line">Audio path in V1: <strong>browser → Cloudflare Worker → OpenAI → Cloudflare Worker → browser</strong>. Cosmic Transcriber Web does not intentionally persist source audio server-side.</section>
@@ -152,7 +164,7 @@
     <div class="dialog-card"><div class="dialog-head"><h2 id="confirmTitle">Confirm retry</h2></div><p id="confirmText"></p><div class="dialog-actions"><button id="confirmNo" class="ghost" type="button">Do not retry</button><button id="confirmYes" class="danger" type="button">Retry and accept possible charge</button></div></div>
   </dialog>
 
-  <dialog id="aboutDialog" aria-labelledby="aboutTitle"><div class="dialog-card"><div class="dialog-head"><div><p class="eyebrow">ABOUT</p><h2 id="aboutTitle">Cosmic Transcriber Web</h2></div><button id="closeAboutBtn" class="icon-btn" aria-label="Close">×</button></div><p>A browser/Cloudflare adaptation of Cosmic Transcriber for Windows, preserving the desktop application's correctness-first approach while using browser-native downloads and local checkpoints.</p><p><strong>Web version 1.2.0</strong><br>Behavioral baseline: Cosmic Transcriber for Windows 1.0.27.</p><p class="fineprint">Release certification includes Playwright WebKit coverage plus a real SafariDriver smoke test on macOS; live staging acceptance remains required before production promotion.</p></div></dialog>
+  <dialog id="aboutDialog" aria-labelledby="aboutTitle"><div class="dialog-card"><div class="dialog-head"><div><p class="eyebrow">ABOUT</p><h2 id="aboutTitle">Cosmic Transcriber Web</h2></div><button id="closeAboutBtn" class="icon-btn" aria-label="Close">×</button></div><p>A browser/Cloudflare adaptation of Cosmic Transcriber for Windows, preserving the desktop application's correctness-first approach while using browser-native downloads and local checkpoints.</p><p><strong>Web version 1.2.0</strong><br>Behavioral baseline: Cosmic Transcriber for Windows 1.0.27.</p><p><a href="/LICENSE" target="_blank" rel="noopener">MIT licence</a> · <a href="/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener">Third-party notices</a></p><p class="fineprint">Release certification requires Playwright WebKit coverage and a real SafariDriver smoke test on macOS. Passing local Windows tests does not establish Mac Safari validation; live staging acceptance is also required before production promotion.</p></div></dialog>
 
   <script type="module" src="/js/app.js"></script>
 </body>
