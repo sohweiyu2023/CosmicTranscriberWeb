@@ -2,6 +2,8 @@
 
 This prospective policy tests the shipped browser targets on their actual operating systems. It does not certify the previously failing Windows Playwright WebKit run, claim the runtime defect is fixed, or change application behavior. Every required test below must execute and pass on the exact reviewed source, dependency graph and fixtures. Unknown host platforms fail closed.
 
+For the 1.2.0 regression release, the owner-approved [22 October Safari exception](RELEASE_EXCEPTION_2026-10-22.md) permits only the exact verified SafariDriver 26.6.2 native-file failure to be recorded as **WAIVED**. The test still runs and retains FAIL; genuine Mac Safari is not validated. All other platform, security, billing, provenance and live acceptance requirements below remain mandatory. A release-browser eligibility result under that exception is not full Safari or production certification.
+
 | Host | Required browser coverage |
 | --- | --- |
 | Windows | Complete shared suite in Chromium, Firefox, installed Chrome and installed Edge; ten-repeat Firefox secure-key stress; exact private toolchain; complete fresh-ZIP release verification using .NET extraction and original archive timestamps |

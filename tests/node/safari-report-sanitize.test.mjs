@@ -59,6 +59,14 @@ test('known native Safari error signatures remain canonical, without exporting s
  assert.equal(canonicalSafariNativeError('Error: '+secret),'UnclassifiedError');
 });
 
+test('strict Safari preserves driver failure categories without disclosing driver details',()=>{
+ const raw=report();raw.driverError='Error: '+secret;
+ const safe=sanitizeSafariAcceptanceReport(raw);
+ assert.equal(safe.driverErrorCode,'UnclassifiedError');
+ assert.equal(JSON.stringify(safe).includes(secret),false);
+ assert.equal(Object.hasOwn(sanitizeSafariAcceptanceReport(report()),'driverErrorCode'),false);
+});
+
 test('strict Safari writes and prints only sanitized acceptance evidence',async()=>{
  const source=await readFile(new URL('../safari/safari-smoke.mjs',import.meta.url),'utf8');
  assert.match(source,/publicReport=sanitizeSafariAcceptanceReport\(report\)/);

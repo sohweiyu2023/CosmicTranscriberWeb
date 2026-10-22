@@ -94,6 +94,6 @@ export function sanitizeSafariAcceptanceReport(report){
    ...(r.safariDiagnosticSummary.errorCode?{errorCode:safeError(r.safariDiagnosticSummary.errorCode)}:{})
   }:null
  };
- for(const key of ['error','serverError','integrityError','cleanupError'])if(r[key])result[key+'Code']=safeError(r[key]);
+ for(const key of ['error','serverError','integrityError','cleanupError','driverError'])if(r[key])result[key+'Code']=safeError(r[key]);
  return result;
 }

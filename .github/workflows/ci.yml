@@ -102,6 +102,7 @@ jobs:
     outputs:
       native_safari_outcome: ${{ steps.real-safari.outcome }}
       safari_staging_waiver_outcome: ${{ steps.safari-staging-waiver.outcome }}
+      safari_release_exception_outcome: ${{ steps.safari-release-exception.outcome }}
     defaults:
       run:
         working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}
@@ -179,6 +180,10 @@ jobs:
         id: safari-staging-waiver
         if: ${{ steps.real-safari.outcome == 'failure' }}
         run: node scripts/safari-staging-waiver.mjs test-results/safari-native-acceptance.json
+      - name: Record owner-approved exact Safari26 release exception (not Safari certification)
+        id: safari-release-exception
+        if: ${{ steps.real-safari.outcome == 'failure' }}
+        run: node scripts/safari-release-exception.mjs test-results/safari-native-acceptance.json
       - name: Preserve macOS browser evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -341,7 +346,7 @@ jobs:
             test "$NATIVE_SAFARI_OUTCOME" = failure
             test "$SAFARI_WAIVER_OUTCOME" = success
             echo 'STAGING ONLY: known SafariDriver 26.6.2 native-file failure waived; real Safari NOT CERTIFIED.'
-            echo 'Safari26 automation waiver active; final release still blocked. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Safari26 staging waiver active; staging preflight alone does not authorize final release. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -382,20 +387,32 @@ jobs:
           print('STAGING PREFLIGHT PASS only; native Safari may be explicitly waived and final release remains NOT CERTIFIED.')
           PY
 
-  strict-real-safari-release:
-    name: STRICT genuine Safari certification - required for FINAL release
-    needs: [macos-safari]
+  release-browser-eligibility:
+    name: RELEASE BROWSER GATE - native Safari PASS or exact disclosed exception
+    needs: [linux-full, macos-safari, windows-release]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Refuse final release without genuine native Safari PASS
+      - name: Require all platforms and genuine Safari PASS or owner-approved exact exception
         shell: bash
         env:
+          LINUX_RESULT: ${{ needs.linux-full.result }}
           MACOS_RESULT: ${{ needs.macos-safari.result }}
+          WINDOWS_RESULT: ${{ needs.windows-release.result }}
           NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}
+          SAFARI_RELEASE_EXCEPTION_OUTCOME: ${{ needs.macos-safari.outputs.safari_release_exception_outcome }}
         run: |
+          set -euo pipefail
+          test "$LINUX_RESULT" = success
           test "$MACOS_RESULT" = success
-          test "$NATIVE_SAFARI_OUTCOME" = success
+          test "$WINDOWS_RESULT" = success
+          if test "$NATIVE_SAFARI_OUTCOME" = success; then
+            echo 'Genuine native Safari automated acceptance PASS.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            test "$NATIVE_SAFARI_OUTCOME" = failure
+            test "$SAFARI_RELEASE_EXCEPTION_OUTCOME" = success
+            echo 'Native Safari FAIL / WAIVED for the exact owner-approved SafariDriver 26.6.2 signature. Genuine Mac Safari not validated; user-reported iPhone Safari success is separate evidence. All unrelated release requirements remain mandatory. See docs/RELEASE_EXCEPTION_2026-10-22.md.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   deploy-staging-certified:
     name: Deploy exact staging-verified 1.2 ZIP to STAGING ONLY

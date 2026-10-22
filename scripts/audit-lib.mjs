@@ -288,6 +288,44 @@ export function safeguards(files) {
         && s("tests/node/staging-access-predeploy.test.mjs").includes("redirect fails closed");
     }]
     ,["CI staging deploy is same-run all-green, exact-hash pinned, stale-ref blocked and BYOK-preserving", () => /deploy-staging-certified:/.test(s(".github/workflows/ci.yml")) && /needs: \[all-green, windows-release\]/.test(s(".github/workflows/ci.yml")) && /needs\.all-green\.result == 'success'/.test(s(".github/workflows/ci.yml")) && /sha256sum -c -/.test(s(".github/workflows/ci.yml")) && /git ls-remote origin refs\/heads\/ci\/v1\.2\.0-production-readiness/.test(s(".github/workflows/ci.yml")) && /BYOK_SESSION_MASTER_KEY_CURRENT/.test(s(".github/workflows/ci.yml")) && /npm run deploy:staging/.test(s(".github/workflows/ci.yml")) && !/npm run deploy:production/.test(s(".github/workflows/ci.yml"))]
-    ,["CI limits Safari26 exception to staging and requires strict native Safari for final release", () => /needs: \[linux-full, macos-safari, windows-release\]/.test(s(".github/workflows/ci.yml")) && /STAGING PREFLIGHT/.test(s(".github/workflows/ci.yml")) && /strict-real-safari-release:/.test(s(".github/workflows/ci.yml")) && /test "\$NATIVE_SAFARI_OUTCOME" = success/.test(s(".github/workflows/ci.yml")) && /test "\$NATIVE_SAFARI_OUTCOME" = failure/.test(s(".github/workflows/ci.yml")) && /test "\$SAFARI_WAIVER_OUTCOME" = success/.test(s(".github/workflows/ci.yml")) && /continue-on-error: true\n        run: npm run test:safari:real/.test(s(".github/workflows/ci.yml")) && /steps\.real-safari\.outcome == 'failure'/.test(s(".github/workflows/ci.yml")) && /safari-staging-waiver\.mjs test-results\/safari-native-acceptance\.json/.test(s(".github/workflows/ci.yml")) && s("scripts/safari-staging-waiver.mjs").includes("report?.capabilities?.browserVersion,'26.6.2'") && s("scripts/safari-staging-waiver.mjs").includes("assert.equal(report?.providerCalls,0") && s("scripts/safari-staging-waiver.mjs").includes("assert.deepEqual(item.after,item.before") && s("scripts/safari-staging-waiver.mjs").includes("nativeSelectionMode,'safaridriver-sendkeys'") ]
+    ,["CI requires all platforms and exact disclosed Safari26 release exception", () => {
+      const ci=s(".github/workflows/ci.yml");
+      const gate=ci.split('  release-browser-eligibility:')[1]?.split('  deploy-staging-certified:')[0]||'';
+      const staging=ci.split('  all-green:')[1]?.split('  release-browser-eligibility:')[0]||'';
+      return gate.includes('needs: [linux-full, macos-safari, windows-release]')
+        && staging.includes('test "$NATIVE_SAFARI_OUTCOME" = failure')
+        && ['LINUX_RESULT','MACOS_RESULT','WINDOWS_RESULT'].every(k=>gate.includes(`test "$${k}" = success`))
+        && gate.includes('if test "$NATIVE_SAFARI_OUTCOME" = success; then')
+        && gate.includes('test "$NATIVE_SAFARI_OUTCOME" = failure')
+        && gate.includes('test "$SAFARI_RELEASE_EXCEPTION_OUTCOME" = success')
+        && gate.includes('Genuine Mac Safari not validated')
+        && gate.includes('needs.macos-safari.outputs.safari_release_exception_outcome')
+        && ci.includes('safari_release_exception_outcome: ${{ steps.safari-release-exception.outcome }}')
+        && ci.includes('continue-on-error: true\n        run: npm run test:safari:real')
+        && ci.includes("steps.real-safari.outcome == 'failure'")
+        && ci.includes('node scripts/safari-release-exception.mjs test-results/safari-native-acceptance.json')
+        && ci.includes('node scripts/safari-staging-waiver.mjs test-results/safari-native-acceptance.json')
+        && ci.includes('test "$SAFARI_WAIVER_OUTCOME" = success')
+        && s("scripts/safari-staging-waiver.mjs").includes("report?.capabilities?.browserVersion,'26.6.2'")
+        && s("scripts/safari-staging-waiver.mjs").includes("assert.equal(report?.providerCalls,0")
+        && s("scripts/safari-staging-waiver.mjs").includes("assert.deepEqual(item.after,item.before")
+        && s("scripts/safari-staging-waiver.mjs").includes("nativeSelectionMode,'safaridriver-sendkeys'");
+    }]
+    ,["Safari release exception rejects compound failures and remains explicitly waived", () => {
+      const verifier=s("scripts/safari-release-exception.mjs");
+      return verifier.includes("assert.equal(packageVersion,SAFARI_RELEASE_EXCEPTION_VERSION")
+        && verifier.includes("SAFARI_RELEASE_EXCEPTION_VERSION='1.2.0'")
+        && verifier.includes('verifyNarrowSafari26StagingWaiver(report)')
+        && verifier.includes("requireKeys(report,['schema','status','platform','startedAt','finishedAt','providerCalls','fixturesPreserved','capabilities','checks','fixtures','requestCount','requests','safariDiagnosticSummary','errorCode']")
+        && verifier.includes("assert.equal(report.fixturesPreserved,true")
+        && verifier.includes("assert.equal(report.requestCount,0")
+        && verifier.includes('assert.deepEqual(report.requests,[]')
+        && verifier.includes("assert.equal(report.errorCode,'NotReadableError'")
+        && verifier.includes("status:'WAIVED'")
+        && verifier.includes('genuineMacSafariValidated:false')
+        && verifier.includes("mtimeNs:'315532800000000000'")
+        && verifier.includes('assert.deepEqual(report.fixtures[0],{')
+        && s('tests/safari/safari-report-sanitize.mjs').includes("['error','serverError','integrityError','cleanupError','driverError']");
+    }]
   ];
 }
