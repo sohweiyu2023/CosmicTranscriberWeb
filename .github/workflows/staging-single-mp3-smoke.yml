@@ -1,0 +1,102 @@
+name: One approved STAGING MP3 smoke ONLY
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: One of nine total requests; reserve USD0.0045 within USD0.25; existing staging secrets only
+        required: true
+        type: choice
+        default: refuse
+        options: [refuse, one-mp3-with-existing-staging-secrets]
+      fixture_run_id:
+        description: Existing same-repository run containing the approved synthetic fixture artifact
+        required: true
+        type: string
+      fixture_artifact_id:
+        description: Artifact named cosmic-approved-single-mp3-fixture with only staging-speech.mp3
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cosmic-approved-paid-staging
+  cancel-in-progress: false
+jobs:
+  smoke:
+    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.authorization == 'one-mp3-with-existing-staging-secrets' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COSMIC_SMOKE_AUTHORIZATION: ${{ inputs.authorization }}
+      FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
+      FIXTURE_ARTIFACT_ID: ${{ inputs.fixture_artifact_id }}
+      COSMIC_SMOKE_EVIDENCE: ${{ runner.temp }}/single-mp3-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Reserve one attempt after complete prior-run accounting
+        run: node scripts/staging-single-mp3-preflight.mjs prepare
+      - name: Persist conservative reservation BEFORE any paid attempt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: single-mp3-approved-reservation
+          path: ${{ runner.temp }}/single-mp3-evidence/reservation.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Fetch approved synthetic data without adding it to public source
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.fixture_artifact_id }}
+          run-id: ${{ inputs.fixture_run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/single-mp3-fixture
+      - name: Reject unexpected artifact entries and verify fixed MP3 before secrets
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readdir,readFile} from 'node:fs/promises';
+          import path from 'node:path';
+          import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs';
+          const directory=path.join(process.env.RUNNER_TEMP,'single-mp3-fixture');
+          const entries=await readdir(directory,{withFileTypes:true});
+          assert.equal(entries.length,1);assert.equal(entries[0].name,'staging-speech.mp3');assert.equal(entries[0].isFile(),true);
+          verifyFixedMp3(await readFile(path.join(directory,'staging-speech.mp3')));
+          console.log('Fixed synthetic MP3 verified; no provider request sent.');
+          NODE
+      - name: Checkout exact deployed application source separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 82392336cfea5bc417098a2c6e3066dafca97b5b
+          path: certified-source
+          persist-credentials: false
+      - name: Verify fresh current staging deployment through read-only APIs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/staging-single-mp3-preflight.mjs source
+      - name: One fixed MP3 request; no retry and no release certification
+        env:
+          STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+          STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+          COSMIC_SINGLE_MP3_MODE: one-approved-staging-diagnostic
+          COSMIC_SMOKE_SOURCE_ROOT: ${{ github.workspace }}/certified-source
+          COSMIC_STAGING_SOURCE_RECEIPT: ${{ runner.temp }}/single-mp3-evidence/source.json
+        run: node scripts/staging-single-mp3-smoke.mjs "$RUNNER_TEMP/single-mp3-fixture/staging-speech.mp3" "$COSMIC_SMOKE_EVIDENCE/receipt.json" "$COSMIC_SMOKE_EVIDENCE/budget.json"
+      - name: Preserve only redacted source, reservation and outcome records
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: single-mp3-redacted-evidence
+          path: ${{ runner.temp }}/single-mp3-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 90
