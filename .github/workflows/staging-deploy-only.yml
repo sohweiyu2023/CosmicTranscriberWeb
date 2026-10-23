@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       credential_review:
-        description: Confirm exposed-token relationship is resolved before using staging credentials
+        description: Owner authorizes existing GitHub secret use; exposure relationship remains unresolved
         required: true
         type: choice
         default: unresolved-refuse-deployment
         options:
           - unresolved-refuse-deployment
-          - reviewed-safe-to-use
+          - owner-authorized-existing-secret-use
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.credential_review == 'reviewed-safe-to-use' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.credential_review == 'owner-authorized-existing-secret-use' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: staging
