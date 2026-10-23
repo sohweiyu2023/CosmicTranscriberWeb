@@ -83,7 +83,7 @@ request slots. This reservation is based on published US$0.0045/minute pricing,
 not a provider-enforced dollar cap. Recheck pricing before approval to run.
 
 The manual workflow defaults to refusal and permits only main/first attempt.
-It inspects complete bounded GitHub run/job history, refuses prior smoke runs
+It inspects complete bounded GitHub run/job history, refuses prior manual smoke runs
 (even failures/cancellations), refuses previous non-skipped paid acceptance or
 concurrent CI, and saves a reservation artifact before a paid-capable step.
 An ambiguous request remains reserved: do not rerun, delete history to reset
@@ -91,6 +91,9 @@ the allowance, or interpret a failure as proof nothing was charged. The local
 ledger/receipt also uses exclusive files and a retained one-shot lock.
 Historical CI retries are accepted only when every attempt has exactly one
 completed, explicitly skipped paid-job record; missing or ambiguous records block.
+GitHub's non-manual invalid-workflow records are exempt only after their full
+job lists prove zero jobs and their event/status show completed push/PR validation
+failure. A manual attempt is never exempt, even if its job list is empty.
 
 The operator must supply an existing same-repository fixture run/artifact named
 `cosmic-approved-single-mp3-fixture`, containing `staging-speech.mp3` only.

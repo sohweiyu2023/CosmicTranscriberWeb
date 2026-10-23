@@ -29,6 +29,13 @@ test('historical CI reruns require an explicit skipped paid-job record for every
  assert.throws(()=>verifyHistory(smoke,ci,[j[0],{...j[1],conclusion:'failure'}],100));
  assert.throws(()=>verifyHistory(smoke,ci,[j[0],{...j[1],status:'in_progress'}],100));
 });
+test('only completed non-manual validation failures with fully inspected zero-job history are exempt',()=>{
+ const current={id:100,run_attempt:1};const old={id:99,run_attempt:1,event:'push',path:'.github/workflows/'+PIN.workflow,status:'completed',conclusion:'failure'};
+ assert.equal(verifyHistory([old,current],[],[],100,{'99':[]}).reservedRequests,0);
+ assert.throws(()=>verifyHistory([old,current],[],[],100));
+ assert.throws(()=>verifyHistory([old,current],[],[],100,{'99':[{conclusion:'skipped'}]}));
+ for(const change of [{event:'workflow_dispatch'},{conclusion:'success'},{status:'queued'},{path:'.github/workflows/other.yml'}])assert.throws(()=>verifyHistory([{...old,...change},current],[],[],100,{'99':[]}));
+});
 test('live source requires successful exact deployment, full traffic and matching source annotation',()=>{
  const receipt=verifyDeployment(run(),jobs(),deployment());assert.equal(receipt.commit,PIN.source);assert.equal(receipt.workerVersionId,PIN.version);assert.equal(receipt.verified,true);assert.ok(Date.now()-Date.parse(receipt.checkedAtUtc)<5000);
  for(const change of [{head_sha:'0'.repeat(40)},{run_attempt:2},{conclusion:'failure'}])assert.throws(()=>verifyDeployment({...run(),...change},jobs(),deployment()));
@@ -43,6 +50,10 @@ test('history pagination follows all pages and refuses missing or excessive hist
 test('manual workflow has read-only permissions, pre-dispatch reservation, scoped secrets and no release successor',async()=>{
  const y=await readFile(new URL('../../.github/workflows/staging-single-mp3-smoke.yml',import.meta.url),'utf8');
  assert.match(y,/contents: read\n  actions: read/);assert.match(y,/cancel-in-progress: false/);
+ const jobEnv=y.slice(y.indexOf('    env:\n'),y.indexOf('    steps:\n'));
+ assert.equal(jobEnv.includes('${{ runner.'),false,'GitHub forbids runner context in job-level env');
+ assert.match(jobEnv,/COSMIC_SMOKE_EVIDENCE: \$\{\{ github.workspace \}\}\/single-mp3-evidence/);
+ assert.equal(y.includes('${{ runner.temp }}/single-mp3-evidence'),false,'All receipt paths must match job env');
  assert.ok(y.indexOf('reservation.json')<y.indexOf('One fixed MP3 request'));
  assert.ok(y.indexOf('verifyFixedMp3(await readFile')<y.indexOf('CLOUDFLARE_API_TOKEN:'));assert.match(y,/assert.equal\(entries.length,1\)/);
  assert.match(y,/COSMIC_SMOKE_SOURCE_ROOT:.*certified-source/);assert.match(y,/ref: 82392336cfea5bc417098a2c6e3066dafca97b5b/);

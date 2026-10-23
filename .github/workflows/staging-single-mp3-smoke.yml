@@ -33,7 +33,7 @@ jobs:
       COSMIC_SMOKE_AUTHORIZATION: ${{ inputs.authorization }}
       FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
       FIXTURE_ARTIFACT_ID: ${{ inputs.fixture_artifact_id }}
-      COSMIC_SMOKE_EVIDENCE: ${{ runner.temp }}/single-mp3-evidence
+      COSMIC_SMOKE_EVIDENCE: ${{ github.workspace }}/single-mp3-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: single-mp3-approved-reservation
-          path: ${{ runner.temp }}/single-mp3-evidence/reservation.json
+          path: ${{ github.workspace }}/single-mp3-evidence/reservation.json
           if-no-files-found: error
           retention-days: 90
       - name: Fetch approved synthetic data without adding it to public source
@@ -90,13 +90,13 @@ jobs:
           STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
           COSMIC_SINGLE_MP3_MODE: one-approved-staging-diagnostic
           COSMIC_SMOKE_SOURCE_ROOT: ${{ github.workspace }}/certified-source
-          COSMIC_STAGING_SOURCE_RECEIPT: ${{ runner.temp }}/single-mp3-evidence/source.json
+          COSMIC_STAGING_SOURCE_RECEIPT: ${{ github.workspace }}/single-mp3-evidence/source.json
         run: node scripts/staging-single-mp3-smoke.mjs "$RUNNER_TEMP/single-mp3-fixture/staging-speech.mp3" "$COSMIC_SMOKE_EVIDENCE/receipt.json" "$COSMIC_SMOKE_EVIDENCE/budget.json"
       - name: Preserve only redacted source, reservation and outcome records
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: single-mp3-redacted-evidence
-          path: ${{ runner.temp }}/single-mp3-evidence/*.json
+          path: ${{ github.workspace }}/single-mp3-evidence/*.json
           if-no-files-found: warn
           retention-days: 90
