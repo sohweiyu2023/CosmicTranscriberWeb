@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {parseStagingAccessCredential} from './staging-access-credential.mjs';
 export const PIN=Object.freeze({repo:'sohweiyu2023/CosmicTranscriberWeb',commit:'82392336cfea5bc417098a2c6e3066dafca97b5b',run:39872658149,licensingRun:39872658103,artifact:12468047768,artifactName:'CosmicTranscriberWeb-1.2.0-staging-certified',outerDigest:'sha256:cfb3f70c6906da68b04478cce0ee23861f6ea83bb292a8948ff07ce88bbb7f3d',sourceDigest:'a12cc04d5f88b981fa9aa2dd5d704495dcee8e0aef0faf2f2455b0ded3ae44a0',worker:'cosmic-transcriber-web-staging',rollback:'31808bae-7ca6-4a38-b13f-042959a192de'});
 const ORIGIN='https://transcriber-staging.awakeningtoreality.com',MAX_BYTES=32768;
-const reject=code=>{const error=Error('Manual staging preflight rejected');error.code=code;throw error};
+const reject=(code,httpStatus=null)=>{const error=Error('Manual staging preflight rejected');error.code=code;if(Number.isInteger(httpStatus)&&httpStatus>=100&&httpStatus<=599)error.httpStatus=httpStatus;throw error};
 export function assertManualIdentity(env){
  assert.equal(env.GITHUB_REPOSITORY,PIN.repo);assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');
  assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_RUN_ATTEMPT,'1');
@@ -24,15 +24,16 @@ export function verifyCertification(run,jobs,artifact,licensing){
  return {schema:'cosmic-manual-staging-ci-1',commit:PIN.commit,run:PIN.run,artifact:PIN.artifact,sourceDigest:PIN.sourceDigest,nativeSafari:'FAIL/WAIVED; genuine Mac Safari not validated',releaseReady:false,credentialUseDecision:'Owner authorized existing GitHub secret use; exposed-token relationship remains unresolved; no pasted token used'};
 }
 export async function checkProtectedStaging(credential,fetchImpl=fetch){
-  const {authHeader,accessCookie}=parseStagingAccessCredential(credential);
+  let parsed;try{parsed=parseStagingAccessCredential(credential)}catch{reject(typeof credential==='string'&&credential.trim()?'access_credential_format':'access_credential_missing')}
+  const {authHeader,accessCookie}=parsed;
   const headers={};
   if(authHeader)headers['Cf-Access-Token']=authHeader;
   if(accessCookie)headers.Cookie=accessCookie;
-  const response=await fetchImpl(ORIGIN+'/',{
+  let response;try{response=await fetchImpl(ORIGIN+'/',{
     method:'GET',headers,redirect:'manual',signal:AbortSignal.timeout(20000)
-  });
-  if(response.status>=300&&response.status<400)reject('access_redirect');
-  if(!response.ok)reject('access_http_rejected');
+  })}catch(e){reject(e?.name==='TimeoutError'?'access_timeout':'access_network_failed')}
+  if(response.status>=300&&response.status<400)reject('access_redirect',response.status);
+  if(!response.ok)reject('access_http_rejected',response.status);
   if(response.headers.get('content-type')?.split(';',1)[0].trim().toLowerCase()!=='text/html')reject('access_not_app_html');
   if(!/\bno-store\b/i.test(response.headers.get('cache-control')||''))reject('access_missing_no_store');
   if(!/frame-ancestors 'none'/.test(response.headers.get('content-security-policy')||''))reject('access_missing_app_csp');
@@ -66,6 +67,23 @@ export async function checkProtectedStaging(credential,fetchImpl=fetch){
   // The paid gate MUST revalidate /api/session/status after migration/deployment.
   console.log('STAGING ACCESS PREFLIGHT PASS: protected app shell; no D1 or paid requests');
 }
+// Only these fixed categories may leave the process; never serialize errors/messages/claims.
+const SAFE_ACCESS_CODES=new Set(['access_credential_missing','access_credential_format','access_redirect','access_http_rejected','access_not_app_html','access_missing_no_store','access_missing_app_csp','access_response_oversized','access_response_stream_missing','access_response_stream_invalid','access_invalid_html','access_unrecognized_app','access_timeout','access_network_failed']);
+export function accessClaimMetadata(credential,nowSeconds=Math.floor(Date.now()/1000)){
+ const result={credentialPresent:typeof credential==='string'&&credential.trim().length>0,transport:'unknown',unverifiedExpiry:'unknown',signatureVerified:false};
+ try{
+  const p=parseStagingAccessCredential(credential);result.transport=p.authHeader?'Cf-Access-Token':'CF_Authorization cookie';
+  const token=p.authHeader||p.accessCookie.slice('CF_Authorization='.length);
+  const claims=JSON.parse(Buffer.from(token.split('.')[1]||'','base64url').toString('utf8'));
+  if(Number.isSafeInteger(claims?.exp)&&claims.exp>0)result.unverifiedExpiry=claims.exp<=nowSeconds?'expired-claim':'future-claim';
+ }catch{/* Never include original input, exception, token, identity or other JWT claims. */}
+ return result;
+}
+export async function diagnoseProtectedStaging(credential,fetchImpl=fetch){
+ const metadata=accessClaimMetadata(credential);
+ try{await checkProtectedStaging(credential,fetchImpl);return {schema:'cosmic-staging-access-diagnostic-1',status:'PASS',code:'access_pass',...metadata,paidRequests:0}}
+ catch(e){return {schema:'cosmic-staging-access-diagnostic-1',status:'FAIL',code:SAFE_ACCESS_CODES.has(e?.code)?e.code:'access_unclassified',httpStatus:Number.isInteger(e?.httpStatus)&&e.httpStatus>=100&&e.httpStatus<=599?e.httpStatus:null,...metadata,paidRequests:0}}
+}
 async function github(route){
  const response=await fetch('https://api.github.com/repos/'+PIN.repo+route,{headers:{Authorization:'Bearer '+process.env.GH_TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},redirect:'error',signal:AbortSignal.timeout(20000)});
  assert.equal(response.status,200,'GitHub certification metadata unavailable');
@@ -76,7 +94,7 @@ async function main(){
  if(process.argv[2]==='certification'){
   assert.equal(execFileSync('git',['ls-remote','origin','refs/heads/main'],{encoding:'utf8'}).split(/\s/)[0],process.env.GITHUB_SHA,'Main advanced');
   const changed=execFileSync('git',['diff','--name-only',PIN.commit,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n').filter(Boolean);
-  const allowed=['.github/workflows/staging-deploy-only.yml','scripts/staging-deploy-only.mjs','tests/node/staging-deploy-only.test.mjs'];
+  const allowed=['.github/workflows/staging-deploy-only.yml','scripts/staging-deploy-only.mjs','tests/node/staging-deploy-only.test.mjs','.github/workflows/staging-access-diagnostic.yml'];
   assert.ok(changed.length>0);assert.ok(changed.every(x=>allowed.includes(x)),'Application/source changed beyond reviewed deployment coordinator');
   const run=await github('/actions/runs/'+PIN.run),jobs=await github('/actions/runs/'+PIN.run+'/jobs?per_page=100'),artifact=await github('/actions/artifacts/'+PIN.artifact),licensing=await github('/actions/runs/'+PIN.licensingRun);
   await writeFile('staging-certification-receipt.json',JSON.stringify(verifyCertification(run,jobs.jobs,artifact,licensing),null,2)+'\n');
