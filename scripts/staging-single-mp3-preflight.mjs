@@ -13,11 +13,18 @@ export function verifyIdentity(env){
  assert.equal(env.COSMIC_SMOKE_AUTHORIZATION,'one-mp3-with-existing-staging-secrets');
  for(const key of ['GITHUB_RUN_ID','FIXTURE_RUN_ID','FIXTURE_ARTIFACT_ID'])assert.match(env[key]||'',/^[1-9][0-9]{0,19}$/);
 }
-export function verifyHistory(smokeRuns,ciRuns,jobs,currentRun){
+export function verifyHistory(smokeRuns,ciRuns,jobs,currentRun,validationJobs={}){
  assert.ok(smokeRuns.some(x=>String(x.id)===String(currentRun)),'Current reservation run missing');
- // Even a prior cancelled/preflight-failed run consumes this smoke permission.
+ // Even a prior cancelled/preflight-failed manual run consumes this permission.
  // Do not infer zero billing from failure or erase an ambiguous reservation.
- assert.equal(smokeRuns.filter(x=>String(x.id)!==String(currentRun)).length,0,'Prior smoke run requires accounting review');
+ for(const run of smokeRuns.filter(x=>String(x.id)!==String(currentRun))){
+  // GitHub creates failed push/PR records for invalid workflow definitions.
+  // Only prove these harmless by reading the complete job list: zero jobs.
+  // A manual attempt is never exempt, including one that failed preflight.
+  assert.ok(['push','pull_request'].includes(run.event));assert.equal(run.path,'.github/workflows/'+PIN.workflow);
+  assert.equal(run.status,'completed');assert.equal(run.conclusion,'failure');
+  assert.ok(Object.hasOwn(validationJobs,String(run.id)));assert.deepEqual(validationJobs[String(run.id)],[],'Prior smoke run requires accounting review');
+ }
  for(const run of smokeRuns)assert.equal(run.run_attempt,1,'Rerun reservation is forbidden');
  for(const run of ciRuns){assert.equal(run.status,'completed','Concurrent CI could contain paid work');assert.ok(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&run.run_attempt<=20,'Invalid CI attempt accounting')}
  for(const run of ciRuns){
@@ -67,7 +74,9 @@ async function main(){
   const smoke=await collectPages(gh,'/actions/workflows/'+PIN.workflow+'/runs','workflow_runs');
   const ci=await collectPages(gh,'/actions/workflows/ci.yml/runs?created='+encodeURIComponent('>='+PIN.since),'workflow_runs');
   const jobs=[];for(const run of ci)jobs.push(...await collectPages(gh,'/actions/runs/'+run.id+'/jobs?filter=all','jobs'));
-  const ledger=verifyHistory(smoke,ci,jobs,env.GITHUB_RUN_ID);
+  const validationJobs={};
+  for(const run of smoke)if(String(run.id)!==env.GITHUB_RUN_ID&&['push','pull_request'].includes(run.event))validationJobs[String(run.id)]=await collectPages(gh,'/actions/runs/'+run.id+'/jobs?filter=all','jobs');
+  const ledger=verifyHistory(smoke,ci,jobs,env.GITHUB_RUN_ID,validationJobs);
   if(process.argv[2]==='prepare'){
    phase='fixture-artifact';const artifacts=await collectPages(gh,'/actions/runs/'+env.FIXTURE_RUN_ID+'/artifacts','artifacts');
    const artifact=artifacts.find(x=>String(x.id)===env.FIXTURE_ARTIFACT_ID);
