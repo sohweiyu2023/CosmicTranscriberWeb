@@ -72,3 +72,48 @@ The previous v25 preflight called `GET /api/session/status`, which is **not read
 **Certification boundary:** The app-shell check proves that the currently deployed Worker accepted the JWT and served its protected UI, **not** that the user's registry account is active or an administrator. After staging migration and deployment, the independent paid-acceptance runner must call `/api/session/status` and require an active/admin account **before any paid call**. That postdeployment call may legitimately update the registry. Administrative/D1/billing reconciliation remains separate. Credential expiry between checks remains possible. Both bare JWT (`Cf-Access-Token`) and explicit `CF_Authorization` cookie formats remain supported.
 
 The preflight checks the currently deployed staging service. If unavailable or incompatible, an authorized operator must diagnose it rather than bypass Access. This is an audit-only change until separately reviewed and certified at an exact GitHub SHA.
+
+# Proposed manual single-MP3 diagnostic (review required before merge/dispatch)
+
+`staging-single-mp3-smoke.yml` is a separate one-request diagnostic. It never
+produces the nine-format certification receipt or enables production. It uses
+the previously approved cumulative ceiling of nine requests / US$0.25, reserves
+US$0.0045 for one fixed 12.096-second `gpt-transcribe` MP3, and leaves eight
+request slots. This reservation is based on published US$0.0045/minute pricing,
+not a provider-enforced dollar cap. Recheck pricing before approval to run.
+
+The manual workflow defaults to refusal and permits only main/first attempt.
+It inspects complete bounded GitHub run/job history, refuses prior smoke runs
+(even failures/cancellations), refuses previous non-skipped paid acceptance or
+concurrent CI, and saves a reservation artifact before a paid-capable step.
+An ambiguous request remains reserved: do not rerun, delete history to reset
+the allowance, or interpret a failure as proof nothing was charged. The local
+ledger/receipt also uses exclusive files and a retained one-shot lock.
+Historical CI retries are accepted only when every attempt has exactly one
+completed, explicitly skipped paid-job record; missing or ambiguous records block.
+
+The operator must supply an existing same-repository fixture run/artifact named
+`cosmic-approved-single-mp3-fixture`, containing `staging-speech.mp3` only.
+The runner requires exactly 194156 bytes and SHA-256
+`9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a`.
+This synthetic SAPI fixture is not committed publicly: its public redistribution
+rights remain unverified. A secure, authorized fixture artifact must be prepared
+before dispatch; this change neither uploads it nor invents an artifact ID.
+
+Existing staging environment secrets are injected only into their required
+steps. Cloudflare access is GET-only for the live deployed version/source
+annotation; no deployment, credential mutation, policy change or new grant.
+The pinned successful deployment is run39945096462/source82392336; current
+Worker version must remain `fdbfa10f-d2bb-4c22-bb32-90e6bb522ab7`, at100%.
+Its fresh receipt expires after five minutes. An exact source checkout is
+checked for tracked edits. No generic API key substitution or key-test call.
+
+Only the final runner can send one `/api/transcribe` request. Other requests
+perform protected session checks and encrypted BYOK setup/forget; they may
+write normal staging account/usage records. No provider request is retried.
+Evidence excludes tokens, identities, transcripts and raw error bodies.
+Run-history and the saved reservation cover this Actions path; manual or other
+external spending must still be reconciled before any later paid procedure.
+One smoke plus a subsequent nine-request suite would total ten and requires
+changed request authorization. Existing full-acceptance gates are unchanged.
+Safari remains FAIL/WAIVED; genuine Mac Safari is unvalidated.
