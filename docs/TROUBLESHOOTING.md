@@ -67,3 +67,24 @@ The browser now shows an elapsed `Uploading / waiting for OpenAI` phase rather t
 
 Only an explicit user cancellation is reported as **Cancelled**. A browser transport/network interruption is classified separately (for example `browser_transport_abort`, `browser_network_error`, `browser_offline` or `browser_transport_error`) and remains conservative about possible OpenAI billing after dispatch.
 
+
+### Bounded paid continuation after a successful smoke
+
+One MP3 smoke consumes one of the nine approved request slots, leaving eight.
+A full nine-call runner would exceed that authorization. Preserve the receipt
+and conservative reservation; do not reset spending from an estimated charge.
+Inspect all CI attempts, including failures and reruns. A failed response is not
+proof that processing was unbilled.
+
+Per-block model limits cannot bound a request with an unspecified number of
+automatic internal chunks. The short-WAV candidate proves PCM duration from
+server-validated bytes before omitting optional chunking. Never trust client
+duration, invent a transcription `max_output_tokens` parameter, or apply this
+bound to source that still requests `auto`. A changed source also prevents an
+old-source MP3 receipt from becoming new-source full certification.
+## Hosted Linux media provisioning: slow Ubuntu Azure mirror
+
+PR20 CI 40003319903 attempt 2 reached the unchanged 240-second ffmpeg install deadline while the official Azure mirror trickled an 8998 kB package over more than three minutes. Worker/integration/browser tests had not begun. Windows whole-Worker integration 24/24 passed on that same source, including the new WAV route tests; macOS certification also passed, retaining the disclosed Safari waiver.
+
+GitHub's [runner image source](https://github.com/actions/runner-images/blob/main/images/ubuntu/scripts/build/configure-apt-sources.sh) already lists https://archive.ubuntu.com/ubuntu/ as its official fallback. Its [tracked slow-transfer issue](https://github.com/actions/runner-images/issues/14823) explains why idle timeouts do not cover a transfer that continues slowly. When installation is required on an identified GitHub-hosted Linux runner, the provisioner validates that exact existing three-mirror list and gives the existing HTTPS Ubuntu archive first priority. Unknown lists fail closed; other hosts and ready toolchains are untouched. No additional mirror, package source, keyring or trust option is added. APT authentication, finite update/install deadlines and post-install ffmpeg/ffprobe codec verification remain mandatory. This is a new reviewed-head repair, not another unchanged CI retry or a skipped test gate.
+

@@ -116,6 +116,15 @@ async function createSession(key='test-key'){
 }
 function twoFrameMpeg(){const out=new Uint8Array(834);out.set([0xff,0xfb,0x90,0x64],0);out.set([0xff,0xfb,0x90,0x64],417);return out}
 const DEFAULT_MP3=twoFrameMpeg();
+function shortProofPcmWav(seconds){
+  const bytes=new Uint8Array(44+seconds*32000),view=new DataView(bytes.buffer);
+  const ascii=(offset,text)=>{for(let i=0;i<text.length;i++)bytes[offset+i]=text.charCodeAt(i)};
+  ascii(0,'RIFF');view.setUint32(4,bytes.length-8,true);ascii(8,'WAVE');
+  ascii(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);
+  view.setUint16(22,1,true);view.setUint32(24,16000,true);view.setUint32(28,32000,true);
+  view.setUint16(32,2,true);view.setUint16(34,16,true);ascii(36,'data');
+  view.setUint32(40,bytes.length-44,true);return bytes;
+}
 function metadata(overrides={}){
   return {v:2,audioFormat:'mp3',jobId:'job-1',fileId:'file-1',chunkIndex:1,chunkCount:1,attemptId:'attempt-1',declaredBytes:DEFAULT_MP3.length,durationSeconds:1,model:'gpt-transcribe',languages:[],keywords:[],prompt:'',requestKind:'transcription',...overrides};
 }
@@ -125,6 +134,48 @@ async function transcribe(cookie,meta=metadata(),headers={},body=DEFAULT_MP3){
 }
 
 describe('whole-Worker integration against real Wrangler entry/config',()=>{
+  it('derives diarization block handling from validated WAV bytes rather than claimed duration',async()=>{
+    const cookie=await createSession(),observed=[];
+    network.use(http.post('https://api.openai.com/v1/audio/transcriptions',async({request})=>{
+      const form=await request.formData(),file=form.get('file');
+      observed.push({chunking:form.get('chunking_strategy'),format:form.get('response_format'),
+        filename:file.name,bytes:new Uint8Array(await file.arrayBuffer())});
+      return HttpResponse.json({text:'Synthetic test speech.',segments:[]});
+    }));
+    for(const [seconds,claim] of [[15,999],[31,0.1]]){
+      const audio=shortProofPcmWav(seconds);
+      const response=await transcribe(cookie,metadata({audioFormat:'wav',declaredBytes:audio.length,
+        durationSeconds:claim,model:'gpt-4o-transcribe-diarize',jobId:`wav-${seconds}`,
+        fileId:`wav-${seconds}`,attemptId:`wav-${seconds}`}),{'Content-Type':'audio/wav'},audio);
+      expect(response.status).toBe(200);await response.arrayBuffer();
+      expect(observed.at(-1)).toMatchObject({chunking:seconds<=30?null:'auto',format:'diarized_json',filename:'audio.wav'});
+      expect(observed.at(-1).bytes).toEqual(audio);
+    }
+    expect(observed).toHaveLength(2);
+  });
+
+  it('keeps Access, metadata, MIME, length and signature validation ahead of short-WAV forwarding',async()=>{
+    const cookie=await createSession(),audio=shortProofPcmWav(1);let calls=0;
+    network.use(http.post('https://api.openai.com/v1/audio/transcriptions',async({request})=>{
+      await request.arrayBuffer();calls++;return HttpResponse.json({text:'unexpected'});
+    }));
+    const meta=metadata({audioFormat:'wav',declaredBytes:audio.length,model:'gpt-4o-transcribe-diarize'});
+    const unauthenticated=await worker.fetch(`${origin}/api/transcribe`,{method:'POST',headers:{Origin:origin,
+      'Content-Type':'audio/wav','X-Cosmic-Metadata':encodeMeta(meta),Cookie:cookie},body:audio});
+    expect(unauthenticated.status).toBe(401);await unauthenticated.arrayBuffer();
+    const cases=[
+      [{...meta,verifiedShortWav:true},{'Content-Type':'audio/wav'},audio,400],
+      [meta,{'Content-Type':'audio/mpeg'},audio,415],
+      [{...meta,declaredBytes:audio.length+2},{'Content-Type':'audio/wav'},audio,400],
+      [meta,{'Content-Type':'audio/wav'},new Uint8Array(audio.length),415]
+    ];
+    for(const [value,headers,body,status] of cases){
+      const response=await transcribe(cookie,value,headers,body);
+      expect(response.status).toBe(status);await response.arrayBuffer();
+    }
+    expect(calls).toBe(0);
+  });
+
   it('requires Access before serving static app assets and attaches security headers',async()=>{
     const missing=await worker.fetch(`${origin}/`);
     expect(missing.status).toBe(401);

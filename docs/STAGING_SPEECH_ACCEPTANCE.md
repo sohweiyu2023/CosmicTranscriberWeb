@@ -163,3 +163,87 @@ hash verification and all platform/release gates remain mandatory. These APT
 retries do not enable retries of paid transcription. Actual tool versions are
 preserved in provisioning output; runner image documentation alone is not proof
 that required codecs are present.
+
+## Remaining eight request candidate — 23 October 2026
+
+Main CI 39974134871 attempt 2 and MP3 smoke 39979683866 passed on main
+`4c5fe43fa3ab0d61da021080a497146b122d0e56`. The smoke receipt records one
+provider attempt, Access PASS and BYOK cleanup PASS. Its expected model charge
+is US$0.0009072; the conservative reservation is US$0.0045. This is not invoice
+verification. Eight request slots and US$0.2455 remain under the original
+nine-request/US$0.25 approval. **Do not invoke the legacy nine-call workflow.**
+
+### Conditional diarization bound
+
+Deployed source `82392336cfea5bc417098a2c6e3066dafca97b5b` always requests
+`chunking_strategy:auto`. The published per-block model limits cannot establish
+a whole-request bound when internal chunk count is unspecified.
+
+This candidate proves short PCM16 mono 16-kHz WAV duration from the complete
+server-validated bytes. Unknown, ambiguous, other-format or longer files retain
+the existing automatic path. Client duration cannot opt into the short path.
+For a proven WAV of at most 30 seconds, omit optional chunking and use the
+API's documented single-block default. This is a source change: it needs review,
+certification and a separately verified protected-staging deployment before use.
+
+For that single block, reserve US$0.18: the documented 16,000-token context plus
+2,000 maximum output tokens, both priced at the higher US$10/million rate.
+The published input rate is lower, US$2.50/million. Seven fixed approximately
+12-second `gpt-transcribe` files each reserve a full minute at US$0.0045.
+The planned additional reservation is US$0.2115; with the previous US$0.0045,
+the cumulative reservation would be US$0.216, below US$0.25.
+
+There is no provider-enforced dollar cap. This bound depends on the fixed bytes,
+documented single-block behavior, model limits and prices, one request per
+format and no retry. Sources fetched on 23 October; recheck if they change:
+
+- https://developers.openai.com/api/docs/models/gpt-4o-transcribe-diarize
+- https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create/
+
+### Prepared manual workflow
+
+File: `.github/workflows/staging-remaining-eight.yml`.
+
+- Ref: `main`.
+- Authorization: `remaining-eight-existing-approval` (default is `refuse`).
+- `fixture_run_id` and `fixture_artifact_id`: a reviewed same-repository producer
+  artifact named `cosmic-approved-remaining-eight-fixtures`.
+- Exactly eight pinned FLAC, MP4, MPEG, MPGA, M4A, OGG, WAV and WebM files; no MP3.
+  See `scripts/staging-remaining-eight-policy.mjs` for byte counts and hashes.
+
+These inputs are preserved offline Windows SAPI David/Zira synthetic speech,
+not private recordings. They remain outside the root MIT grant. The earlier
+exact-MP3 publication approval is not an additional voice/engine license, and
+this candidate publishes no new binary inputs. A producer must upload the eight
+files themselves; a ZIP containing another ZIP will fail the flat-file check.
+
+The workflow is deliberately inert until `APPROVED_DEPLOYMENT` is populated by
+a subsequent reviewed change with the newly certified source, successful CI and
+licensing runs, certified artifact, staging deployment run/head and Worker
+version. It rejects the old source. Required guards include source feature
+hashes, a fresh 100%-traffic version/source annotation, a source receipt at most
+300 seconds old, authenticated Access/account readiness and secure BYOK
+issuance/status/forget contracts. The prior successful MP3 receipt is hash-pinned.
+
+Inspect every CI attempt and paid-job record. Concurrent CI, an additional
+manual smoke or any prior remaining-eight attempt blocks execution. A failed or
+ambiguous attempt is never automatically replayed. Persist the reservation for
+all final eight slots before any paid send, then send sequentially and stop on
+the first failure. Evidence omits credentials, transcript bodies and identities.
+Shared concurrency matches the existing smoke. No production/release successor
+exists; `fullAcceptance:false` and `releaseReady:false` remain mandatory.
+
+### Remaining review and execution steps
+
+1. Review and run required CI for the source and test workflow.
+2. Certify and deploy the changed source to protected staging with rollback.
+3. Review and populate immutable deployment pins.
+4. Review and supply the eight-file artifact through a supported producer.
+5. Recheck cumulative accounting and prices; parent coordinates browser dispatch.
+
+The original MP3 and the future changed-source eight-format run have different
+source identities. Combining them does **not** prove strict nine-format
+acceptance of one exact source. Do not relabel the old receipt, weaken that gate,
+or spend a tenth request without a new specific allowance. Native Safari remains
+FAIL with its exact reviewed waiver; genuine Mac Safari remains unvalidated.
+This preparation sends no paid requests and accepts no new grants or agreements.

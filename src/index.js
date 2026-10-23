@@ -1,3 +1,4 @@
+import { shortPcmWavSeconds } from "./short-wav.js";
 import { authenticateAccess } from "./access.js";
 import { clearCredentialCookie, createCredentialSession, readCredentialSession } from "./byok.js";
 import { COOKIE_NAME, MODEL_ALLOWLIST_REVISION, MODELS, PRICING_LAST_VERIFIED } from "./config.js";
@@ -148,12 +149,13 @@ async function transcribeRoute(request, env, principal, requestId, ctx) {
   const session = await readCredentialSession(request, principal, env, { renew: true });
   const verifiedAudio = await readAndValidateAudioBody(request, metadata);
   const verifiedMpegLayer3 = metadata.audioFormat === "mpeg" && looksLikeMpegLayer3(verifiedAudio);
+  const verifiedShortWav = metadata.model === "gpt-4o-transcribe-diarize" && metadata.audioFormat === "wav" && shortPcmWavSeconds(verifiedAudio) !== null;
   const user = await principalHash(principal.sub, env);
   const started = Date.now();
   await recordTranscriptionDispatch(env, principal, metadata);
   safeOperationalLog({ route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes, category: "dispatch_start", elapsedMs: 0 });
   try {
-    const result = await dispatchTranscription({ requestBody: new Blob([verifiedAudio]).stream(), metadata, apiKey: session.apiKey, signal: request.signal, verifiedMpegLayer3 });
+    const result = await dispatchTranscription({ requestBody: new Blob([verifiedAudio]).stream(), metadata, apiKey: session.apiKey, signal: request.signal, verifiedMpegLayer3, verifiedShortWav });
     safeOperationalLog({ route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes, status: 200, category: "success", openaiRequestId: result.diagnostics.openaiRequestId, elapsedMs: Date.now() - started });
     scheduleTranscriptionResult(ctx, env, principal, metadata, true, { route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes });
     return setCookieHeader(jsonResponse({ ok: true, result: result.result, diagnostics: { ...result.diagnostics, appRequestId: requestId } }), session.renewal);
