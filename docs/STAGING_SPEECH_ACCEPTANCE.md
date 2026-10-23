@@ -153,3 +153,13 @@ complete prior-run accounting, a fresh current Cloudflare deployment/source
 receipt, protected Access/BYOK checks and the unchanged one-request/no-retry
 reservation under the cumulative nine-request/US$0.25 approval. Artifact upload
 alone is not paid acceptance or production readiness.
+
+CI setup remains fail-closed: Linux provisioning first checks actual ffmpeg and
+ffprobe versions plus all required encoder/decoder capabilities. If unavailable,
+APT update/install run with bounded network retries/timeouts and subprocess
+deadlines; provisioning has a 10-minute step ceiling, and the dependency job
+a 20-minute ceiling. Package signatures, generated-media checks, exact fixture
+hash verification and all platform/release gates remain mandatory. These APT
+retries do not enable retries of paid transcription. Actual tool versions are
+preserved in provisioning output; runner image documentation alone is not proof
+that required codecs are present.
