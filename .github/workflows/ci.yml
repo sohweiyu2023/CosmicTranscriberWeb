@@ -13,6 +13,7 @@ jobs:
   resolve-lock:
     name: Resolve one reviewed dependency graph
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -37,18 +38,21 @@ jobs:
       - name: Require direct dependencies to be current
         run: npm outdated --depth=0
       - name: Provision audio fixture toolchain
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          command -v ffmpeg
-          command -v ffprobe
-          ffmpeg -version
-          ffprobe -version
+        timeout-minutes: 10
+        run: node scripts/provision-ci-media.mjs
       - name: Generate deterministic MP3 and nine-format fixtures
         run: node scripts/generate-test-fixtures.mjs
       - name: Full dependency-free adversarial gate
         run: npm run validate
+      - name: Verify exact approved single MP3 bytes (no provider calls)
+        run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
+      - name: Preserve only the approved MP3 for the manual smoke workflow
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cosmic-approved-single-mp3-fixture
+          path: tests/fixtures/approved-single-mp3/staging-speech.mp3
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload reviewed lock and fixtures
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -80,14 +84,8 @@ jobs:
       - run: npm run deps:install-scripts:verify
       - run: npm audit
       - name: Provision media validation toolchain
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          command -v ffmpeg
-          command -v ffprobe
-          ffmpeg -version
-          ffprobe -version
+        timeout-minutes: 10
+        run: node scripts/provision-ci-media.mjs
       - run: npm run validate
       - run: npm run test:worker
       - run: npm run test:integration
