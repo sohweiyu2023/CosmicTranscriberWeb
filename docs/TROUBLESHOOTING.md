@@ -67,3 +67,18 @@ The browser now shows an elapsed `Uploading / waiting for OpenAI` phase rather t
 
 Only an explicit user cancellation is reported as **Cancelled**. A browser transport/network interruption is classified separately (for example `browser_transport_abort`, `browser_network_error`, `browser_offline` or `browser_transport_error`) and remains conservative about possible OpenAI billing after dispatch.
 
+
+### Bounded paid continuation after a successful smoke
+
+One MP3 smoke consumes one of the nine approved request slots, leaving eight.
+A full nine-call runner would exceed that authorization. Preserve the receipt
+and conservative reservation; do not reset spending from an estimated charge.
+Inspect all CI attempts, including failures and reruns. A failed response is not
+proof that processing was unbilled.
+
+Per-block model limits cannot bound a request with an unspecified number of
+automatic internal chunks. The short-WAV candidate proves PCM duration from
+server-validated bytes before omitting optional chunking. Never trust client
+duration, invent a transcription `max_output_tokens` parameter, or apply this
+bound to source that still requests `auto`. A changed source also prevents an
+old-source MP3 receipt from becoming new-source full certification.

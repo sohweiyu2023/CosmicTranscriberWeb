@@ -20,14 +20,15 @@ function formField(name, value) {
   return `Content-Disposition: form-data; name="${name}"\r\n\r\n${String(value)}\r\n`;
 }
 
-function buildMultipartPrefix(boundary, metadata, verifiedMpegLayer3 = false) {
+function buildMultipartPrefix(boundary, metadata, verifiedMpegLayer3 = false, verifiedShortWav = false) {
   const model = MODELS[metadata.model];
   const parts = [];
   const add = (name, value) => parts.push(`--${boundary}\r\n${formField(name, value)}`);
   add("model", metadata.model);
   if (model.diarization) {
     add("response_format", "diarized_json");
-    add("chunking_strategy", "auto");
+    // A server-proven <=30-second PCM WAV uses the documented single block.
+    if (verifiedShortWav !== true || metadata.audioFormat !== "wav") add("chunking_strategy", "auto");
   } else {
     add("response_format", "json");
   }
@@ -106,9 +107,9 @@ function classifyOpenAiStatus(status, bodyText = "") {
   return ["openai_error", "OpenAI could not complete the request."];
 }
 
-export async function dispatchTranscription({ requestBody, metadata, apiKey, signal, verifiedMpegLayer3 = false, fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS }) {
+export async function dispatchTranscription({ requestBody, metadata, apiKey, signal, verifiedMpegLayer3 = false, verifiedShortWav = false, fetchImpl = fetch, timeoutMs = UPSTREAM_TIMEOUT_MS }) {
   const boundary = `ctw-${crypto.randomUUID().replace(/-/g, "")}`;
-  const prefix = buildMultipartPrefix(boundary, metadata, verifiedMpegLayer3);
+  const prefix = buildMultipartPrefix(boundary, metadata, verifiedMpegLayer3, verifiedShortWav);
   const suffix = utf8(`\r\n--${boundary}--\r\n`);
   const { stream } = buildMultipartStream(requestBody, prefix, suffix, metadata.declaredBytes);
   const clientRequestId = `ctw-${metadata.attemptId}`.slice(0, 512);

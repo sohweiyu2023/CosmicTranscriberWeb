@@ -1,0 +1,103 @@
+name: Remaining EIGHT approved STAGING formats ONLY
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: Consume only the eight remaining requests; cumulative reservation USD0.216 within USD0.25
+        required: true
+        type: choice
+        default: refuse
+        options: [refuse, remaining-eight-existing-approval]
+      fixture_run_id:
+        description: Same-repository reviewed artifact producer run
+        required: true
+        type: string
+      fixture_artifact_id:
+        description: cosmic-approved-remaining-eight-fixtures with exactly eight pinned synthetic files
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cosmic-approved-paid-staging
+  cancel-in-progress: false
+jobs:
+  remaining:
+    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.authorization == 'remaining-eight-existing-approval' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
+      FIXTURE_ARTIFACT_ID: ${{ inputs.fixture_artifact_id }}
+      COSMIC_REMAINING_EIGHT_MODE: ${{ inputs.authorization }}
+      COSMIC_EIGHT_EVIDENCE: ${{ github.workspace }}/remaining-eight-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Refuse until reviewed deployment pins replace the intentionally empty draft
+        id: pins
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync} from 'node:fs';
+          import {requireReviewedDeployment} from './scripts/staging-remaining-eight-policy.mjs';
+          const pin=requireReviewedDeployment();
+          appendFileSync(process.env.GITHUB_OUTPUT,'source='+pin.source+'\n');
+          NODE
+      - name: Read only the pinned successful MP3 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: '12512662440'
+          run-id: '39979683866'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/prior-mp3
+      - name: Account every previous attempt and reserve the final eight slots
+        run: node scripts/staging-remaining-eight-preflight.mjs prepare
+      - name: Persist cumulative reservation before any paid request
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: remaining-eight-approved-reservation
+          path: ${{ github.workspace }}/remaining-eight-evidence/reservation.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Download only the reviewed synthetic eight-format artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ inputs.fixture_artifact_id }}
+          run-id: ${{ inputs.fixture_run_id }}
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/remaining-eight-fixtures
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ steps.pins.outputs.source }}
+          path: certified-source
+          persist-credentials: false
+      - name: Fresh exact-source staging proof using existing read access
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/staging-remaining-eight-preflight.mjs source
+      - name: At most eight fixed requests, stop on first failure, never retry
+        env:
+          STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+          STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+          COSMIC_SMOKE_SOURCE_ROOT: ${{ github.workspace }}/certified-source
+          COSMIC_STAGING_SOURCE_RECEIPT: ${{ github.workspace }}/remaining-eight-evidence/source.json
+        run: node scripts/staging-remaining-eight-runner.mjs "$RUNNER_TEMP/remaining-eight-fixtures" "$COSMIC_EIGHT_EVIDENCE/receipt.json" "$COSMIC_EIGHT_EVIDENCE/budget.json"
+      - name: Preserve only redacted evidence with no release or production successor
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: remaining-eight-redacted-evidence
+          path: ${{ github.workspace }}/remaining-eight-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 90
