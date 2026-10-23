@@ -1,0 +1,171 @@
+name: Deploy pinned certified source to STAGING ONLY
+
+on:
+  workflow_dispatch:
+    inputs:
+      credential_review:
+        description: Owner authorizes existing GitHub secret use; exposure relationship remains unresolved
+        required: true
+        type: choice
+        default: unresolved-refuse-deployment
+        options:
+          - unresolved-refuse-deployment
+          - owner-authorized-existing-secret-use
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cosmic-transcriber-staging-deploy-only
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.credential_review == 'owner-authorized-existing-secret-use' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+    env:
+      CREDENTIAL_REVIEW: ${{ inputs.credential_review }}
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+      STAGING_WORKER_NAME: cosmic-transcriber-web-staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Verify exact successful CI/licensing and certified artifact
+        run: node scripts/staging-deploy-only.mjs certification
+      - name: Verify legitimate protected staging shell before deployment or D1 migration
+        run: node scripts/staging-deploy-only.mjs access
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: '12468047768'
+          run-id: '39872658149'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: certified
+      - name: Verify pinned source ZIP and staging-only manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' 'a12cc04d5f88b981fa9aa2dd5d704495dcee8e0aef0faf2f2455b0ded3ae44a0' 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
+          root="$RUNNER_TEMP/pinned-staging-source"
+          mkdir -p "$root"
+          unzip -q certified/CosmicTranscriberWeb-1.2.0-source.zip -d "$root"
+          candidate="$root/CosmicTranscriberWeb-1.2.0"
+          chmod -R u+rwX "$candidate"
+          echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
+          cd "$candidate"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          const m=JSON.parse(readFileSync('RELEASE_MANIFEST.json')),p=JSON.parse(readFileSync('package.json'));
+          assert.equal(m.version,'1.2.0');assert.equal(p.version,'1.2.0');assert.equal(m.releaseReady,false);assert.equal(m.certificationLevel,'staging');
+          assert.equal(m.dependencyLock.status,'verified');assert.equal(createHash('sha256').update(readFileSync('package-lock.json')).digest('hex'),m.dependencyLock.sha256);
+          NODE
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(node --version)" = 'v26.7.0'
+          test "$(npm --version)" = '12.0.2'
+          npm ci
+          npm run deps:install-scripts:verify
+          npm audit
+          npm outdated --depth=0
+      - name: Reuse approved private bindings from current staging deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          settings="$RUNNER_TEMP/current-staging-settings.json"
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${STAGING_WORKER_NAME}/settings" > "$settings"
+          SETTINGS_FILE="$settings" node --input-type=module <<'NODE'
+          import {readFile, writeFile} from 'node:fs/promises';
+          import path from 'node:path';
+          import {pathToFileURL} from 'node:url';
+          const root=process.env.CANDIDATE;
+          const response=JSON.parse(await readFile(process.env.SETTINGS_FILE,'utf8'));
+          if(response?.success!==true||!response?.result||!Array.isArray(response.result.bindings)) throw new Error('Could not read current staging Worker bindings.');
+          const bindings=response.result.bindings;
+          const plain=name=>{const b=bindings.find(x=>x?.name===name&&x?.type==='plain_text'); if(!b||typeof b.text!=='string'||!b.text.trim())throw new Error(`Current staging binding ${name} is unavailable.`); return b.text;};
+          const d1=bindings.find(x=>x?.name==='USER_DB'&&x?.type==='d1');
+          const databaseId=d1?.database_id||d1?.id;
+          if(typeof databaseId!=='string'||!/^[0-9a-f-]{36}$/i.test(databaseId)) throw new Error('Current staging USER_DB binding is unavailable.');
+          const {applyAccessValues}=await import(pathToFileURL(path.join(root,'scripts/configure-access.mjs')).href);
+          const {applyRegistryValues}=await import(pathToFileURL(path.join(root,'scripts/configure-registry.mjs')).href);
+          const configPath=path.join(root,'wrangler.jsonc');
+          const config=JSON.parse(await readFile(configPath,'utf8'));
+          applyAccessValues(config,'staging',plain('ACCESS_TEAM_DOMAIN'),plain('ACCESS_AUDIENCE'));
+          applyRegistryValues(config,'staging',databaseId,plain('ADMIN_EMAILS'));
+          await writeFile(configPath,JSON.stringify(config,null,2)+'\n','utf8');
+          console.log('Reused current staging Access/admin/D1 bindings without printing private values.');
+          NODE
+          cd "$CANDIDATE"
+          node scripts/deploy-verify.mjs staging
+      - name: Confirm existing staging BYOK secret without replacing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          node scripts/wrangler-invoke.mjs secret list --env staging --format json > "$RUNNER_TEMP/v12-staging-secret-names.json"
+          node -e "const x=require(process.argv[1]); if (!Array.isArray(x)||!x.some(y=>y?.name==='BYOK_SESSION_MASTER_KEY_CURRENT'))process.exit(1)" "$RUNNER_TEMP/v12-staging-secret-names.json" || { echo 'Existing staging BYOK master secret missing; refusing to deploy.' >&2; exit 1; }
+          rm -f "$RUNNER_TEMP/v12-staging-secret-names.json"
+      - name: Record known-good staging version for rollback
+        shell: bash
+        run: |
+          cd "$CANDIDATE"
+          node scripts/wrangler-invoke.mjs deployments list --env staging --json > "$RUNNER_TEMP/staging-before-raw.json"
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));fs.writeFileSync(process.argv[2],JSON.stringify(a.map(({id,created_on,versions})=>({id,created_on,versions}))))" "$RUNNER_TEMP/staging-before-raw.json" "$GITHUB_WORKSPACE/staging-before.json"
+          node -e "const a=require(process.argv[1]);const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id!=='31808bae-7ca6-4a38-b13f-042959a192de')process.exit(1)" "$GITHUB_WORKSPACE/staging-before.json"
+      - name: Deploy STAGING ONLY
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          npm run deploy:staging -- --message "Source82392336cfea5bc417098a2c6e3066dafca97b5b CI39872658149 artifact12468047768"
+      - name: Staging reachability smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 https://transcriber-staging.awakeningtoreality.com/)"
+          case "$code" in
+            2*|3*|401|403) echo "Staging endpoint reachable through expected app/Access boundary: HTTP $code" ;;
+            *) echo "Unexpected staging HTTP status: $code" >&2; exit 1 ;;
+          esac
+      - name: Record newly deployed staging version
+        shell: bash
+        run: |
+          cd "$CANDIDATE"
+          node scripts/wrangler-invoke.mjs deployments list --env staging --json > "$RUNNER_TEMP/staging-after-raw.json"
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id==='31808bae-7ca6-4a38-b13f-042959a192de'||!String(x.annotations?.['workers/message']).includes('Source82392336cfea5bc417098a2c6e3066dafca97b5b CI39872658149 artifact12468047768'))process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:'82392336cfea5bc417098a2c6e3066dafca97b5b',fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json"
+      - name: Reassert release boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$CANDIDATE"
+          test "$(node -p "require('./RELEASE_MANIFEST.json').releaseReady")" = 'false'
+          test "$(node -p "require('./RELEASE_MANIFEST.json').certificationLevel")" = 'staging'
+          echo 'STAGING deployment only. Production remains blocked until live staging acceptance passes.'
+
+      - name: Recheck authenticated Access protection after deployment
+        run: node scripts/staging-deploy-only.mjs access
+      - name: Preserve sanitized deployment and rollback receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: staging-deploy-only-evidence
+          path: |
+            staging-certification-receipt.json
+            staging-before.json
+            staging-after.json
+          if-no-files-found: warn
+          retention-days: 7
