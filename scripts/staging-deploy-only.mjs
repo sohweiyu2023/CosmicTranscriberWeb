@@ -12,7 +12,7 @@ export function assertManualIdentity(env){
  assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_RUN_ATTEMPT,'1');
  assert.equal(env.GITHUB_WORKFLOW,'Deploy pinned certified source to STAGING ONLY');
  assert.match(env.GITHUB_SHA||'',/^[a-f0-9]{40}$/);assert.match(env.GITHUB_RUN_ID||'',/^[1-9][0-9]*$/);
- assert.equal(env.CREDENTIAL_REVIEW,'reviewed-safe-to-use','Deployment paused until exposed-token relationship/remediation is resolved');
+ assert.equal(env.CREDENTIAL_REVIEW,'owner-authorized-existing-secret-use','Current owner authorization is required to use the existing GitHub staging secret');
 }
 export function verifyCertification(run,jobs,artifact,licensing){
  for(const value of [run,licensing]){assert.equal(value.status,'completed');assert.equal(value.conclusion,'success');assert.equal(value.head_sha,PIN.commit);assert.equal(value.event,'push');assert.equal(value.head_branch,'main');assert.equal(value.run_attempt,1)}
@@ -21,7 +21,7 @@ export function verifyCertification(run,jobs,artifact,licensing){
  for(const name of required){const matches=jobs.filter(x=>x.name===name);assert.equal(matches.length,1);assert.equal(matches[0].status,'completed');assert.equal(matches[0].conclusion,'success')}
  assert.equal(artifact.id,PIN.artifact);assert.equal(artifact.name,PIN.artifactName);assert.equal(artifact.expired,false);assert.equal(artifact.digest,PIN.outerDigest);
  assert.equal(artifact.workflow_run.id,PIN.run);assert.equal(artifact.workflow_run.head_sha,PIN.commit);
- return {schema:'cosmic-manual-staging-ci-1',commit:PIN.commit,run:PIN.run,artifact:PIN.artifact,sourceDigest:PIN.sourceDigest,nativeSafari:'FAIL/WAIVED; genuine Mac Safari not validated',releaseReady:false};
+ return {schema:'cosmic-manual-staging-ci-1',commit:PIN.commit,run:PIN.run,artifact:PIN.artifact,sourceDigest:PIN.sourceDigest,nativeSafari:'FAIL/WAIVED; genuine Mac Safari not validated',releaseReady:false,credentialUseDecision:'Owner authorized existing GitHub secret use; exposed-token relationship remains unresolved; no pasted token used'};
 }
 export async function checkProtectedStaging(credential,fetchImpl=fetch){
   const {authHeader,accessCookie}=parseStagingAccessCredential(credential);
