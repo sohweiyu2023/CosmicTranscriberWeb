@@ -49,6 +49,15 @@ jobs:
         run: node scripts/generate-test-fixtures.mjs
       - name: Full dependency-free adversarial gate
         run: npm run validate
+      - name: Verify exact approved single MP3 bytes (no provider calls)
+        run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
+      - name: Preserve only the approved MP3 for the manual smoke workflow
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cosmic-approved-single-mp3-fixture
+          path: tests/fixtures/approved-single-mp3/staging-speech.mp3
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload reviewed lock and fixtures
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

@@ -120,3 +120,36 @@ external spending must still be reconciled before any later paid procedure.
 One smoke plus a subsequent nine-request suite would total ten and requires
 changed request authorization. Existing full-acceptance gates are unchanged.
 Safari remains FAIL/WAIVED; genuine Mac Safari is unvalidated.
+
+## Approved single-MP3 artifact publication — 23 October 2026
+
+The separate manual smoke uses `tests/fixtures/approved-single-mp3/staging-speech.mp3`,
+not the older nine-format speech MP3. It is exactly 194156 bytes, SHA-256
+`9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a`,
+12.096 seconds, mono 16 kHz MP3 at 128 kbit/s. It was generated offline with
+FFmpeg 7.1.1/libmp3lame from the first 12 seconds of a preserved synthetic WAV
+(SHA-256 `3e6cf6e1fc99bb17e46734c50b5c7fcd3cbc78c9673c5473dafcb3395bad46d3`,
+15.0099375 seconds), using Windows SAPI David Desktop and Zira Desktop voices
+and original neutral test dialogue. It contains no private recording. The
+preserved source differs from the older repository two-speaker WAV; do not
+claim this new sample derives from that older recording.
+
+The owner explicitly approved public publication of this exact synthetic MP3
+and its CI packaging step on 23 October 2026. This is publication authorization,
+not a new MIT grant over binary audio, Microsoft voices, synthesis engines or
+other third-party assets. The root third-party media exclusion remains in force.
+The source WAV, voice assets and synthesis engine are not added by this change.
+
+Existing CI verifies the exact fixture bytes after its dependency-free gate,
+then uploads only this MP3 as `cosmic-approved-single-mp3-fixture`, retained
+for seven days. Uploading the single file gives one flattened artifact entry
+`staging-speech.mp3`, as required by the manual runner. No new workflow, secret,
+paid request or deployment is introduced by packaging. Select the resulting
+artifact/run IDs only after checking the run and artifact metadata; do not use
+the older `reviewed-release-inputs` MP3 (SHA-256 starts `4752db5e`).
+
+The paid workflow still requires main/first attempt, explicit mode selection,
+complete prior-run accounting, a fresh current Cloudflare deployment/source
+receipt, protected Access/BYOK checks and the unchanged one-request/no-retry
+reservation under the cumulative nine-request/US$0.25 approval. Artifact upload
+alone is not paid acceptance or production readiness.

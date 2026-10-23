@@ -25,3 +25,15 @@ The locked development graph includes MIT, Apache-2.0, ISC, BSD, MPL-2.0 and LGP
 All binary assets and audio fixtures are outside the new MIT grant. The fixture generator documents synthetic tone generation, but the original two-speaker recording's ownership/performer consent is not established by the repository. The staging speech files derive from it; see docs/STAGING_SPEECH_ACCEPTANCE.md. Preserve existing rights; obtain the relevant rights before redistributing recordings.
 
 OpenAI and Cloudflare services, names and trademarks are not licensed by this project. System runtimes and separately downloaded encoders, browsers and toolchains have their own terms.
+
+### Approved synthetic single-MP3 test sample
+
+`tests/fixtures/approved-single-mp3/staging-speech.mp3` is a separately documented
+offline synthetic SAPI David Desktop/Zira Desktop sample of original neutral
+test dialogue. Its exact hash and preserved source provenance are recorded in
+`docs/STAGING_SPEECH_ACCEPTANCE.md`. The owner approved publishing this exact
+file on 23 October 2026. It remains outside the root MIT grant over original
+code/documentation; no Microsoft voice/engine assets or third-party rights are
+relicensed or supplied by this publication. It is distinct from the older
+two-speaker repository recording discussed above. Preserve this notice and
+its provenance when carrying this test fixture into another package.
