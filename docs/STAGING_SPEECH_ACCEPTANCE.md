@@ -89,6 +89,8 @@ concurrent CI, and saves a reservation artifact before a paid-capable step.
 An ambiguous request remains reserved: do not rerun, delete history to reset
 the allowance, or interpret a failure as proof nothing was charged. The local
 ledger/receipt also uses exclusive files and a retained one-shot lock.
+Historical CI retries are accepted only when every attempt has exactly one
+completed, explicitly skipped paid-job record; missing or ambiguous records block.
 
 The operator must supply an existing same-repository fixture run/artifact named
 `cosmic-approved-single-mp3-fixture`, containing `staging-speech.mp3` only.

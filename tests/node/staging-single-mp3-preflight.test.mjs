@@ -12,7 +12,7 @@ test('manual identity refuses reruns, branch dispatch, other repository and inje
  for(const change of [{GITHUB_RUN_ATTEMPT:'2'},{GITHUB_REF:'refs/heads/review/test'},{GITHUB_EVENT_NAME:'push'},{GITHUB_REPOSITORY:'other/repo'},{COSMIC_SMOKE_AUTHORIZATION:'refuse'},{FIXTURE_RUN_ID:'1;echo secret'}])assert.throws(()=>verifyIdentity({...identity(),...change}));
 });
 test('durable run-history accounting refuses prior/ambiguous paid attempts and concurrent CI',()=>{
- const smoke=[{id:100,run_attempt:1}],ci=[{id:20,status:'completed',run_attempt:1}],j=[{run_id:20,name:jobName,conclusion:'skipped'}];
+ const smoke=[{id:100,run_attempt:1}],ci=[{id:20,status:'completed',run_attempt:1}],j=[{run_id:20,run_attempt:1,name:jobName,status:'completed',conclusion:'skipped'}];
  const ledger=verifyHistory(smoke,ci,j,100);assert.equal(ledger.maximumRequests,9);assert.equal(ledger.maximumMicroUsd,250000);assert.equal(ledger.reservedRequests,0);
  assert.throws(()=>verifyHistory([...smoke,{id:99,run_attempt:1}],ci,j,100));
  assert.throws(()=>verifyHistory([{id:100,run_attempt:2}],ci,j,100));
@@ -20,6 +20,14 @@ test('durable run-history accounting refuses prior/ambiguous paid attempts and c
  assert.throws(()=>verifyHistory(smoke,ci,[],100));
  assert.throws(()=>verifyHistory(smoke,ci,[...j,...j],100));
  for(const conclusion of ['success','failure','cancelled',null])assert.throws(()=>verifyHistory(smoke,ci,[{...j[0],conclusion}],100));
+});
+test('historical CI reruns require an explicit skipped paid-job record for every attempt',()=>{
+ const smoke=[{id:100,run_attempt:1}],ci=[{id:20,status:'completed',run_attempt:2}],j=[1,2].map(run_attempt=>({run_id:20,run_attempt,name:jobName,status:'completed',conclusion:'skipped'}));
+ assert.equal(verifyHistory(smoke,ci,j,100).reservedRequests,0);
+ assert.throws(()=>verifyHistory(smoke,ci,j.slice(1),100));
+ assert.throws(()=>verifyHistory(smoke,ci,[j[0],j[0]],100));
+ assert.throws(()=>verifyHistory(smoke,ci,[j[0],{...j[1],conclusion:'failure'}],100));
+ assert.throws(()=>verifyHistory(smoke,ci,[j[0],{...j[1],status:'in_progress'}],100));
 });
 test('live source requires successful exact deployment, full traffic and matching source annotation',()=>{
  const receipt=verifyDeployment(run(),jobs(),deployment());assert.equal(receipt.commit,PIN.source);assert.equal(receipt.workerVersionId,PIN.version);assert.equal(receipt.verified,true);assert.ok(Date.now()-Date.parse(receipt.checkedAtUtc)<5000);

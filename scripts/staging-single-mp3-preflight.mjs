@@ -19,11 +19,14 @@ export function verifyHistory(smokeRuns,ciRuns,jobs,currentRun){
  // Do not infer zero billing from failure or erase an ambiguous reservation.
  assert.equal(smokeRuns.filter(x=>String(x.id)!==String(currentRun)).length,0,'Prior smoke run requires accounting review');
  for(const run of smokeRuns)assert.equal(run.run_attempt,1,'Rerun reservation is forbidden');
- for(const run of ciRuns){assert.equal(run.status,'completed','Concurrent CI could contain paid work');assert.equal(run.run_attempt,1,'Prior CI rerun requires accounting review')}
+ for(const run of ciRuns){assert.equal(run.status,'completed','Concurrent CI could contain paid work');assert.ok(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&run.run_attempt<=20,'Invalid CI attempt accounting')}
  for(const run of ciRuns){
   const paid=jobs.filter(job=>job.run_id===run.id&&job.name==='Actual authenticated STAGING paid nine-format acceptance');
-  assert.equal(paid.length,1,'Missing/duplicate paid-job accounting requires review');
-  assert.equal(paid[0].conclusion,'skipped','Earlier paid-capable job requires accounting review');
+  assert.equal(paid.length,run.run_attempt,'Missing/duplicate paid-job accounting requires review');
+  for(let attempt=1;attempt<=run.run_attempt;attempt++){
+   const matches=paid.filter(job=>job.run_attempt===attempt);assert.equal(matches.length,1,'Incomplete CI attempt accounting');
+   assert.equal(matches[0].status,'completed');assert.equal(matches[0].conclusion,'skipped','Earlier paid-capable job requires accounting review');
+  }
  }
  return {schema:'cosmic-approved-paid-budget-1',approval:PIN.approval,maximumRequests:9,maximumMicroUsd:250000,reservedRequests:0,reservedMicroUsd:0};
 }
