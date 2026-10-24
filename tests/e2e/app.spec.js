@@ -3,18 +3,40 @@ import {readFile} from 'node:fs/promises';
 const seeded='SEED-NO-PERSIST-KEY-7d9b4676';
 
 async function expectAccountWithinPage(page){
-  await expect.poll(()=>page.locator('#accountCard').evaluate(card=>{
-    const box=card.getBoundingClientRect(),failures=[];
-    if(document.documentElement.scrollWidth>innerWidth+1)failures.push('page overflows horizontally');
-    if(box.left< -1||box.right>innerWidth+1)failures.push('account card exceeds viewport');
-    for(const selector of ['.account-meta','#accountEmail','#accountState']){
-      const rect=card.querySelector(selector).getBoundingClientRect();
-      if(rect.left<box.left-1||rect.right>box.right+1||rect.top<box.top-1||rect.bottom>box.bottom+1){
-        failures.push(`${selector} exceeds account card`);
-      }
-    }
-    return failures;
-  })).toEqual([]);
+  let completedMeasurements=0,lastSample=null,measurementInFlight=false;
+  const started=Date.now();
+  try{
+    await expect.poll(async()=>{
+      measurementInFlight=true;
+      const sample=await page.locator('#accountCard').evaluate(card=>{
+        const box=card.getBoundingClientRect(),failures=[];
+        if(document.documentElement.scrollWidth>innerWidth+1)failures.push('page overflows horizontally');
+        if(box.left< -1||box.right>innerWidth+1)failures.push('account card exceeds viewport');
+        const bounds=rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,width:rect.width,height:rect.height});
+        const state=element=>{
+          const css=getComputedStyle(element);
+          return {box:bounds(element.getBoundingClientRect()),scrollWidth:element.scrollWidth,clientWidth:element.clientWidth,scrollHeight:element.scrollHeight,clientHeight:element.clientHeight,overflowX:css.overflowX,overflowY:css.overflowY,fontSizePx:parseFloat(css.fontSize)||0};
+        };
+        const children={};
+        for(const selector of ['.account-meta','#accountEmail','#accountState']){
+          const element=card.querySelector(selector),rect=element.getBoundingClientRect();
+          if(rect.left<box.left-1||rect.right>box.right+1||rect.top<box.top-1||rect.bottom>box.bottom+1){
+            failures.push(`${selector} exceeds account card`);
+          }
+          children[selector]=state(element);
+        }
+        // Fixed numeric geometry/style fields only: never text, HTML, URLs,
+        // cookies, storage or input values. Capture during the original poll,
+        // so reporting a timeout never starts another browser-protocol request.
+        return {failures,viewport:{width:innerWidth,height:innerHeight,devicePixelRatio,scrollX,scrollY},root:state(document.documentElement),card:state(card),children,fontsReady:document.fonts?.status==='loaded',documentReady:document.readyState==='complete'};
+      });
+      measurementInFlight=false;completedMeasurements++;lastSample=sample;
+      return sample.failures;
+    }).toEqual([]);
+  }catch(error){
+    console.error('ACCOUNT_LAYOUT_DIAGNOSTIC '+JSON.stringify({completedMeasurements,measurementInFlight,elapsedMs:Date.now()-started,requestedViewport:page.viewportSize(),lastSample}));
+    throw error;
+  }
 }
 
 test('secure key setup, native controls, queue, mocked transcript and downloads',async({page,context})=>{

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
-import {POLICY,FIXTURES,PRIOR_FILES,requireReviewedDeployment,verifyPriorSmoke,reserveRemaining,verifyFixtures,verifyHistory} from '../../scripts/staging-remaining-eight-policy.mjs';
+import {POLICY,APPROVED_DEPLOYMENT,FIXTURES,PRIOR_FILES,requireReviewedDeployment,verifyPriorSmoke,reserveRemaining,verifyFixtures,verifyHistory} from '../../scripts/staging-remaining-eight-policy.mjs';
 import {runFixedBatch} from '../../scripts/staging-remaining-eight-runner.mjs';
 import {verifyIdentity,verifySource} from '../../scripts/staging-remaining-eight-preflight.mjs';
 const fixtureRoot=process.env.COSMIC_EIGHT_FIXTURE_ROOT,priorRoot=process.env.COSMIC_PRIOR_SMOKE_EVIDENCE;
@@ -16,8 +16,14 @@ test('eight fixed formats exclude MP3 and cumulative reservation cannot reset pr
  assert.equal(FIXTURES.find(x=>x.format==='wav').reservationMicroUsd,180000);
  assert.deepEqual(reserveRemaining(ledger()),{...ledger(),reservedRequests:9,reservedMicroUsd:216000});
  for(const change of [{reservedRequests:0},{reservedRequests:2},{reservedMicroUsd:0},{maximumRequests:10},{maximumMicroUsd:250001},{approval:'other'}])assert.throws(()=>reserveRemaining({...ledger(),...change}));
- assert.throws(()=>requireReviewedDeployment());assert.throws(()=>requireReviewedDeployment({source:'82392336cfea5bc417098a2c6e3066dafca97b5b'}));
+ assert.deepEqual(requireReviewedDeployment(),APPROVED_DEPLOYMENT);assert.throws(()=>requireReviewedDeployment({source:null}));assert.throws(()=>requireReviewedDeployment({source:'82392336cfea5bc417098a2c6e3066dafca97b5b'}));
 });
+test('deployment pin identifies actual patched staging evidence without mixing coordinator and app source',()=>{
+ assert.deepEqual(APPROVED_DEPLOYMENT,{"source":"88ee4a683c8c277885f0737db53226e658390fae","version":"e1c94498-bfb2-4cbd-8488-e75cdec32877","run":40063452013,"head":"728b42283b4252f2a125e4c4b5bf56c22989e3ae","ciRun":40056803923,"licensingRun":40056803922,"artifact":12546575744});
+ assert.notEqual(APPROVED_DEPLOYMENT.source,APPROVED_DEPLOYMENT.head);
+ for(const k of ['source','version','head','run','ciRun','licensingRun','artifact'])assert.throws(()=>requireReviewedDeployment({...APPROVED_DEPLOYMENT,[k]:null}));
+});
+
 test('pinned prior receipt and every binary input are verified before spending',dataTest,async()=>{
  const prior=await filesAt(priorRoot);assert.deepEqual(verifyPriorSmoke(prior),ledger());
  const changed={...prior,'receipt.json':Buffer.from(prior['receipt.json'].toString().replace('PASS','FAIL'))};assert.throws(()=>verifyPriorSmoke(changed));
@@ -53,6 +59,9 @@ test('fresh deployment proof requires reviewed CI/licensing, exact source annota
  assert.throws(()=>verifySource(run,jobs,{...ci,head_sha:pin.head},licensing,cf,pin));
  assert.throws(()=>verifySource(run,jobs,ci,licensing,[{...cf[0],versions:[{version_id:pin.version,percentage:99}]}],pin));
  assert.throws(()=>verifySource({...run,run_attempt:2},jobs,ci,licensing,cf,pin));
+ assert.throws(()=>verifySource({...run,head_sha:pin.source},jobs,ci,licensing,cf,pin));
+ assert.throws(()=>verifySource(run,jobs,ci,licensing,[{...cf[0],versions:[{version_id:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',percentage:100}]}],pin));
+ assert.throws(()=>verifySource(run,jobs,ci,licensing,[{...cf[0],annotations:{'workers/message':'wrong-source'}}],pin));
 });
 test('mocked successful batch sends exactly eight, preserves before-send evidence and never certifies release',dataTest,async()=>{
  const files=await fixedFiles(),report={attempted:0,formats:[],releaseReady:false,fullAcceptance:false};let calls=0,persisted=0;
