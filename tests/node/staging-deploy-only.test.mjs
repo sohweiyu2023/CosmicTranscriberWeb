@@ -64,7 +64,7 @@ test('fresh rollback requires exact current 100percent version and source, never
 });
 test('updated immutable pins and workflow stay synchronized without paid or production successor',()=>{
  const y=readFileSync(new URL('../../.github/workflows/staging-deploy-only.yml',import.meta.url),'utf8');
- assert.equal(PIN.commit,'2d9b6bddc20cd8b0444611e3cdd3995cb5c8a653');assert.equal(PIN.run,40013630998);assert.equal(PIN.artifact,12527898809);assert.equal(PIN.licensingRun,40013630997);
+ assert.equal(PIN.commit,'88ee4a683c8c277885f0737db53226e658390fae');assert.equal(PIN.run,40056803923);assert.equal(PIN.artifact,12546575744);assert.equal(PIN.licensingRun,40056803922);
  for(const value of [PIN.commit,String(PIN.run),String(PIN.artifact),PIN.sourceDigest,PIN.rollback])assert.ok(y.includes(value));
  assert.ok(y.includes('(cd "$GITHUB_WORKSPACE" && node scripts/staging-deploy-only.mjs rollback)'));assert.ok(y.includes('Main advanced before deployment'));
  assert.equal((y.match(/npm run deploy:staging/g)||[]).length,1);assert.doesNotMatch(y,/deploy:production|STAGING_OPENAI_API_KEY|api\/transcribe/);
