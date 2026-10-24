@@ -53,3 +53,11 @@ Useful commands, run with the reviewed private runtime:
 - `npm run deps:update` deliberately updates compatible dependencies, reviews install policy, rebuilds, audits and runs validation.
 - `npm run deps:latest` deliberately queries current direct dependencies and creates a new graph requiring fresh review and tests.
 - `npm run deps:verify` checks the complete installed tree, audit, install policy, tool versions and full validation; it does not replace the separate release/platform/staging gates.
+## Tooling security repair, 24 October 2026
+
+PR21's required audit reported vulnerabilities in Miniflare's Undici and the Cloudflare Vitest plugin's Zod. The reviewed patch graph uses Vitest plugin 1.4.7, Wrangler 4.152.0 and Miniflare 5.20261019.2-beta, with parent-scoped patch overrides for Undici 7.30.1 and Zod 4.6.6. The parent packages still pin vulnerable patch versions upstream; refreshing direct dependencies alone does not fix this graph. Runtime dependencies and dependency lifecycle permissions are unchanged. Do not use `npm audit fix --force` to downgrade the plugin or suppress the audit.
+
+Official advisories: [Undici EventSource memory bound](https://github.com/advisories/GHSA-4qv8-2p9j-2685), [integrity token normalization](https://github.com/advisories/GHSA-f72v-6w45-q472), [excessive content-encoding error](https://github.com/advisories/GHSA-xjj6-f33q-929c), and [Zod constrained collection validation](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5). All affected Undici 7 copies must be at least 7.30.1 and Zod copies at least 4.6.6. Audit the actual complete graph; these are tooling findings, not proof of a deployed Worker exploit.
+
+The source-only regression checks all locked copies without installed dependencies. Dependency-backed tests resolve the libraries through their actual parents, verify uppercase integrity tokens against valid and incorrect mocked bytes with network access disabled, and reject oversized constrained collections without collecting an issue per element. The existing Worker/integration gates still verify compatibility. Resolution uses Node 26.7.0/npm 12.0.2, scripts disabled until the existing lock-wide lifecycle policy passes. Keep the overrides until a reviewed upstream graph fixes the same advisories and all required checks pass without them.
+
