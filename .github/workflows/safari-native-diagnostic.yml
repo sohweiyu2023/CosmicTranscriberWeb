@@ -61,7 +61,7 @@ jobs:
         run: npm run test:safari:real
       - name: Preserve native Safari evidence even on failure
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: independent-real-safari-diagnostics
           path: |
@@ -87,7 +87,7 @@ jobs:
         run: node tests/safari/ordinary-native-gui-probe.mjs
       - name: Preserve ordinary Safari native picker evidence even on failure
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ordinary-safari-native-picker-diagnostic
           path: |
