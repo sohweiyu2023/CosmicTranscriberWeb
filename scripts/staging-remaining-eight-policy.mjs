@@ -1,4 +1,4 @@
-// Local deployment-pin candidate. No publication or paid execution before review and authorization.
+// Bounded remaining-eight acceptance policy; no provider calls in this module.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {shortPcmWavSeconds} from '../src/short-wav.js';
@@ -41,20 +41,42 @@ export function verifyFixtures(files){
  }
  return FIXTURES;
 }
-export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun){
- assert.equal(smokeRuns.filter(x=>x.event==='workflow_dispatch').length,1);
- for(const run of smokeRuns){assert.equal(run.run_attempt,1);assert.equal(run.status,'completed');
-  if(run.id===POLICY.priorRun){assert.equal(run.event,'workflow_dispatch');assert.equal(run.conclusion,'success');}
-  else {assert.ok(['push','pull_request'].includes(run.event));assert.equal(run.conclusion,'failure');assert.deepEqual(jobLists[run.id],[]);}
+// This exact reviewed attempt failed before reservation or provider steps.
+// Never exempt arbitrary failed manual runs or GitHub reruns.
+export const ZERO_PAID_ATTEMPT=Object.freeze({id:40113556242,head:'da0acbc46e4973488887bebc9dd49972376c34da',job:120930077359});
+export function verifyZeroPaidAttempt(run,jobs,artifacts){
+ try{
+  assert.equal(run.id,ZERO_PAID_ATTEMPT.id);assert.equal(run.head_sha,ZERO_PAID_ATTEMPT.head);
+  assert.equal(run.path,'.github/workflows/'+POLICY.workflow);assert.equal(run.event,'workflow_dispatch');
+  assert.equal(run.run_attempt,1);assert.equal(run.status,'completed');assert.equal(run.conclusion,'failure');
+  assert.ok(Array.isArray(jobs)&&jobs.length===1);const job=jobs[0];
+  assert.equal(job.id,ZERO_PAID_ATTEMPT.job);assert.equal(job.run_id,run.id);assert.equal(job.run_attempt,1);
+  assert.equal(job.name,'remaining');assert.equal(job.status,'completed');assert.equal(job.conclusion,'failure');
+  assert.ok(Array.isArray(job.steps)&&job.steps.every(s=>s.status==='completed'));
+  const step=(name,conclusion)=>{const found=job.steps.filter(s=>s.name===name);assert.equal(found.length,1);assert.equal(found[0].conclusion,conclusion)};
+  step('Refuse until reviewed deployment pins replace the intentionally empty draft','success');
+  step('Read only the pinned successful MP3 evidence','success');
+  step('Account every previous attempt and reserve the final eight slots','failure');
+  for(const name of ['Persist cumulative reservation before any paid request','Download only the reviewed synthetic eight-format artifact','Fresh exact-source staging proof using existing read access','At most eight fixed requests, stop on first failure, never retry'])step(name,'skipped');
+  assert.deepEqual(artifacts,[]);
+  return {runId:run.id,paidRequests:0,reservationMade:false};
+ }catch{const error=Error('Prior attempt requires accounting review');error.code='history_zero_attempt_invalid';throw error}
+}
+export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroPaidArtifacts={}){
+ assert.equal(smokeRuns.filter(x=>x.event==='workflow_dispatch').length,1,'history_smoke_dispatch_count');
+ for(const run of smokeRuns){assert.equal(run.run_attempt,1,'history_smoke_attempt');assert.equal(run.status,'completed','history_smoke_status');
+  if(run.id===POLICY.priorRun){assert.equal(run.event,'workflow_dispatch','history_smoke_identity');assert.equal(run.conclusion,'success','history_smoke_result');}
+  else {assert.ok(['push','pull_request'].includes(run.event),'history_smoke_unreviewed_manual');assert.equal(run.conclusion,'failure','history_smoke_validation');assert.deepEqual(jobLists[run.id],[],'history_smoke_validation_jobs');}
  }
- assert.ok(smokeRuns.some(x=>x.id===POLICY.priorRun));
- assert.equal(remainingRuns.filter(x=>String(x.id)===String(currentRun)).length,1);
- for(const run of remainingRuns){assert.equal(run.run_attempt,1);if(String(run.id)===String(currentRun))continue;
-  assert.ok(['push','pull_request'].includes(run.event));assert.equal(run.status,'completed');assert.equal(run.conclusion,'failure');assert.deepEqual(jobLists[run.id],[]);
+ assert.ok(smokeRuns.some(x=>x.id===POLICY.priorRun),'history_smoke_missing');
+ assert.equal(remainingRuns.filter(x=>String(x.id)===String(currentRun)).length,1,'history_current_run');
+ for(const run of remainingRuns){assert.equal(run.run_attempt,1,'history_remaining_attempt');if(String(run.id)===String(currentRun))continue;
+  if(run.id===ZERO_PAID_ATTEMPT.id){verifyZeroPaidAttempt(run,jobLists[run.id],zeroPaidArtifacts[run.id]);continue;}
+  assert.ok(['push','pull_request'].includes(run.event),'history_remaining_unreviewed_manual');assert.equal(run.status,'completed','history_remaining_status');assert.equal(run.conclusion,'failure','history_remaining_validation');assert.deepEqual(jobLists[run.id],[],'history_remaining_validation_jobs');
  }
- for(const run of ciRuns){assert.equal(run.status,'completed');assert.ok(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&run.run_attempt<=20);
-  const paid=jobLists[run.id]?.filter(x=>x.name==='Actual authenticated STAGING paid nine-format acceptance');assert.equal(paid?.length,run.run_attempt);
-  for(let a=1;a<=run.run_attempt;a++){const p=paid.filter(x=>x.run_attempt===a);assert.equal(p.length,1);assert.equal(p[0].status,'completed');assert.equal(p[0].conclusion,'skipped');}
+ for(const run of ciRuns){assert.equal(run.status,'completed','history_ci_active');assert.ok(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&run.run_attempt<=20,'history_ci_attempts');
+  const paid=jobLists[run.id]?.filter(x=>x.name==='Actual authenticated STAGING paid nine-format acceptance');assert.equal(paid?.length,run.run_attempt,'history_ci_paid_count');
+  for(let a=1;a<=run.run_attempt;a++){const p=paid.filter(x=>x.run_attempt===a);assert.equal(p.length,1,'history_ci_paid_attempt');assert.equal(p[0].status,'completed','history_ci_paid_status');assert.equal(p[0].conclusion,'skipped','history_ci_paid_executed');}
  }
  return true;
 }

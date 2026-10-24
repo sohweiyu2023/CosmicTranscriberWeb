@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import path from 'node:path';
-import {POLICY,APPROVED_DEPLOYMENT,FIXTURES,PRIOR_FILES,requireReviewedDeployment,verifyPriorSmoke,reserveRemaining,verifyFixtures,verifyHistory} from '../../scripts/staging-remaining-eight-policy.mjs';
+import {POLICY,APPROVED_DEPLOYMENT,FIXTURES,PRIOR_FILES,ZERO_PAID_ATTEMPT,verifyZeroPaidAttempt,requireReviewedDeployment,verifyPriorSmoke,reserveRemaining,verifyFixtures,verifyHistory} from '../../scripts/staging-remaining-eight-policy.mjs';
 import {runFixedBatch} from '../../scripts/staging-remaining-eight-runner.mjs';
-import {verifyIdentity,verifySource} from '../../scripts/staging-remaining-eight-preflight.mjs';
+import {verifyIdentity,verifySource,collectRunAttemptJobs,readPreflightJson,safePreflightCode} from '../../scripts/staging-remaining-eight-preflight.mjs';
 const fixtureRoot=process.env.COSMIC_EIGHT_FIXTURE_ROOT,priorRoot=process.env.COSMIC_PRIOR_SMOKE_EVIDENCE;
 const dataTest={skip:fixtureRoot&&priorRoot?false:'Set the two explicitly documented offline fixture/evidence paths'};
 async function filesAt(root){const out=Object.create(null);for(const e of await readdir(root,{withFileTypes:true}))if(e.isFile())out[e.name]=await readFile(path.join(root,e.name));return out;}
@@ -86,4 +86,40 @@ test('manual workflow is main-only, context-valid, reserved before paid, shared-
  assert.ok(y.indexOf('Persist cumulative reservation')<y.indexOf('At most eight fixed requests'));
  assert.ok(y.includes("run-id: '39979683866'"));assert.ok(y.includes("artifact-ids: '12512662440'"));assert.ok(y.includes('requireReviewedDeployment()'));
  assert.doesNotMatch(y,/contents: write|actions: write|deploy-staging|staging-live-acceptance\.mjs|production-readiness/);
+});
+
+
+test('accounting reads every exact attempt and rejects wrong, duplicated or unreadable job evidence',async()=>{
+ const routes=[];const get=async route=>{routes.push(route);const attempt=Number(/attempts\/(\d+)\/jobs/.exec(route)[1]);return {total_count:1,jobs:[{id:100+attempt,run_id:88,run_attempt:attempt}]}};
+ const jobs=await collectRunAttemptJobs(get,{id:88,run_attempt:2});assert.equal(jobs.length,2);assert.equal(routes.length,2);assert.ok(routes[0].includes('/attempts/1/jobs?'));assert.ok(routes[1].includes('/attempts/2/jobs?'));assert.equal(routes.some(x=>x.includes('filter=all')),false);
+ for(const change of [j=>j.run_id=99,j=>j.run_attempt=7,j=>j.id=101]){
+  await assert.rejects(collectRunAttemptJobs(async route=>{const d=await get(route);change(d.jobs[0]);return d},{id:88,run_attempt:2}),e=>e.code==='history_attempt_jobs_invalid');
+ }
+ const timeout=Object.assign(Error('DO-NOT-LOG'),{code:'read_timeout'});
+ await assert.rejects(collectRunAttemptJobs(async()=>{throw timeout},{id:88,run_attempt:2}),e=>e.code==='read_timeout'&&e.historyRunId===88&&e.historyAttempt===1);
+});
+
+test('read failures expose fixed reasons without token, URL, body or exception leakage',async()=>{
+ const secret='DO-NOT-LOG-PRIVATE-ERROR';
+ const cases=[['read_timeout',async()=>{throw Object.assign(Error(secret),{name:'TimeoutError'})}],['read_network',async()=>{throw Error(secret)}],['read_http',async()=>new Response(secret,{status:403})],['read_media_type',async()=>new Response(secret,{headers:{'content-type':'text/plain'}})],['read_json',async()=>new Response(secret,{headers:{'content-type':'application/json'}})]];
+ for(const [code,fetcher] of cases)await assert.rejects(readPreflightJson('https://api.github.com/repos/example/test',secret,fetcher),error=>{assert.equal(safePreflightCode(error),code);assert.equal(error.message.includes(secret),false);assert.equal(JSON.stringify(error).includes(secret),false);return true});
+ assert.equal(safePreflightCode(Error(secret)),'preflight_rejected');assert.equal(safePreflightCode(Error('history_ci_paid_count\nprivate values')),'history_ci_paid_count');
+});
+
+function zeroAttempt(){
+ const run={id:ZERO_PAID_ATTEMPT.id,head_sha:ZERO_PAID_ATTEMPT.head,path:'.github/workflows/'+POLICY.workflow,event:'workflow_dispatch',run_attempt:1,status:'completed',conclusion:'failure'};
+ const steps=[['Refuse until reviewed deployment pins replace the intentionally empty draft','success'],['Read only the pinned successful MP3 evidence','success'],['Account every previous attempt and reserve the final eight slots','failure'],...['Persist cumulative reservation before any paid request','Download only the reviewed synthetic eight-format artifact','Fresh exact-source staging proof using existing read access','At most eight fixed requests, stop on first failure, never retry'].map(name=>[name,'skipped'])].map(([name,conclusion])=>({name,status:'completed',conclusion}));
+ const job={id:ZERO_PAID_ATTEMPT.job,run_id:run.id,run_attempt:1,name:'remaining',status:'completed',conclusion:'failure',steps};return {run,jobs:[job],artifacts:[]};
+}
+test('only the pinned zero-call failure with skipped reservation/provider steps and no artifacts is exempt',()=>{
+ const p=zeroAttempt();assert.deepEqual(verifyZeroPaidAttempt(p.run,p.jobs,p.artifacts),{runId:ZERO_PAID_ATTEMPT.id,paidRequests:0,reservationMade:false});
+ const changes=[p=>p.run.id++,p=>p.run.head_sha='a'.repeat(40),p=>p.run.run_attempt=2,p=>p.run.event='push',p=>p.jobs[0].id++,p=>p.jobs.push(p.jobs[0]),p=>p.jobs[0].steps.pop(),p=>p.jobs[0].steps[2].conclusion='success',p=>p.jobs[0].steps[3].conclusion='success',p=>p.jobs[0].steps[6].conclusion='success',p=>p.jobs[0].steps[6].status='in_progress',p=>p.artifacts.push({id:1})];
+ for(const change of changes){const p=zeroAttempt();change(p);assert.throws(()=>verifyZeroPaidAttempt(p.run,p.jobs,p.artifacts),e=>e.code==='history_zero_attempt_invalid')}
+});
+test('zero-call prior run never resets spending and unreviewed manual attempts still reject',()=>{
+ const p=zeroAttempt(),smoke=[{id:POLICY.priorRun,event:'workflow_dispatch',run_attempt:1,status:'completed',conclusion:'success'}],current={id:77,run_attempt:1};const lists={[p.run.id]:p.jobs};
+ assert.equal(verifyHistory(smoke,[p.run,current],[],lists,77,{[p.run.id]:[]}),true);
+ assert.throws(()=>verifyHistory(smoke,[{...p.run,id:88},current],[],lists,77,{88:[]}),e=>safePreflightCode(e)==='history_remaining_unreviewed_manual');
+ assert.throws(()=>verifyHistory(smoke,[p.run,current],[],lists,77,{}),e=>e.code==='history_zero_attempt_invalid');
+ assert.equal(reserveRemaining(ledger()).reservedRequests,9);assert.equal(reserveRemaining(ledger()).reservedMicroUsd,216000);
 });
