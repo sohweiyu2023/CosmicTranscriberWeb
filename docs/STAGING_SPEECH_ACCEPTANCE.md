@@ -247,3 +247,11 @@ acceptance of one exact source. Do not relabel the old receipt, weaken that gate
 or spend a tenth request without a new specific allowance. Native Safari remains
 FAIL with its exact reviewed waiver; genuine Mac Safari remains unvalidated.
 This preparation sends no paid requests and accepts no new grants or agreements.
+### Dependency security recertification and production boundary
+
+A dependency graph repair changes the release source and lock. The previously certified source `2d9b6bddc20cd8b0444611e3cdd3995cb5c8a653` and artifact `12527898809` do not contain the patched graph and must not be relabelled as patched. First merge the reviewed dependency repair after clean required CI, then certify the new exact main source and inspect its new artifact, archive digests and manifest. Only afterward update the separate staging deployer's pins, with fresh current-version rollback proof, review/CI and one parent-coordinated staging-only dispatch. Preserve existing Access protection, private bindings, BYOK and all source/artifact/rollback guards.
+
+Production remains unchanged because staging deployment and live acceptance for this exact new source have not passed; `releaseReady:false` and `fullAcceptance:false` remain in force. The local eight-file producer has not uploaded anything, and the recent staging approval does not authorize fixture uploads or credential changes. Fixed synthetic inputs require their reviewed supported artifact route and fresh accounting, source, Access and BYOK checks before any paid send.
+
+The completed MP3 used older deployed source. Eight further formats on a new source cannot prove nine-format single-source acceptance. One additional MP3 on that same new source would be a tenth cumulative provider request and needs separate explicit request-count approval, even if its reservation fits the existing dollar cap. Do not rerun a nine-call batch or silently add that request. Keep production blocked until the required exact-source live acceptance and all other release gates are satisfied. The narrow Safari automation waiver remains distinct from genuine Mac validation, which is still unclaimed.
+
