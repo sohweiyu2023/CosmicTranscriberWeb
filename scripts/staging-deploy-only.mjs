@@ -4,9 +4,22 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import {parseStagingAccessCredential} from './staging-access-credential.mjs';
-export const PIN=Object.freeze({repo:'sohweiyu2023/CosmicTranscriberWeb',commit:'82392336cfea5bc417098a2c6e3066dafca97b5b',run:39872658149,licensingRun:39872658103,artifact:12468047768,artifactName:'CosmicTranscriberWeb-1.2.0-staging-certified',outerDigest:'sha256:cfb3f70c6906da68b04478cce0ee23861f6ea83bb292a8948ff07ce88bbb7f3d',sourceDigest:'a12cc04d5f88b981fa9aa2dd5d704495dcee8e0aef0faf2f2455b0ded3ae44a0',worker:'cosmic-transcriber-web-staging',rollback:'31808bae-7ca6-4a38-b13f-042959a192de'});
+export const PIN=Object.freeze({repo:'sohweiyu2023/CosmicTranscriberWeb',commit:'2d9b6bddc20cd8b0444611e3cdd3995cb5c8a653',run:40013630998,licensingRun:40013630997,artifact:12527898809,artifactName:'CosmicTranscriberWeb-1.2.0-staging-certified',outerDigest:'sha256:2a51667379e8db2562d7659b67e88fc7f4596bae0d1eeb6d4a2ff5ba41a59c8e',sourceDigest:'0aba507a399f4e805573556569abdf63c38e86a379eeba9a17638de293938b33',worker:'cosmic-transcriber-web-staging',rollback:'fdbfa10f-d2bb-4c22-bb32-90e6bb522ab7',rollbackSourceMessage:'Source82392336cfea5bc417098a2c6e3066dafca97b5b CI39872658149 artifact12468047768'});
 const ORIGIN='https://transcriber-staging.awakeningtoreality.com',MAX_BYTES=32768;
 const reject=(code,httpStatus=null)=>{const error=Error('Manual staging preflight rejected');error.code=code;if(Number.isInteger(httpStatus)&&httpStatus>=100&&httpStatus<=599)error.httpStatus=httpStatus;throw error};
+export function verifyCoordinatorChanges(changed){
+ const allowed=['.github/workflows/staging-deploy-only.yml','scripts/staging-deploy-only.mjs','tests/node/staging-deploy-only.test.mjs','SHA256SUMS.txt'];
+ assert.ok(Array.isArray(changed)&&changed.length>0);assert.equal(new Set(changed).size,changed.length);
+ assert.ok(changed.every(x=>allowed.includes(x)),'Application/source changed beyond reviewed deployment coordinator');
+}
+export function verifyRollback(deployments){
+ assert.ok(Array.isArray(deployments)&&deployments.length>0);
+ assert.ok(deployments.every(x=>Number.isFinite(Date.parse(x.created_on))));
+ const current=deployments.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];
+ assert.deepEqual(current.versions,[{version_id:PIN.rollback,percentage:100}]);
+ assert.equal(current.sourceMessage,PIN.rollbackSourceMessage,'Current staging source changed');
+ return current;
+}
 export function assertManualIdentity(env){
  assert.equal(env.GITHUB_REPOSITORY,PIN.repo);assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');
  assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_RUN_ATTEMPT,'1');
@@ -94,11 +107,13 @@ async function main(){
  if(process.argv[2]==='certification'){
   assert.equal(execFileSync('git',['ls-remote','origin','refs/heads/main'],{encoding:'utf8'}).split(/\s/)[0],process.env.GITHUB_SHA,'Main advanced');
   const changed=execFileSync('git',['diff','--name-only',PIN.commit,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n').filter(Boolean);
-  const allowed=['.github/workflows/staging-deploy-only.yml','scripts/staging-deploy-only.mjs','tests/node/staging-deploy-only.test.mjs','.github/workflows/staging-access-diagnostic.yml'];
-  assert.ok(changed.length>0);assert.ok(changed.every(x=>allowed.includes(x)),'Application/source changed beyond reviewed deployment coordinator');
+  verifyCoordinatorChanges(changed);
   const run=await github('/actions/runs/'+PIN.run),jobs=await github('/actions/runs/'+PIN.run+'/jobs?per_page=100'),artifact=await github('/actions/artifacts/'+PIN.artifact),licensing=await github('/actions/runs/'+PIN.licensingRun);
   await writeFile('staging-certification-receipt.json',JSON.stringify(verifyCertification(run,jobs.jobs,artifact,licensing),null,2)+'\n');
   console.log('Pinned current-source CI/licensing/artifact eligible for STAGING only; native Safari FAIL/WAIVED.');
+ }else if(process.argv[2]==='rollback'){
+  verifyRollback(JSON.parse(await readFile('staging-before.json','utf8')));
+  console.log('Current 100-percent staging version and source match reviewed rollback.');
  }else if(process.argv[2]==='access'){
   const receipt=JSON.parse(await readFile('staging-certification-receipt.json','utf8'));assert.equal(receipt.commit,PIN.commit);assert.equal(receipt.artifact,PIN.artifact);
   await checkProtectedStaging(process.env.STAGING_CF_AUTHORIZATION);

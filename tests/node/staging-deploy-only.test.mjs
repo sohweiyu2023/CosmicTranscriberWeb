@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {PIN,assertManualIdentity,verifyCertification,checkProtectedStaging,diagnoseProtectedStaging,accessClaimMetadata} from '../../scripts/staging-deploy-only.mjs';
+import {PIN,assertManualIdentity,verifyCertification,checkProtectedStaging,verifyCoordinatorChanges,verifyRollback,diagnoseProtectedStaging,accessClaimMetadata} from '../../scripts/staging-deploy-only.mjs';
 const env=()=>({GITHUB_REPOSITORY:PIN.repo,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',GITHUB_RUN_ATTEMPT:'1',GITHUB_WORKFLOW:'Deploy pinned certified source to STAGING ONLY',GITHUB_SHA:'a'.repeat(40),GITHUB_RUN_ID:'123',CREDENTIAL_REVIEW:'owner-authorized-existing-secret-use'});
 const names=['Resolve one reviewed dependency graph','Linux Worker + integration + browser matrix','Windows toolchain + Chrome/Edge + staging-certified ZIP','macOS native ZIP + WebKit/mobile + Chrome + real Safari','RELEASE BROWSER GATE - native Safari PASS or exact disclosed exception','STAGING PREFLIGHT - reviewed Safari26 automation exception, no final release'];
 const metadata=()=>{const common={status:'completed',conclusion:'success',head_sha:PIN.commit,event:'push',head_branch:'main',run_attempt:1};return [{...common,id:PIN.run},names.map(name=>({name,status:'completed',conclusion:'success'})),{id:PIN.artifact,name:PIN.artifactName,expired:false,digest:PIN.outerDigest,workflow_run:{id:PIN.run,head_sha:PIN.commit}},{...common,id:PIN.licensingRun}]};
@@ -48,4 +48,24 @@ test('diagnostic workflow has no deployment, provider key, billing or policy-cha
  assert.match(text,/workflow_dispatch:/);assert.match(text,/environment: staging/);assert.match(text,/github.run_attempt == '1'/);
  assert.doesNotMatch(text,/CLOUDFLARE_API_TOKEN|STAGING_OPENAI_API_KEY|wrangler|deploy:|migrations|configure-access|api\/transcribe/);
  assert.match(text,/diagnoseProtectedStaging/);assert.ok(text.includes("JSON.stringify(result,null,2)+'\\n'"),'Diagnostic artifact must end with a real newline escape');
+});
+
+test('coordinator-only diff guard permits checksum update but rejects application and acceptance-pin drift',()=>{
+ verifyCoordinatorChanges(['.github/workflows/staging-deploy-only.yml','scripts/staging-deploy-only.mjs','tests/node/staging-deploy-only.test.mjs','SHA256SUMS.txt']);
+ for(const files of [[],['src/index.js'],['scripts/staging-remaining-eight-policy.mjs'],['wrangler.jsonc'],['SHA256SUMS.txt','SHA256SUMS.txt']])assert.throws(()=>verifyCoordinatorChanges(files));
+});
+test('fresh rollback requires exact current 100percent version and source, never historical or split traffic',()=>{
+ const row=()=>({created_on:'2026-10-23T20:37:12Z',versions:[{version_id:PIN.rollback,percentage:100}],sourceMessage:PIN.rollbackSourceMessage});
+ assert.equal(verifyRollback([row()]).sourceMessage,PIN.rollbackSourceMessage);
+ for(const change of [r=>r.versions[0].percentage=99,r=>r.versions[0].version_id='another-version',r=>r.versions.push({...r.versions[0]}),r=>r.sourceMessage='another-source',r=>r.created_on='invalid']){
+  const value=row();change(value);assert.throws(()=>verifyRollback([value]));
+ }
+ assert.throws(()=>verifyRollback([row(),{...row(),created_on:'2026-10-24T01:00:00Z',sourceMessage:'newer-source'}]));
+});
+test('updated immutable pins and workflow stay synchronized without paid or production successor',()=>{
+ const y=readFileSync(new URL('../../.github/workflows/staging-deploy-only.yml',import.meta.url),'utf8');
+ assert.equal(PIN.commit,'2d9b6bddc20cd8b0444611e3cdd3995cb5c8a653');assert.equal(PIN.run,40013630998);assert.equal(PIN.artifact,12527898809);assert.equal(PIN.licensingRun,40013630997);
+ for(const value of [PIN.commit,String(PIN.run),String(PIN.artifact),PIN.sourceDigest,PIN.rollback])assert.ok(y.includes(value));
+ assert.ok(y.includes('(cd "$GITHUB_WORKSPACE" && node scripts/staging-deploy-only.mjs rollback)'));assert.ok(y.includes('Main advanced before deployment'));
+ assert.equal((y.match(/npm run deploy:staging/g)||[]).length,1);assert.doesNotMatch(y,/deploy:production|STAGING_OPENAI_API_KEY|api\/transcribe/);
 });
