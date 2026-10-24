@@ -277,7 +277,7 @@ subprocesses before copying flat files/*; receipt stays outside upload. No
 synthesis, reencoding, provider request or extra voice/media licence is inferred.
 Future artifact: cosmic-approved-remaining-eight-fixtures, no MP3 or nested ZIP.
 
-The owner subsequently explicitly approved public Git history publication of the eight fixed synthetic fixture files (Sentinel_071f066042048191823edaf64745925a). Their integration and artifact packaging are still pending; no additional MP3 file/request or media licence is implied. No provider call or production successor is added by this diagnostic update.
+Owner Sentinel_071f066042048191823edaf64745925a explicitly approved public Git history for the exact eight synthetic inputs and the diagnostic delta. The fixed files now live in tests/fixtures/approved-remaining-eight/, retaining a distinct provenance/rights notice outside the root MIT grant. Existing CI validates them with the offline producer and uploads only the eight flat files as cosmic-approved-remaining-eight-fixtures. No provider call, extra secret or production successor is added. Artifact IDs must be taken from successful reviewed CI; never guessed.
 
 Token exposure relationship and remediation remain unknown. Existing-secret
 staging use was approved, not declared remediated. Working credentials do not
@@ -286,6 +286,10 @@ nonsecret audit/secret-update metadata can support remediation review; timestamp
 alone cannot prove identity. No credential change or production readiness claim.
 
 
-### Failure-only Firefox containment diagnostics
+### Firefox containment failure diagnostics
 
-Windows certification timed out in the unchanged containment poll after resize; the original cause remains unresolved. This test-only update preserves all containment inequalities, the existing poll timeout and zero CI retries. On failure it logs only the last original-poll numeric viewport/bounding boxes/scroll dimensions, overflow/font-size/font-ready/document-ready state, completion count and in-flight flag. It reads no text, HTML, URL, cookies, storage or input values, and starts no new browser request after timeout. Three normal Firefox repetitions passed; one deliberately injected local overflow correctly failed with the expected safe diagnostics, then generated styles were restored byte-for-byte. This does not claim the earlier timeout fixed or harmless. No production code or CSS changes.
+PR23 first Windows certification timed out in the unchanged account-card containment poll after resize; local five-repeat reproduction passed. The cause is unresolved. The test now logs only on failure: last completed numeric bounding boxes/viewport/scroll dimensions, overflow modes, font-size/font-ready/document-ready state, completed measurement count and in-flight flag. It never reads email text, HTML, URLs, cookies, storage or input values; reporting uses the last original-poll sample and starts no fresh browser-protocol call after timeout. The same containment inequalities, expect.poll timeout and CI zero-retry policy remain. A passing run does not establish the earlier timeout was harmless or fixed. No production code or layout styles change.
+
+Conditional production/main request Sentinel_07718b23b2608191ac0bb0fd57b404ce is subject to all review/CI/exact-source acceptance/security/rollback gates. Mixed-source MP3 plus eight new-source formats is not all-format same-source acceptance; no tenth request is silently authorized. Credential changes are excluded.
+
+Specific approval Sentinel_d6b70f6ef1948191a7a70a4b65f5f477 explicitly includes the MP3-encoded .mpeg and .mpga filename cases. They remain two of the fixed eight, not an additional MP3 file or ninth batch request.

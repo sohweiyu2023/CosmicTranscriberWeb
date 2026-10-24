@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
+import {FIXTURES,verifyFixtures} from '../../scripts/staging-remaining-eight-policy.mjs';
 import {verifyFixedMp3,MP3} from '../../scripts/staging-single-mp3-smoke.mjs';
 import {safeguards} from '../../scripts/audit-lib.mjs';
 const fixture='tests/fixtures/approved-single-mp3/staging-speech.mp3';
@@ -23,11 +24,11 @@ test('source documents preserve distinct synthetic provenance and binary media e
  for(const term of [MP3.sha256,'3e6cf6e1fc99bb17e46734c50b5c7fcd3cbc78c9673c5473dafcb3395bad46d3','no private recording','not a new MIT grant'])assert.ok(doc.includes(term),term);
  assert.ok(notices.includes(fixture));assert.ok(notices.includes('outside the root MIT grant'));
 });
-test('exact first-party action policy admits precisely the fifth approved upload and rejects drift',async()=>{
+test('exact first-party action policy admits precisely the sixth approved upload and rejects drift',async()=>{
  const y=await readFile(new URL('../../.github/workflows/ci.yml',import.meta.url),'utf8');
  const check=workflow=>safeguards({'.github/workflows/ci.yml':workflow}).find(([name])=>name==='GitHub CI uses current exact first-party action releases')[1]();
  assert.equal(check(y),true);
- const pin='actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';assert.equal((y.match(/actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/g)||[]).length,5);
+ const pin='actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';assert.equal((y.match(/actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/g)||[]).length,6);
  assert.equal(check(y.replace(pin,'actions/upload-artifact@v7')),false);assert.equal(check(y.replace(pin,'')),false);assert.equal(check(y+'\n      - uses: '+pin+'\n'),false);
  assert.match(y,/runs-on: ubuntu-latest\n    timeout-minutes: 20/);assert.equal((y.match(/timeout-minutes: 10\n        run: node scripts\/provision-ci-media.mjs/g)||[]).length,2);
 });
@@ -40,4 +41,19 @@ test('media provisioning policy requires both bounded Linux steps and post-insta
  assert.equal(check(workflow.replace('timeout-minutes: 10','timeout-minutes: 100'),helper),false);
  assert.equal(check(workflow,helper.replace('assert.ok(probe(run,log)','assert.ok(true')),false);
  assert.equal(check(workflow.replace('run: npm run validate','run: echo skipped'),helper),false);
+});
+
+
+test('public remaining-eight folder and CI artifact contain only exact approved inputs',async()=>{
+ const root=new URL('../fixtures/approved-remaining-eight/',import.meta.url);
+ const names=await readdir(root);assert.deepEqual(names.sort(),[...FIXTURES.map(f=>f.name),'README.md'].sort());
+ const files=Object.create(null);for(const f of FIXTURES)files[f.name]=await readFile(new URL(f.name,root));
+ assert.equal(verifyFixtures(files).length,8);
+ const notice=await readFile(new URL('README.md',root),'utf8');assert.ok(notice.includes('outside the root MIT grant'));assert.ok(notice.includes('No microphone or private recording'));
+ const y=await readFile(new URL('../../.github/workflows/ci.yml',import.meta.url),'utf8');
+ const start=y.indexOf('      - name: Validate exactly the eight approved synthetic speech fixtures');const end=y.indexOf('      - name: Upload reviewed lock and fixtures',start);assert.ok(start>y.indexOf('      - name: Full dependency-free adversarial gate'));
+ const section=y.slice(start,end);assert.ok(section.includes('prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight "$RUNNER_TEMP/approved-eight"'));
+ assert.ok(section.includes('path: ${{ runner.temp }}/approved-eight/files/*'));assert.match(section,/name: cosmic-approved-remaining-eight-fixtures/);assert.match(section,/if-no-files-found: error/);assert.match(section,/retention-days: 7/);
+ for(const x of ['secrets.','deploy:','staging-live-acceptance','receipt.json'])assert.equal(section.includes(x),false);
+ assert.equal((y.match(/name: cosmic-approved-remaining-eight-fixtures/g)||[]).length,1);
 });
