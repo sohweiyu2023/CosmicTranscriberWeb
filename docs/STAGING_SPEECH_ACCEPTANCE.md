@@ -277,14 +277,15 @@ subprocesses before copying flat files/*; receipt stays outside upload. No
 synthesis, reencoding, provider request or extra voice/media licence is inferred.
 Future artifact: cosmic-approved-remaining-eight-fixtures, no MP3 or nested ZIP.
 
-Artifact delivery remains unconfigured: exact approved files are local, while
-existing repository fixtures differ. Existing CI packaging requires the exact
-bytes in repository source. Artifact approval has not been silently treated as
-permanent public-source approval. No encoded-source/other-host workaround and
-no paid/upload workflow step is included in this code-only candidate.
+The owner subsequently explicitly approved public Git history publication of the eight fixed synthetic fixture files (Sentinel_071f066042048191823edaf64745925a). Their integration and artifact packaging are still pending; no additional MP3 file/request or media licence is implied. No provider call or production successor is added by this diagnostic update.
 
 Token exposure relationship and remediation remain unknown. Existing-secret
 staging use was approved, not declared remediated. Working credentials do not
 prove they differ from an exposed token. Owner token-record confirmation and
 nonsecret audit/secret-update metadata can support remediation review; timestamps
 alone cannot prove identity. No credential change or production readiness claim.
+
+
+### Failure-only Firefox containment diagnostics
+
+Windows certification timed out in the unchanged containment poll after resize; the original cause remains unresolved. This test-only update preserves all containment inequalities, the existing poll timeout and zero CI retries. On failure it logs only the last original-poll numeric viewport/bounding boxes/scroll dimensions, overflow/font-size/font-ready/document-ready state, completion count and in-flight flag. It reads no text, HTML, URL, cookies, storage or input values, and starts no new browser request after timeout. Three normal Firefox repetitions passed; one deliberately injected local overflow correctly failed with the expected safe diagnostics, then generated styles were restored byte-for-byte. This does not claim the earlier timeout fixed or harmless. No production code or CSS changes.
