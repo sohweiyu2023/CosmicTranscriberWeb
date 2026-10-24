@@ -255,3 +255,41 @@ Production remains unchanged because staging deployment and live acceptance for 
 
 The completed MP3 used older deployed source. Eight further formats on a new source cannot prove nine-format single-source acceptance. One additional MP3 on that same new source would be a tenth cumulative provider request and needs separate explicit request-count approval, even if its reservation fits the existing dollar cap. Do not rerun a nine-call batch or silently add that request. Keep production blocked until the required exact-source live acceptance and all other release gates are satisfied. The narrow Safari automation waiver remains distinct from genuine Mac validation, which is still unclaimed.
 
+
+
+### Remaining-eight integration candidate (24 October)
+
+Pins identify deployed app88ee4a683c8c277885f0737db53226e658390fae, Worker
+e1c94498-bfb2-4cbd-8488-e75cdec32877, deploy40063452013, coordinator728b42283b4252f2a125e4c4b5bf56c22989e3ae,
+sourceCI40056803923/licensing40056803922/artifact12546575744. Runtime must
+freshly revalidate source/version, history, Access/account and BYOK.
+
+User Sentinel_e6b51de7beb08191962da6e3685b91d6 approved eight synthetic files as an
+Actions artifact and one eight-request run, with cumulative spending up to US$2
+if needed. The workflow retains its tighter nine-request/US$0.25 ledger and
+US$0.216 cumulative reservation. No retries or additional request count.
+Old-source MP3 plus eight new-source tests remain mixed-source coverage;
+a new MP3 is a tenth cumulative request requiring separate count approval.
+
+The producer prepare-remaining-eight-fixtures.mjs validates exactly eight fixed
+hashes/bytes, measured codecs/durations/layout and offline decoding with bounded
+subprocesses before copying flat files/*; receipt stays outside upload. No
+synthesis, reencoding, provider request or extra voice/media licence is inferred.
+Future artifact: cosmic-approved-remaining-eight-fixtures, no MP3 or nested ZIP.
+
+Owner Sentinel_071f066042048191823edaf64745925a explicitly approved public Git history for the exact eight synthetic inputs and the diagnostic delta. The fixed files now live in tests/fixtures/approved-remaining-eight/, retaining a distinct provenance/rights notice outside the root MIT grant. Existing CI validates them with the offline producer and uploads only the eight flat files as cosmic-approved-remaining-eight-fixtures. No provider call, extra secret or production successor is added. Artifact IDs must be taken from successful reviewed CI; never guessed.
+
+Token exposure relationship and remediation remain unknown. Existing-secret
+staging use was approved, not declared remediated. Working credentials do not
+prove they differ from an exposed token. Owner token-record confirmation and
+nonsecret audit/secret-update metadata can support remediation review; timestamps
+alone cannot prove identity. No credential change or production readiness claim.
+
+
+### Firefox containment failure diagnostics
+
+PR23 first Windows certification timed out in the unchanged account-card containment poll after resize; local five-repeat reproduction passed. The cause is unresolved. The test now logs only on failure: last completed numeric bounding boxes/viewport/scroll dimensions, overflow modes, font-size/font-ready/document-ready state, completed measurement count and in-flight flag. It never reads email text, HTML, URLs, cookies, storage or input values; reporting uses the last original-poll sample and starts no fresh browser-protocol call after timeout. The same containment inequalities, expect.poll timeout and CI zero-retry policy remain. A passing run does not establish the earlier timeout was harmless or fixed. No production code or layout styles change.
+
+Conditional production/main request Sentinel_07718b23b2608191ac0bb0fd57b404ce is subject to all review/CI/exact-source acceptance/security/rollback gates. Mixed-source MP3 plus eight new-source formats is not all-format same-source acceptance; no tenth request is silently authorized. Credential changes are excluded.
+
+Specific approval Sentinel_d6b70f6ef1948191a7a70a4b65f5f477 explicitly includes the MP3-encoded .mpeg and .mpga filename cases. They remain two of the fixed eight, not an additional MP3 file or ninth batch request.

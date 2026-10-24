@@ -37,3 +37,7 @@ code/documentation; no Microsoft voice/engine assets or third-party rights are
 relicensed or supplied by this publication. It is distinct from the older
 two-speaker repository recording discussed above. Preserve this notice and
 its provenance when carrying this test fixture into another package.
+
+### Approved synthetic eight-format acceptance samples
+
+The eight files in `tests/fixtures/approved-remaining-eight/` are separately preserved offline SAPI David/Zira synthetic test dialogue, explicitly approved for public publication on24October2026. See their README for original source hash and provenance. They remain outside the root MIT grant; this is not a Microsoft voice/engine or third-party media licence. No private recording was used for these separate samples. Preserve these notices.

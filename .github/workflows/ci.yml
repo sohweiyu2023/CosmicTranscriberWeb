@@ -53,6 +53,15 @@ jobs:
           path: tests/fixtures/approved-single-mp3/staging-speech.mp3
           if-no-files-found: error
           retention-days: 7
+      - name: Validate exactly the eight approved synthetic speech fixtures (no provider calls)
+        run: node scripts/prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight "$RUNNER_TEMP/approved-eight"
+      - name: Preserve only the eight approved speech fixtures for bounded staging acceptance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cosmic-approved-remaining-eight-fixtures
+          path: ${{ runner.temp }}/approved-eight/files/*
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload reviewed lock and fixtures
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
