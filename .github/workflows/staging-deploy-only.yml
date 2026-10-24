@@ -46,8 +46,8 @@ jobs:
         run: node scripts/staging-deploy-only.mjs access
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: '12468047768'
-          run-id: '39872658149'
+          artifact-ids: '12546575744'
+          run-id: '40056803923'
           github-token: ${{ github.token }}
           merge-multiple: true
           path: certified
@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s  %s\n' 'a12cc04d5f88b981fa9aa2dd5d704495dcee8e0aef0faf2f2455b0ded3ae44a0' 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
+          printf '%s  %s\n' 'eb50541cd16bc14b3d1aeb6b42e7ad6a9440cb09a60ef1370b9955cd8c4e3114' 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
           root="$RUNNER_TEMP/pinned-staging-source"
           mkdir -p "$root"
           unzip -q certified/CosmicTranscriberWeb-1.2.0-source.zip -d "$root"
@@ -124,14 +124,15 @@ jobs:
         run: |
           cd "$CANDIDATE"
           node scripts/wrangler-invoke.mjs deployments list --env staging --json > "$RUNNER_TEMP/staging-before-raw.json"
-          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));fs.writeFileSync(process.argv[2],JSON.stringify(a.map(({id,created_on,versions})=>({id,created_on,versions}))))" "$RUNNER_TEMP/staging-before-raw.json" "$GITHUB_WORKSPACE/staging-before.json"
-          node -e "const a=require(process.argv[1]);const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id!=='31808bae-7ca6-4a38-b13f-042959a192de')process.exit(1)" "$GITHUB_WORKSPACE/staging-before.json"
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));fs.writeFileSync(process.argv[2],JSON.stringify(a.map(({id,created_on,versions,annotations})=>({id,created_on,versions,sourceMessage:annotations?.['workers/message']}))))" "$RUNNER_TEMP/staging-before-raw.json" "$GITHUB_WORKSPACE/staging-before.json"
+          (cd "$GITHUB_WORKSPACE" && node scripts/staging-deploy-only.mjs rollback)
       - name: Deploy STAGING ONLY
         shell: bash
         run: |
           set -euo pipefail
           cd "$CANDIDATE"
-          npm run deploy:staging -- --message "Source82392336cfea5bc417098a2c6e3066dafca97b5b CI39872658149 artifact12468047768"
+          test "$(git -C "$GITHUB_WORKSPACE" ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA" || { echo 'Main advanced before deployment; refusing stale coordinator.' >&2; exit 1; }
+          npm run deploy:staging -- --message "Source88ee4a683c8c277885f0737db53226e658390fae CI40056803923 artifact12546575744"
       - name: Staging reachability smoke
         shell: bash
         run: |
@@ -146,7 +147,7 @@ jobs:
         run: |
           cd "$CANDIDATE"
           node scripts/wrangler-invoke.mjs deployments list --env staging --json > "$RUNNER_TEMP/staging-after-raw.json"
-          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id==='31808bae-7ca6-4a38-b13f-042959a192de'||!String(x.annotations?.['workers/message']).includes('Source82392336cfea5bc417098a2c6e3066dafca97b5b CI39872658149 artifact12468047768'))process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:'82392336cfea5bc417098a2c6e3066dafca97b5b',fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json"
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id==='fdbfa10f-d2bb-4c22-bb32-90e6bb522ab7'||!String(x.annotations?.['workers/message']).includes('Source88ee4a683c8c277885f0737db53226e658390fae CI40056803923 artifact12546575744'))process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:'88ee4a683c8c277885f0737db53226e658390fae',fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json"
       - name: Reassert release boundary
         shell: bash
         run: |
