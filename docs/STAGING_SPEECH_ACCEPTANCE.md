@@ -255,3 +255,36 @@ Production remains unchanged because staging deployment and live acceptance for 
 
 The completed MP3 used older deployed source. Eight further formats on a new source cannot prove nine-format single-source acceptance. One additional MP3 on that same new source would be a tenth cumulative provider request and needs separate explicit request-count approval, even if its reservation fits the existing dollar cap. Do not rerun a nine-call batch or silently add that request. Keep production blocked until the required exact-source live acceptance and all other release gates are satisfied. The narrow Safari automation waiver remains distinct from genuine Mac validation, which is still unclaimed.
 
+
+
+### Remaining-eight integration candidate (24 October)
+
+Pins identify deployed app88ee4a683c8c277885f0737db53226e658390fae, Worker
+e1c94498-bfb2-4cbd-8488-e75cdec32877, deploy40063452013, coordinator728b42283b4252f2a125e4c4b5bf56c22989e3ae,
+sourceCI40056803923/licensing40056803922/artifact12546575744. Runtime must
+freshly revalidate source/version, history, Access/account and BYOK.
+
+User Sentinel_e6b51de7beb08191962da6e3685b91d6 approved eight synthetic files as an
+Actions artifact and one eight-request run, with cumulative spending up to US$2
+if needed. The workflow retains its tighter nine-request/US$0.25 ledger and
+US$0.216 cumulative reservation. No retries or additional request count.
+Old-source MP3 plus eight new-source tests remain mixed-source coverage;
+a new MP3 is a tenth cumulative request requiring separate count approval.
+
+The producer prepare-remaining-eight-fixtures.mjs validates exactly eight fixed
+hashes/bytes, measured codecs/durations/layout and offline decoding with bounded
+subprocesses before copying flat files/*; receipt stays outside upload. No
+synthesis, reencoding, provider request or extra voice/media licence is inferred.
+Future artifact: cosmic-approved-remaining-eight-fixtures, no MP3 or nested ZIP.
+
+Artifact delivery remains unconfigured: exact approved files are local, while
+existing repository fixtures differ. Existing CI packaging requires the exact
+bytes in repository source. Artifact approval has not been silently treated as
+permanent public-source approval. No encoded-source/other-host workaround and
+no paid/upload workflow step is included in this code-only candidate.
+
+Token exposure relationship and remediation remain unknown. Existing-secret
+staging use was approved, not declared remediated. Working credentials do not
+prove they differ from an exposed token. Owner token-record confirmation and
+nonsecret audit/secret-update metadata can support remediation review; timestamps
+alone cannot prove identity. No credential change or production readiness claim.
