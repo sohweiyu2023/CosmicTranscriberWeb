@@ -62,7 +62,7 @@ jobs:
       - name: Account every previous attempt and reserve the final eight slots
         run: node scripts/staging-remaining-eight-preflight.mjs prepare
       - name: Persist cumulative reservation before any paid request
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: remaining-eight-approved-reservation
           path: ${{ github.workspace }}/remaining-eight-evidence/reservation.json
@@ -95,7 +95,7 @@ jobs:
         run: node scripts/staging-remaining-eight-runner.mjs "$RUNNER_TEMP/remaining-eight-fixtures" "$COSMIC_EIGHT_EVIDENCE/receipt.json" "$COSMIC_EIGHT_EVIDENCE/budget.json"
       - name: Preserve only redacted evidence with no release or production successor
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: remaining-eight-redacted-evidence
           path: ${{ github.workspace }}/remaining-eight-evidence/*.json
