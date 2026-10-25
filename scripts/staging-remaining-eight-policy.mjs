@@ -62,7 +62,66 @@ export function verifyZeroPaidAttempt(run,jobs,artifacts){
   return {runId:run.id,paidRequests:0,reservationMade:false};
  }catch{const error=Error('Prior attempt requires accounting review');error.code='history_zero_attempt_invalid';throw error}
 }
-export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroPaidArtifacts={}){
+// Receipt-bound recovery of ONE reviewed failure before BYOK/provider execution.
+// Its reservation already exists: reuse it, never release or reserve it again.
+export const RESERVED_ZERO_ATTEMPT=Object.freeze({id:40161696792,head:'813e66aea0a334c62d3dba0f634fc9ff70ca4310',job:121074434504,
+ evidenceArtifact:12586114319,evidenceDigest:'4940a85d98c2e1a7bf847c8fe50e39b723e5cda0b3007b0797a7ecc2abcdc961',
+ reservationArtifact:12585919515,reservationDigest:'2056065a1b992f6c2642d38309f5d528c1bb47655a8b7475060f688d28228427',
+ runnerSha256:'1be2fdbedd4d4e75bec04a750fb2c3abdbf1511b312c68f4c4011cedd7ab5afc'});
+export const RESERVED_ZERO_FILES=Object.freeze({'budget.json':'fcd4374ad089cc29724324dec581b879216499610b5955d4cbb6110156bb8661','receipt.json':'cc40c8a42a1d6debbb189c3e38496f0da4bd61254eb725f6837071eb68b1e811','reservation.json':'d9a281db993c51bf94f7a8e8e7b5db2df81a075dd08f13c4b07664d7efb72ee1','source.json':'5c64182558066ef3114d7fe20228ebe5308c8e856fb02a9078c4f22322200f8e'});
+const heldLedger=()=>({schema:'cosmic-approved-paid-budget-1',approval:POLICY.approval,maximumRequests:9,maximumMicroUsd:250000,reservedRequests:9,reservedMicroUsd:216000});
+export function verifyReservedZeroAttempt(run,jobs,artifacts,files){
+ try{
+  const pin=RESERVED_ZERO_ATTEMPT;
+  assert.equal(run.id,pin.id);assert.equal(run.head_sha,pin.head);assert.equal(run.head_branch,'main');
+  assert.equal(run.path,'.github/workflows/'+POLICY.workflow);assert.equal(run.event,'workflow_dispatch');
+  assert.equal(run.run_attempt,1);assert.equal(run.status,'completed');assert.equal(run.conclusion,'failure');
+  assert.ok(Array.isArray(jobs)&&jobs.length===1);const job=jobs[0];
+  assert.equal(job.id,pin.job);assert.equal(job.run_id,pin.id);assert.equal(job.run_attempt,1);assert.equal(job.name,'remaining');
+  assert.equal(job.status,'completed');assert.equal(job.conclusion,'failure');
+  assert.ok(Array.isArray(job.steps)&&job.steps.every(s=>s.status==='completed'));
+  const step=(name,result)=>{const found=job.steps.filter(s=>s.name===name);assert.equal(found.length,1);assert.equal(found[0].conclusion,result)};
+  for(const name of ['Refuse until reviewed deployment pins replace the intentionally empty draft','Read only the pinned successful MP3 evidence','Account every previous attempt and reserve the final eight slots','Persist cumulative reservation before any paid request','Download only the reviewed synthetic eight-format artifact','Fresh exact-source staging proof using existing read access','Preserve only redacted evidence with no release or production successor'])step(name,'success');
+  step('At most eight fixed requests, stop on first failure, never retry','failure');
+  assert.ok(Array.isArray(artifacts)&&artifacts.length===2);
+  for(const [id,name,digest,size] of [[pin.evidenceArtifact,'remaining-eight-redacted-evidence',pin.evidenceDigest,1608],[pin.reservationArtifact,'remaining-eight-approved-reservation',pin.reservationDigest,356]]){
+   const found=artifacts.filter(a=>a.id===id);assert.equal(found.length,1);const a=found[0];
+   assert.equal(a.name,name);assert.equal(a.digest,'sha256:'+digest);assert.equal(a.size_in_bytes,size);assert.equal(a.expired,false);
+   assert.equal(a.workflow_run?.id,pin.id);assert.equal(a.workflow_run?.head_sha,pin.head);
+  }
+  assert.deepEqual(Object.keys(files).sort(),Object.keys(RESERVED_ZERO_FILES).sort());
+  for(const [name,digest] of Object.entries(RESERVED_ZERO_FILES))assert.equal(sha256(files[name]),digest);
+  const receipt=JSON.parse(files['receipt.json']),budget=JSON.parse(files['budget.json']),reservation=JSON.parse(files['reservation.json']),source=JSON.parse(files['source.json']);
+  assert.deepEqual(budget,heldLedger());
+  assert.deepEqual(reservation,{...budget,runId:String(pin.id),remainingRequests:0,priorSmokeRun:POLICY.priorRun,fullAcceptance:false,releaseReady:false});
+  assert.equal(receipt.schema,'cosmic-staging-remaining-eight-1');assert.equal(receipt.status,'FAIL');assert.equal(receipt.phase,'access-status');
+  assert.deepEqual(receipt.failure,{phase:'access-status',code:'access_redirect'});assert.equal(receipt.attempted,0);assert.deepEqual(receipt.formats,[]);
+  assert.equal(receipt.runnerSha256,pin.runnerSha256);assert.equal(receipt.baseCommit,APPROVED_DEPLOYMENT.source);
+  assert.deepEqual(receipt.deployedSource,{commit:APPROVED_DEPLOYMENT.source,workerVersionId:APPROVED_DEPLOYMENT.version});
+  for(const key of ['access','byokForget','budget'])assert.equal(Object.hasOwn(receipt,key),false);
+  for(const key of ['fullAcceptance','releaseReady','genuineMacSafariValidated'])assert.equal(receipt[key],false);
+  assert.ok(Number.isFinite(Date.parse(receipt.startedAt))&&Date.parse(receipt.finishedAt)>=Date.parse(receipt.startedAt));
+  assert.equal(source.schema,'cosmic-verified-staging-source-1');assert.equal(source.verified,true);assert.equal(source.origin,POLICY.origin);
+  assert.equal(source.commit,APPROVED_DEPLOYMENT.source);assert.equal(source.workerVersionId,APPROVED_DEPLOYMENT.version);
+  return {sourceRunId:pin.id,paidAttempts:0,evidenceArtifact:pin.evidenceArtifact,evidenceDigest:pin.evidenceDigest,reservedRequests:9,reservedMicroUsd:216000};
+ }catch{const error=Error('Reserved zero-attempt evidence requires review');error.code='history_reserved_zero_invalid';throw error;}
+}
+export function reconcileHeldEight(priorSmokeLedger,proof,currentRun){
+ assert.deepEqual(priorSmokeLedger,{...heldLedger(),reservedRequests:1,reservedMicroUsd:4500});
+ const pin=RESERVED_ZERO_ATTEMPT;
+ assert.deepEqual(proof,{sourceRunId:pin.id,paidAttempts:0,evidenceArtifact:pin.evidenceArtifact,evidenceDigest:pin.evidenceDigest,reservedRequests:9,reservedMicroUsd:216000});
+ assert.match(String(currentRun),/^[1-9][0-9]{0,19}$/);assert.notEqual(String(currentRun),String(pin.id));assert.notEqual(String(currentRun),String(ZERO_PAID_ATTEMPT.id));assert.notEqual(String(currentRun),String(POLICY.priorRun));
+ const budget=heldLedger();
+ return {budget,reservation:{...budget,runId:String(currentRun),remainingRequests:0,priorSmokeRun:POLICY.priorRun,fullAcceptance:false,releaseReady:false,
+  continuation:{schema:'cosmic-eight-held-reservation-continuation-1',...proof,continuationRunId:String(currentRun),unusedSlots:8,additionalReservationMicroUsd:0,oneShot:true}}};
+}
+export function verifyHeldContinuation(budget,reservation,currentRun){
+ const pin=RESERVED_ZERO_ATTEMPT,proof={sourceRunId:pin.id,paidAttempts:0,evidenceArtifact:pin.evidenceArtifact,evidenceDigest:pin.evidenceDigest,reservedRequests:9,reservedMicroUsd:216000};
+ const expected=reconcileHeldEight({...heldLedger(),reservedRequests:1,reservedMicroUsd:4500},proof,currentRun);
+ assert.deepEqual(budget,expected.budget);assert.deepEqual(reservation,expected.reservation);
+ return expected.reservation.continuation;
+}
+export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroPaidArtifacts={},reservedZeroEvidence){
  assert.equal(smokeRuns.filter(x=>x.event==='workflow_dispatch').length,1,'history_smoke_dispatch_count');
  for(const run of smokeRuns){assert.equal(run.run_attempt,1,'history_smoke_attempt');assert.equal(run.status,'completed','history_smoke_status');
   if(run.id===POLICY.priorRun){assert.equal(run.event,'workflow_dispatch','history_smoke_identity');assert.equal(run.conclusion,'success','history_smoke_result');}
@@ -72,8 +131,10 @@ export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun
  assert.equal(remainingRuns.filter(x=>String(x.id)===String(currentRun)).length,1,'history_current_run');
  for(const run of remainingRuns){assert.equal(run.run_attempt,1,'history_remaining_attempt');if(String(run.id)===String(currentRun))continue;
   if(run.id===ZERO_PAID_ATTEMPT.id){verifyZeroPaidAttempt(run,jobLists[run.id],zeroPaidArtifacts[run.id]);continue;}
+  if(run.id===RESERVED_ZERO_ATTEMPT.id){verifyReservedZeroAttempt(run,jobLists[run.id],reservedZeroEvidence?.artifacts,reservedZeroEvidence?.files);continue;}
   assert.ok(['push','pull_request'].includes(run.event),'history_remaining_unreviewed_manual');assert.equal(run.status,'completed','history_remaining_status');assert.equal(run.conclusion,'failure','history_remaining_validation');assert.deepEqual(jobLists[run.id],[],'history_remaining_validation_jobs');
  }
+ if(reservedZeroEvidence)assert.equal(remainingRuns.filter(x=>x.id===RESERVED_ZERO_ATTEMPT.id).length,1,'history_reserved_zero_missing');
  for(const run of ciRuns){assert.equal(run.status,'completed','history_ci_active');assert.ok(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&run.run_attempt<=20,'history_ci_attempts');
   const paid=jobLists[run.id]?.filter(x=>x.name==='Actual authenticated STAGING paid nine-format acceptance');assert.equal(paid?.length,run.run_attempt,'history_ci_paid_count');
   for(let a=1;a<=run.run_attempt;a++){const p=paid.filter(x=>x.run_attempt===a);assert.equal(p.length,1,'history_ci_paid_attempt');assert.equal(p[0].status,'completed','history_ci_paid_status');assert.equal(p[0].conclusion,'skipped','history_ci_paid_executed');}

@@ -4,9 +4,9 @@ import {readFile,readdir,writeFile,mkdir} from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {collectPages} from './staging-single-mp3-preflight.mjs';
-import {POLICY,APPROVED_DEPLOYMENT,ZERO_PAID_ATTEMPT,requireReviewedDeployment,verifyPriorSmoke,reserveRemaining,verifyHistory} from './staging-remaining-eight-policy.mjs';
+import {POLICY,APPROVED_DEPLOYMENT,ZERO_PAID_ATTEMPT,RESERVED_ZERO_ATTEMPT,requireReviewedDeployment,verifyPriorSmoke,reconcileHeldEight,verifyReservedZeroAttempt,verifyHistory} from './staging-remaining-eight-policy.mjs';
 const READ_CODES=new Set(['read_timeout','read_network','read_http','read_media_type','read_stream','read_oversized','read_json']);
-const HISTORY_CODES=new Set(['history_attempt_jobs_invalid','history_zero_attempt_invalid','history_smoke_dispatch_count','history_smoke_attempt','history_smoke_status','history_smoke_identity','history_smoke_result','history_smoke_unreviewed_manual','history_smoke_validation','history_smoke_validation_jobs','history_smoke_missing','history_current_run','history_remaining_attempt','history_remaining_unreviewed_manual','history_remaining_status','history_remaining_validation','history_remaining_validation_jobs','history_ci_active','history_ci_attempts','history_ci_paid_count','history_ci_paid_attempt','history_ci_paid_status','history_ci_paid_executed']);
+const HISTORY_CODES=new Set(['history_attempt_jobs_invalid','history_zero_attempt_invalid','history_reserved_zero_invalid','history_reserved_zero_missing','history_smoke_dispatch_count','history_smoke_attempt','history_smoke_status','history_smoke_identity','history_smoke_result','history_smoke_unreviewed_manual','history_smoke_validation','history_smoke_validation_jobs','history_smoke_missing','history_current_run','history_remaining_attempt','history_remaining_unreviewed_manual','history_remaining_status','history_remaining_validation','history_remaining_validation_jobs','history_ci_active','history_ci_attempts','history_ci_paid_count','history_ci_paid_attempt','history_ci_paid_status','history_ci_paid_executed']);
 export function safePreflightCode(error){const first=typeof error?.message==='string'?error.message.split('\n',1)[0]:'';return READ_CODES.has(error?.code)||HISTORY_CODES.has(error?.code)?error.code:HISTORY_CODES.has(first)?first:'preflight_rejected'}
 function rejectRead(code,httpStatus){const error=Error('Preflight read rejected');error.code=code;if(Number.isInteger(httpStatus)&&httpStatus>=100&&httpStatus<=599)error.httpStatus=httpStatus;throw error}
 export async function readPreflightJson(url,token,fetchImpl=fetch){
@@ -75,14 +75,19 @@ async function main(){let phase='identity';try{
  const lists={};for(const run of [...smoke,...remaining,...ci])lists[run.id]=await collectRunAttemptJobs(gh,run);
  phase='accounting-zero-proof';const zeroArtifacts={};
  for(const run of remaining)if(run.id===ZERO_PAID_ATTEMPT.id&&String(run.id)!==env.GITHUB_RUN_ID)zeroArtifacts[run.id]=await collectPages(gh,'/actions/runs/'+run.id+'/artifacts','artifacts');
- phase='accounting-verify';verifyHistory(smoke,remaining,ci,lists,env.GITHUB_RUN_ID,zeroArtifacts);
+ phase='accounting-held-proof';const heldFiles=Object.create(null);
+ for(const e of await readdir(path.join(env.RUNNER_TEMP,'prior-eight'),{withFileTypes:true})){assert.equal(e.isFile(),true);heldFiles[e.name]=await readFile(path.join(env.RUNNER_TEMP,'prior-eight',e.name));}
+ const heldArtifacts=await collectPages(gh,'/actions/runs/'+RESERVED_ZERO_ATTEMPT.id+'/artifacts','artifacts');
+ const heldRun=remaining.find(r=>r.id===RESERVED_ZERO_ATTEMPT.id);
+ const heldProof=verifyReservedZeroAttempt(heldRun,lists[RESERVED_ZERO_ATTEMPT.id],heldArtifacts,heldFiles);
+ phase='accounting-verify';verifyHistory(smoke,remaining,ci,lists,env.GITHUB_RUN_ID,zeroArtifacts,{artifacts:heldArtifacts,files:heldFiles});
  if(process.argv[2]==='prepare'){
   phase='prior-smoke';const files=Object.create(null);for(const e of await readdir(path.join(env.RUNNER_TEMP,'prior-mp3'),{withFileTypes:true})){assert.equal(e.isFile(),true);files[e.name]=await readFile(path.join(env.RUNNER_TEMP,'prior-mp3',e.name));}
-  const ledger=reserveRemaining(verifyPriorSmoke(files));
+  const {budget:ledger,reservation}=reconcileHeldEight(verifyPriorSmoke(files),heldProof,env.GITHUB_RUN_ID);
   phase='fixture-artifact';const artifacts=await collectPages(gh,'/actions/runs/'+env.FIXTURE_RUN_ID+'/artifacts','artifacts');
   const artifact=artifacts.find(x=>String(x.id)===env.FIXTURE_ARTIFACT_ID);assert.equal(artifact?.name,'cosmic-approved-remaining-eight-fixtures');assert.equal(artifact.expired,false);assert.ok(artifact.size_in_bytes>0&&artifact.size_in_bytes<2000000);
   await writeFile(path.join(output,'budget.json'),JSON.stringify(ledger)+'\n',{flag:'wx'});
-  await writeFile(path.join(output,'reservation.json'),JSON.stringify({...ledger,runId:env.GITHUB_RUN_ID,remainingRequests:0,priorSmokeRun:POLICY.priorRun,fullAcceptance:false,releaseReady:false})+'\n',{flag:'wx'});
+  await writeFile(path.join(output,'reservation.json'),JSON.stringify(reservation)+'\n',{flag:'wx'});
  }else{
   phase='deployed-source';assert.match(env.CLOUDFLARE_ACCOUNT_ID||'',/^[a-f0-9]{32}$/i);
   const pin=APPROVED_DEPLOYMENT,run=await gh('/actions/runs/'+pin.run),jobs=await collectPages(gh,'/actions/runs/'+pin.run+'/jobs','jobs');

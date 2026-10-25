@@ -59,7 +59,15 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: ${{ runner.temp }}/prior-mp3
-      - name: Account every previous attempt and reserve the final eight slots
+      - name: Read only exact zero-attempt evidence for the existing held reservation
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: '12586114319'
+          run-id: '40161696792'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/prior-eight
+      - name: Reconcile complete history and reuse only the eight held unused slots
         run: node scripts/staging-remaining-eight-preflight.mjs prepare
       - name: Persist cumulative reservation before any paid request
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
