@@ -61,7 +61,7 @@ const mutations = [
   ["allow macOS native extraction timestamp changes", ".github/workflows/ci.yml", /if tuple\(time.localtime\(target.stat\(\).st_mtime\)\[:6\]\) != entry.date_time:/, "if False:"],
   ["remove native full-file byte identity", "tests/e2e/native-files.spec.js", /expect\(native.sha256\).toBe\(sha256\(bytes\)\);/, ""],
   ["remove native sliced byte identity", "tests/e2e/native-files.spec.js", /expect\(native.slices\).toEqual\(ranges.map[^\n]+/, ""],
-  ["allow zero-duration native preparation fallback", "tests/e2e/native-files.spec.js", /toHaveText\(fixture.duration\)/, "toBeVisible()"],
+  ["allow zero-duration native preparation fallback", "tests/e2e/native-files.spec.js", /toHaveText\(expectedDuration\)/, "toBeVisible()"],
   ["remove HttpOnly", "src/byok.js", /HttpOnly/g, ""],
   ["remove Secure", "src/byok.js", /; Secure/g, ""],
   ["weaken SameSite", "src/byok.js", /SameSite=Strict/g, "SameSite=None"],
