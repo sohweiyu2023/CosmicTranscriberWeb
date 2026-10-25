@@ -1,0 +1,736 @@
+{
+  "run": {
+    "id": 40169170360,
+    "head_sha": "e88e30389e2c1f2ee3b08c72485989fa88e6bf17",
+    "head_branch": "main",
+    "event": "push",
+    "path": ".github/workflows/ci.yml",
+    "run_attempt": 1,
+    "status": "completed",
+    "conclusion": "cancelled"
+  },
+  "jobs": [
+    {
+      "id": 121096336434,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "Resolve one reviewed dependency graph",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000005031,
+      "runner_name": "GitHub Actions 1000005031",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-25T06:27:58Z",
+          "completed_at": "2026-10-25T06:27:59Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-25T06:27:59Z",
+          "completed_at": "2026-10-25T06:28:01Z"
+        },
+        {
+          "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-25T06:28:01Z",
+          "completed_at": "2026-10-25T06:28:06Z"
+        },
+        {
+          "name": "Activate reviewed npm",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-25T06:28:06Z",
+          "completed_at": "2026-10-25T06:28:10Z"
+        },
+        {
+          "name": "Verify tool versions",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-25T06:28:10Z",
+          "completed_at": "2026-10-25T06:28:10Z"
+        },
+        {
+          "name": "Refresh all direct dependencies to registry latest and resolve one graph",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-25T06:28:10Z",
+          "completed_at": "2026-10-25T06:28:20Z"
+        },
+        {
+          "name": "Verify reviewed install-script policy",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-25T06:28:20Z",
+          "completed_at": "2026-10-25T06:28:20Z"
+        },
+        {
+          "name": "Verify complete installed dependency tree",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-25T06:28:20Z",
+          "completed_at": "2026-10-25T06:28:20Z"
+        },
+        {
+          "name": "Audit resolved graph",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-25T06:28:20Z",
+          "completed_at": "2026-10-25T06:28:20Z"
+        },
+        {
+          "name": "Require direct dependencies to be current",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-25T06:28:20Z",
+          "completed_at": "2026-10-25T06:28:21Z"
+        },
+        {
+          "name": "Provision audio fixture toolchain",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-25T06:28:21Z",
+          "completed_at": "2026-10-25T06:28:40Z"
+        },
+        {
+          "name": "Generate deterministic MP3 and nine-format fixtures",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-10-25T06:28:40Z",
+          "completed_at": "2026-10-25T06:28:43Z"
+        },
+        {
+          "name": "Full dependency-free adversarial gate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-10-25T06:28:43Z",
+          "completed_at": "2026-10-25T06:28:54Z"
+        },
+        {
+          "name": "Verify exact approved single MP3 bytes (no provider calls)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-10-25T06:28:54Z",
+          "completed_at": "2026-10-25T06:28:54Z"
+        },
+        {
+          "name": "Preserve only the approved MP3 for the manual smoke workflow",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-10-25T06:28:54Z",
+          "completed_at": "2026-10-25T06:28:55Z"
+        },
+        {
+          "name": "Validate exactly the eight approved synthetic speech fixtures (no provider calls)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-10-25T06:28:55Z",
+          "completed_at": "2026-10-25T06:28:56Z"
+        },
+        {
+          "name": "Preserve only the eight approved speech fixtures for bounded staging acceptance",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-10-25T06:28:56Z",
+          "completed_at": "2026-10-25T06:28:57Z"
+        },
+        {
+          "name": "Upload reviewed lock and fixtures",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-10-25T06:28:57Z",
+          "completed_at": "2026-10-25T06:28:59Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 35,
+          "started_at": "2026-10-25T06:28:59Z",
+          "completed_at": "2026-10-25T06:28:59Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 36,
+          "started_at": "2026-10-25T06:28:59Z",
+          "completed_at": "2026-10-25T06:29:00Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 37,
+          "started_at": "2026-10-25T06:29:00Z",
+          "completed_at": "2026-10-25T06:29:00Z"
+        }
+      ]
+    },
+    {
+      "id": 121096529061,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "Linux Worker + integration + browser matrix",
+      "status": "completed",
+      "conclusion": "success",
+      "runner_id": 1000005034,
+      "runner_name": "GitHub Actions 1000005034",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-25T06:29:04Z",
+          "completed_at": "2026-10-25T06:29:05Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-25T06:29:05Z",
+          "completed_at": "2026-10-25T06:29:06Z"
+        },
+        {
+          "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-25T06:29:06Z",
+          "completed_at": "2026-10-25T06:29:09Z"
+        },
+        {
+          "name": "Run actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-25T06:29:09Z",
+          "completed_at": "2026-10-25T06:29:10Z"
+        },
+        {
+          "name": "Run npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-25T06:29:10Z",
+          "completed_at": "2026-10-25T06:29:14Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-25T06:29:14Z",
+          "completed_at": "2026-10-25T06:29:18Z"
+        },
+        {
+          "name": "Run npm ls --all",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-25T06:29:18Z",
+          "completed_at": "2026-10-25T06:29:18Z"
+        },
+        {
+          "name": "Run npm run deps:install-scripts:verify",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-25T06:29:18Z",
+          "completed_at": "2026-10-25T06:29:18Z"
+        },
+        {
+          "name": "Run npm audit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-25T06:29:18Z",
+          "completed_at": "2026-10-25T06:29:19Z"
+        },
+        {
+          "name": "Provision media validation toolchain",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-25T06:29:19Z",
+          "completed_at": "2026-10-25T06:29:33Z"
+        },
+        {
+          "name": "Run npm run validate",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-25T06:29:33Z",
+          "completed_at": "2026-10-25T06:29:45Z"
+        },
+        {
+          "name": "Run npm run test:worker",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-10-25T06:29:45Z",
+          "completed_at": "2026-10-25T06:29:48Z"
+        },
+        {
+          "name": "Run npm run test:integration",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-10-25T06:29:48Z",
+          "completed_at": "2026-10-25T06:30:13Z"
+        },
+        {
+          "name": "Run npm run browsers:install:ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-10-25T06:30:13Z",
+          "completed_at": "2026-10-25T06:30:55Z"
+        },
+        {
+          "name": "Run npm run test:e2e:core",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-10-25T06:30:55Z",
+          "completed_at": "2026-10-25T06:36:21Z"
+        },
+        {
+          "name": "Run npm run build:inspect",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-10-25T06:36:21Z",
+          "completed_at": "2026-10-25T06:36:22Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 31,
+          "started_at": "2026-10-25T06:36:22Z",
+          "completed_at": "2026-10-25T06:36:22Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32,
+          "started_at": "2026-10-25T06:36:22Z",
+          "completed_at": "2026-10-25T06:36:22Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33,
+          "started_at": "2026-10-25T06:36:22Z",
+          "completed_at": "2026-10-25T06:36:22Z"
+        }
+      ]
+    },
+    {
+      "id": 121096529064,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "Windows toolchain + Chrome/Edge + staging-certified ZIP",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "runner_id": 1000005033,
+      "runner_name": "GitHub Actions 1000005033",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-25T06:29:04Z",
+          "completed_at": "2026-10-25T06:29:05Z"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-25T06:29:05Z",
+          "completed_at": "2026-10-25T06:29:11Z"
+        },
+        {
+          "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-25T06:29:11Z",
+          "completed_at": "2026-10-25T06:29:21Z"
+        },
+        {
+          "name": "Run actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-25T06:29:21Z",
+          "completed_at": "2026-10-25T06:29:22Z"
+        },
+        {
+          "name": "Activate reviewed npm for shared-lock preflight",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-25T06:29:22Z",
+          "completed_at": "2026-10-25T06:29:47Z"
+        },
+        {
+          "name": "Run npm ci",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-25T06:29:47Z",
+          "completed_at": "2026-10-25T06:29:58Z"
+        },
+        {
+          "name": "Run npm ls --all",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-25T06:29:58Z",
+          "completed_at": "2026-10-25T06:29:59Z"
+        },
+        {
+          "name": "Run npm run deps:install-scripts:verify",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-25T06:29:59Z",
+          "completed_at": "2026-10-25T06:30:00Z"
+        },
+        {
+          "name": "Run npm audit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-25T06:30:00Z",
+          "completed_at": "2026-10-25T06:30:02Z"
+        },
+        {
+          "name": "Execute private Windows toolchain regression/smoke test",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-25T06:30:02Z",
+          "completed_at": "2026-10-25T06:30:31Z"
+        },
+        {
+          "name": "Provision media validation toolchain",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-25T06:30:31Z",
+          "completed_at": "2026-10-25T06:31:05Z"
+        },
+        {
+          "name": "Run npm run validate",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "number": 12,
+          "started_at": "2026-10-25T06:31:05Z",
+          "completed_at": "2026-10-25T08:12:12Z"
+        },
+        {
+          "name": "Run npm run build",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 13,
+          "started_at": "2026-10-25T08:12:12Z",
+          "completed_at": "2026-10-25T08:12:12Z"
+        },
+        {
+          "name": "Run npm run browsers:install:branded",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 14,
+          "started_at": "2026-10-25T08:12:12Z",
+          "completed_at": "2026-10-25T08:12:12Z"
+        },
+        {
+          "name": "Run npm run test:e2e:branded",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 15,
+          "started_at": "2026-10-25T08:12:12Z",
+          "completed_at": "2026-10-25T08:12:12Z"
+        },
+        {
+          "name": "Run npm run build:inspect",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 16,
+          "started_at": "2026-10-25T08:12:12Z",
+          "completed_at": "2026-10-25T08:12:12Z"
+        },
+        {
+          "name": "Inspect Windows runner socket exhaustion without altering networking",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-10-25T08:12:12Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Record reviewed lock hash",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 18,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Run complete Windows certification for staging candidate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 19,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Prove certification did not alter the reviewed dependency graph",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 20,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Verify versioned staging-certified ZIP",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 21,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Upload staging-certified candidate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 22,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 43,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:15Z"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 44,
+          "started_at": "2026-10-25T08:12:15Z",
+          "completed_at": "2026-10-25T08:12:18Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 45,
+          "started_at": "2026-10-25T08:12:18Z",
+          "completed_at": "2026-10-25T08:12:18Z"
+        }
+      ]
+    },
+    {
+      "id": 121115777219,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "RELEASE BROWSER GATE - native Safari PASS or exact disclosed exception",
+      "status": "completed",
+      "conclusion": "failure",
+      "runner_id": 1000005059,
+      "runner_name": "GitHub Actions 1000005059",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-25T08:12:23Z",
+          "completed_at": "2026-10-25T08:12:23Z"
+        },
+        {
+          "name": "Require all platforms and genuine Safari PASS or owner-approved exact exception",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 2,
+          "started_at": "2026-10-25T08:12:23Z",
+          "completed_at": "2026-10-25T08:12:23Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-25T08:12:23Z",
+          "completed_at": "2026-10-25T08:12:23Z"
+        }
+      ]
+    },
+    {
+      "id": 121115777268,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "STAGING PREFLIGHT - reviewed Safari26 automation exception, no final release",
+      "status": "completed",
+      "conclusion": "failure",
+      "runner_id": 1000005060,
+      "runner_name": "GitHub Actions 1000005060",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-25T08:12:23Z",
+          "completed_at": "2026-10-25T08:12:24Z"
+        },
+        {
+          "name": "Require every platform staging gate; only known Safari26 exception permitted",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 2,
+          "started_at": "2026-10-25T08:12:24Z",
+          "completed_at": "2026-10-25T08:12:24Z"
+        },
+        {
+          "name": "Run actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 3,
+          "started_at": "2026-10-25T08:12:24Z",
+          "completed_at": "2026-10-25T08:12:24Z"
+        },
+        {
+          "name": "Require unchanged staging-certified ZIP after every CI gate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 4,
+          "started_at": "2026-10-25T08:12:24Z",
+          "completed_at": "2026-10-25T08:12:24Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-25T08:12:24Z",
+          "completed_at": "2026-10-25T08:12:24Z"
+        }
+      ]
+    },
+    {
+      "id": 121115778667,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "macOS native ZIP + WebKit/mobile + Chrome + real Safari",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "runner_id": null,
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 121115801750,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "Deploy exact staging-verified 1.2 ZIP to STAGING ONLY",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "runner_id": null,
+      "runner_name": null,
+      "steps": []
+    },
+    {
+      "id": 121115802392,
+      "run_id": 40169170360,
+      "run_attempt": 1,
+      "name": "Actual authenticated STAGING paid nine-format acceptance",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "runner_id": null,
+      "runner_name": null,
+      "steps": []
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 12589133200,
+      "name": "reviewed-release-inputs",
+      "digest": "sha256:e43321c1c2a3d380c9c4442f6ca1f56e00606f9dfe10d71e6eaea92f97e9e5f6",
+      "size_in_bytes": 8328421,
+      "workflow_run": {
+        "id": 40169170360,
+        "repository_id": 1329367706,
+        "head_repository_id": 1329367706,
+        "head_branch": "main",
+        "head_sha": "e88e30389e2c1f2ee3b08c72485989fa88e6bf17"
+      }
+    },
+    {
+      "id": 12589732482,
+      "name": "cosmic-approved-single-mp3-fixture",
+      "digest": "sha256:90526cc1a9bdbd1691b9f49d58a83e4e223d1ca82a61f11c35484109a50a0900",
+      "size_in_bytes": 133819,
+      "workflow_run": {
+        "id": 40169170360,
+        "repository_id": 1329367706,
+        "head_repository_id": 1329367706,
+        "head_branch": "main",
+        "head_sha": "e88e30389e2c1f2ee3b08c72485989fa88e6bf17"
+      }
+    },
+    {
+      "id": 12589852216,
+      "name": "cosmic-approved-remaining-eight-fixtures",
+      "digest": "sha256:4588ff00221637c5d99ea229b75f39a06b5d6d9776eb37cf9ee06d46b389db27",
+      "size_in_bytes": 1155794,
+      "workflow_run": {
+        "id": 40169170360,
+        "repository_id": 1329367706,
+        "head_repository_id": 1329367706,
+        "head_branch": "main",
+        "head_sha": "e88e30389e2c1f2ee3b08c72485989fa88e6bf17"
+      }
+    }
+  ],
+  "workflow": {
+    "sha": "220e4918806539097710909431f4353620504fa1",
+    "content": "name: Cosmic Transcriber Web Release CI\n\non:\n  push:\n    branches: [main, 'release/**', 'ci/**']\n  pull_request:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  resolve-lock:\n    name: Resolve one reviewed dependency graph\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e\n        with:\n          node-version: '26.7.0'\n          package-manager-cache: false\n      - name: Activate reviewed npm\n        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund\n      - name: Verify tool versions\n        run: |\n          node --version\n          test \"$(node --version)\" = \"v26.7.0\"\n          test \"$(npm --version)\" = \"12.0.2\"\n      - name: Refresh all direct dependencies to registry latest and resolve one graph\n        run: node scripts/deps-latest.mjs\n      - name: Verify reviewed install-script policy\n        run: npm run deps:install-scripts:verify\n      - name: Verify complete installed dependency tree\n        run: npm ls --all\n      - name: Audit resolved graph\n        run: npm audit\n      - name: Require direct dependencies to be current\n        run: npm outdated --depth=0\n      - name: Provision audio fixture toolchain\n        timeout-minutes: 10\n        run: node scripts/provision-ci-media.mjs\n      - name: Generate deterministic MP3 and nine-format fixtures\n        run: node scripts/generate-test-fixtures.mjs\n      - name: Full dependency-free adversarial gate\n        run: npm run validate\n      - name: Verify exact approved single MP3 bytes (no provider calls)\n        run: node --input-type=module -e \"import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));\"\n      - name: Preserve only the approved MP3 for the manual smoke workflow\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: cosmic-approved-single-mp3-fixture\n          path: tests/fixtures/approved-single-mp3/staging-speech.mp3\n          if-no-files-found: error\n          retention-days: 7\n      - name: Validate exactly the eight approved synthetic speech fixtures (no provider calls)\n        run: node scripts/prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight \"$RUNNER_TEMP/approved-eight\"\n      - name: Preserve only the eight approved speech fixtures for bounded staging acceptance\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: cosmic-approved-remaining-eight-fixtures\n          path: ${{ runner.temp }}/approved-eight/files/*\n          if-no-files-found: error\n          retention-days: 7\n      - name: Upload reviewed lock and fixtures\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: reviewed-release-inputs\n          path: |\n            package.json\n            package-lock.json\n            tests/fixtures/\n          if-no-files-found: error\n          retention-days: 7\n\n  linux-full:\n    name: Linux Worker + integration + browser matrix\n    needs: resolve-lock\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e\n        with:\n          node-version: '26.7.0'\n          package-manager-cache: false\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n        with:\n          name: reviewed-release-inputs\n          path: .\n      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund\n      - run: npm ci\n      - run: npm ls --all\n      - run: npm run deps:install-scripts:verify\n      - run: npm audit\n      - name: Provision media validation toolchain\n        timeout-minutes: 10\n        run: node scripts/provision-ci-media.mjs\n      - run: npm run validate\n      - run: npm run test:worker\n      - run: npm run test:integration\n      - run: npm run browsers:install:ci\n      - run: npm run test:e2e:core\n      - run: npm run build:inspect\n\n  macos-safari:\n    name: macOS native ZIP + WebKit/mobile + Chrome + real Safari\n    needs: windows-release\n    runs-on: macos-26\n    outputs:\n      native_safari_outcome: ${{ steps.real-safari.outcome }}\n      safari_staging_waiver_outcome: ${{ steps.safari-staging-waiver.outcome }}\n      safari_release_exception_outcome: ${{ steps.safari-release-exception.outcome }}\n    defaults:\n      run:\n        working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e\n        with:\n          node-version: '26.7.0'\n          package-manager-cache: false\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n        with:\n          name: ${{ needs.windows-release.outputs.artifact-name }}\n          path: ${{ runner.temp }}/cosmic-archive\n      - name: Verify and natively extract the exact Windows staging ZIP\n        working-directory: ${{ github.workspace }}\n        env:\n          SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}\n          SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}\n          RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}\n        run: |\n          python3 - <<'PY'\n          import hashlib, json, os, pathlib, subprocess, time, zipfile\n          source = pathlib.Path(os.environ['RUNNER_TEMP']) / 'cosmic-archive' / os.environ['SOURCE_FILE']\n          if hashlib.sha256(source.read_bytes()).hexdigest() != os.environ['SOURCE_SHA256']:\n              raise SystemExit('Windows staging archive identity mismatch.')\n          destination = pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'cosmic-native'\n          if destination.exists():\n              raise SystemExit('Native extraction destination must be fresh.')\n          root = f\"CosmicTranscriberWeb-{os.environ['RELEASE_VERSION']}\"\n          with zipfile.ZipFile(source) as archive:\n              for entry in archive.infolist():\n                  parts = pathlib.PurePosixPath(entry.filename).parts\n                  if not parts or parts[0] != root or '..' in parts or entry.filename.startswith('/') or '\\\\' in entry.filename:\n                      raise SystemExit('Unsafe or unexpected archive entry.')\n              if archive.testzip() is not None:\n                  raise SystemExit('Archive CRC verification failed.')\n              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))\n              if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':\n                  raise SystemExit('macOS must test the unchanged staging-only archive.')\n              subprocess.run(['/usr/bin/ditto', '-xk', str(source), str(destination)], check=True)\n              for entry in archive.infolist():\n                  target = destination / entry.filename\n                  if target.read_bytes() != archive.read(entry.filename):\n                      raise SystemExit(f'Native extraction byte mismatch: {entry.filename}')\n                  if tuple(time.localtime(target.stat().st_mtime)[:6]) != entry.date_time:\n                      raise SystemExit(f'Native extraction timestamp mismatch: {entry.filename}')\n              print(f'Untouched native archive verified: {source.name}; SHA256={os.environ[\"SOURCE_SHA256\"]}')\n          PY\n      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund\n      - run: npm ci\n      - run: npm ls --all\n      - run: npm run deps:install-scripts:verify\n      - run: npm audit\n      - name: Provision media validation toolchain\n        shell: bash\n        run: |\n          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then\n            brew install ffmpeg\n          fi\n          command -v ffmpeg\n          command -v ffprobe\n          ffmpeg -version\n          ffprobe -version\n      - run: npm run validate\n      - run: npm run build\n      - run: node scripts/playwright-invoke.mjs install webkit chrome\n      - run: npm run test:e2e:macos\n      - name: Enable SafariDriver\n        run: sudo /usr/bin/safaridriver --enable\n      - name: Real Safari native files and mocked transcription acceptance\n        id: real-safari\n        continue-on-error: true\n        run: npm run test:safari:real\n      - name: Verify narrowly documented SafariDriver 26.6.2 failure for STAGING ONLY\n        id: safari-staging-waiver\n        if: ${{ steps.real-safari.outcome == 'failure' }}\n        run: node scripts/safari-staging-waiver.mjs test-results/safari-native-acceptance.json\n      - name: Record owner-approved exact Safari26 release exception (not Safari certification)\n        id: safari-release-exception\n        if: ${{ steps.real-safari.outcome == 'failure' }}\n        run: node scripts/safari-release-exception.mjs test-results/safari-native-acceptance.json\n      - name: Preserve macOS browser evidence\n        if: ${{ always() }}\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: macos-native-browser-evidence\n          path: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}/test-results/\n          if-no-files-found: warn\n          retention-days: 7\n\n  windows-release:\n    name: Windows toolchain + Chrome/Edge + staging-certified ZIP\n    needs: resolve-lock\n    runs-on: windows-latest\n    outputs:\n      version: ${{ steps.certified.outputs.version }}\n      artifact-name: ${{ steps.certified.outputs.artifact-name }}\n      source-file: ${{ steps.certified.outputs.source-file }}\n      source-sha256: ${{ steps.certified.outputs.source-sha256 }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e\n        with:\n          node-version: '26.7.0'\n          package-manager-cache: false\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n        with:\n          name: reviewed-release-inputs\n          path: .\n      - name: Activate reviewed npm for shared-lock preflight\n        shell: pwsh\n        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund\n      - run: npm ci\n      - run: npm ls --all\n      - run: npm run deps:install-scripts:verify\n      - run: npm audit\n      - name: Execute private Windows toolchain regression/smoke test\n        shell: pwsh\n        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\\WINDOWS-TOOLCHAIN-SELFTEST.ps1\n      - name: Provision media validation toolchain\n        shell: pwsh\n        run: |\n          $ErrorActionPreference = 'Stop'\n          $PSNativeCommandUseErrorActionPreference = $true\n          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {\n            choco install ffmpeg -y --no-progress\n            if ($LASTEXITCODE -ne 0) { throw \"ffmpeg provisioning failed with exit code $LASTEXITCODE.\" }\n          }\n          $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue\n          $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue\n          if ($null -eq $ffmpeg -or $null -eq $ffprobe) { throw 'ffmpeg/ffprobe provisioning failed.' }\n          & $ffmpeg.Source -version\n          if ($LASTEXITCODE -ne 0) { throw \"ffmpeg verification failed with exit code $LASTEXITCODE.\" }\n          & $ffprobe.Source -version\n          if ($LASTEXITCODE -ne 0) { throw \"ffprobe verification failed with exit code $LASTEXITCODE.\" }\n      - run: npm run validate\n      - run: npm run build\n      - run: npm run browsers:install:branded\n      - run: npm run test:e2e:branded\n      - run: npm run build:inspect\n      - name: Inspect Windows runner socket exhaustion without altering networking\n        if: ${{ always() }}\n        shell: pwsh\n        run: |\n          Write-Output 'Windows TCP ephemeral port ranges:'\n          & netsh int ipv4 show dynamicport tcp\n          & netsh int ipv6 show dynamicport tcp\n          Write-Output 'Socket counts by TCP state:'\n          try {\n            Get-NetTCPConnection -ErrorAction Stop |\n              Group-Object State |\n              Sort-Object Name |\n              Select-Object Name,Count |\n              Format-Table -AutoSize\n          } catch { Write-Warning ('TCP diagnostic unavailable: ' + $_.Exception.Message) }\n          Write-Output 'Branded browser process counts:'\n          try {\n            Get-Process -Name chrome,msedge,firefox -ErrorAction SilentlyContinue |\n              Group-Object ProcessName |\n              Select-Object Name,Count |\n              Format-Table -AutoSize\n          } catch { Write-Warning ('Browser process diagnostic unavailable: ' + $_.Exception.Message) }\n      - name: Record reviewed lock hash\n        id: lock-before\n        shell: pwsh\n        run: \"Write-Output ('hash=' + (Get-FileHash .\\\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()) >> $env:GITHUB_OUTPUT\"\n      - name: Run complete Windows certification for staging candidate\n        shell: pwsh\n        run: pwsh -NoProfile -ExecutionPolicy Bypass -File .\\RELEASE-WINDOWS.ps1\n      - name: Prove certification did not alter the reviewed dependency graph\n        shell: pwsh\n        env:\n          LOCK_BEFORE: ${{ steps.lock-before.outputs.hash }}\n        run: |\n          $after=(Get-FileHash .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()\n          if ($after -ne $env:LOCK_BEFORE) { throw \"Release certification changed package-lock.json: before=$env:LOCK_BEFORE after=$after\" }\n      - name: Verify versioned staging-certified ZIP\n        id: certified\n        shell: pwsh\n        run: |\n          $ErrorActionPreference = 'Stop'\n          $pkg = Get-Content -LiteralPath .\\package.json -Raw | ConvertFrom-Json\n          $version = [string]$pkg.version\n          if ($version -notmatch '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$') { throw 'Invalid release package version.' }\n          $rootName = \"CosmicTranscriberWeb-$version\"\n          $sourceFile = \"$rootName-source.zip\"\n          $zip = Resolve-Path -LiteralPath (Join-Path .. $sourceFile)\n          if (-not (Test-Path -LiteralPath $zip.Path -PathType Leaf)) { throw 'Staging-certified ZIP missing.' }\n          Add-Type -AssemblyName System.IO.Compression.FileSystem\n          $archive = [System.IO.Compression.ZipFile]::OpenRead($zip.Path)\n          try {\n            $entry = $archive.GetEntry(\"$rootName/RELEASE_MANIFEST.json\")\n            if ($null -eq $entry) { throw 'Staging-certified manifest missing from versioned ZIP root.' }\n            $reader = [System.IO.StreamReader]::new($entry.Open())\n            try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json }\n            finally { $reader.Dispose() }\n          } finally { $archive.Dispose() }\n          if ($manifest.version -cne $version -or $manifest.releaseReady -isnot [bool] -or $manifest.releaseReady -ne $false -or $manifest.certificationLevel -cne 'staging') {\n            throw 'CI may publish only a matching staging candidate with releaseReady:false.'\n          }\n          $lockHash = (Get-FileHash -LiteralPath .\\package-lock.json -Algorithm SHA256).Hash.ToLowerInvariant()\n          if ($manifest.dependencyLock.status -ne 'verified' -or $manifest.dependencyLock.sha256 -ne $lockHash) {\n            throw 'Staging candidate does not contain the reviewed dependency graph.'\n          }\n          $sourceHash = (Get-FileHash -LiteralPath $zip.Path -Algorithm SHA256).Hash.ToLowerInvariant()\n          Write-Output ('path=' + $zip.Path) >> $env:GITHUB_OUTPUT\n          Write-Output ('version=' + $version) >> $env:GITHUB_OUTPUT\n          Write-Output ('artifact-name=' + $rootName + '-staging-certified') >> $env:GITHUB_OUTPUT\n          Write-Output ('source-file=' + $sourceFile) >> $env:GITHUB_OUTPUT\n          Write-Output ('source-sha256=' + $sourceHash) >> $env:GITHUB_OUTPUT\n      - name: Upload staging-certified candidate\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: ${{ steps.certified.outputs.artifact-name }}\n          path: ${{ steps.certified.outputs.path }}\n          if-no-files-found: error\n          retention-days: 7\n\n  all-green:\n    name: STAGING PREFLIGHT - reviewed Safari26 automation exception, no final release\n    needs: [linux-full, macos-safari, windows-release]\n    if: ${{ always() }}\n    runs-on: ubuntu-latest\n    steps:\n      - name: Require every platform staging gate; only known Safari26 exception permitted\n        shell: bash\n        env:\n          LINUX_RESULT: ${{ needs.linux-full.result }}\n          MACOS_RESULT: ${{ needs.macos-safari.result }}\n          WINDOWS_RESULT: ${{ needs.windows-release.result }}\n          NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}\n          SAFARI_WAIVER_OUTCOME: ${{ needs.macos-safari.outputs.safari_staging_waiver_outcome }}\n        run: |\n          set -euo pipefail\n          test \"$LINUX_RESULT\" = success\n          test \"$MACOS_RESULT\" = success\n          test \"$WINDOWS_RESULT\" = success\n          if test \"$NATIVE_SAFARI_OUTCOME\" = success; then\n            echo 'Native Safari real-file acceptance PASS.'\n          else\n            test \"$NATIVE_SAFARI_OUTCOME\" = failure\n            test \"$SAFARI_WAIVER_OUTCOME\" = success\n            echo 'STAGING ONLY: known SafariDriver 26.6.2 native-file failure waived; real Safari NOT CERTIFIED.'\n            echo 'Safari26 staging waiver active; staging preflight alone does not authorize final release. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> \"$GITHUB_STEP_SUMMARY\"\n          fi\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n        with:\n          name: ${{ needs.windows-release.outputs.artifact-name }}\n          path: certified\n      - name: Require unchanged staging-certified ZIP after every CI gate\n        shell: bash\n        env:\n          RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}\n          SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}\n          SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}\n        run: |\n          python3 - <<'PY'\n          import hashlib, json, os, pathlib, re, zipfile\n          version = os.environ['RELEASE_VERSION']\n          if not re.fullmatch(r'\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?', version):\n              raise SystemExit('Invalid release package version.')\n          root = f'CosmicTranscriberWeb-{version}'\n          filename = f'{root}-source.zip'\n          if os.environ['SOURCE_FILE'] != filename:\n              raise SystemExit('Unexpected staging candidate filename.')\n          source = pathlib.Path('certified') / filename\n          digest = hashlib.sha256(source.read_bytes()).hexdigest()\n          if digest != os.environ['SOURCE_SHA256']:\n              raise SystemExit('Staging candidate checksum changed after Windows certification.')\n          with zipfile.ZipFile(source) as archive:\n              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))\n              package = json.loads(archive.read(f'{root}/package.json'))\n              lock_digest = hashlib.sha256(archive.read(f'{root}/package-lock.json')).hexdigest()\n          if manifest.get('version') != version or package.get('version') != version:\n              raise SystemExit('Staging candidate version does not match its package.')\n          if manifest.get('releaseReady') is not False or manifest.get('certificationLevel') != 'staging':\n              raise SystemExit('CI artifact must remain staging-only with releaseReady:false.')\n          lock = manifest.get('dependencyLock', {})\n          if lock.get('status') != 'verified' or lock.get('sha256') != lock_digest:\n              raise SystemExit('Staging candidate dependency-lock provenance is invalid.')\n          print(f'{digest}  {source}')\n          print('STAGING PREFLIGHT PASS only; native Safari may be explicitly waived and final release remains NOT CERTIFIED.')\n          PY\n\n  release-browser-eligibility:\n    name: RELEASE BROWSER GATE - native Safari PASS or exact disclosed exception\n    needs: [linux-full, macos-safari, windows-release]\n    if: ${{ always() }}\n    runs-on: ubuntu-latest\n    steps:\n      - name: Require all platforms and genuine Safari PASS or owner-approved exact exception\n        shell: bash\n        env:\n          LINUX_RESULT: ${{ needs.linux-full.result }}\n          MACOS_RESULT: ${{ needs.macos-safari.result }}\n          WINDOWS_RESULT: ${{ needs.windows-release.result }}\n          NATIVE_SAFARI_OUTCOME: ${{ needs.macos-safari.outputs.native_safari_outcome }}\n          SAFARI_RELEASE_EXCEPTION_OUTCOME: ${{ needs.macos-safari.outputs.safari_release_exception_outcome }}\n        run: |\n          set -euo pipefail\n          test \"$LINUX_RESULT\" = success\n          test \"$MACOS_RESULT\" = success\n          test \"$WINDOWS_RESULT\" = success\n          if test \"$NATIVE_SAFARI_OUTCOME\" = success; then\n            echo 'Genuine native Safari automated acceptance PASS.' >> \"$GITHUB_STEP_SUMMARY\"\n          else\n            test \"$NATIVE_SAFARI_OUTCOME\" = failure\n            test \"$SAFARI_RELEASE_EXCEPTION_OUTCOME\" = success\n            echo 'Native Safari FAIL / WAIVED for the exact owner-approved SafariDriver 26.6.2 signature. Genuine Mac Safari not validated; user-reported iPhone Safari success is separate evidence. All unrelated release requirements remain mandatory. See docs/RELEASE_EXCEPTION_2026-10-22.md.' >> \"$GITHUB_STEP_SUMMARY\"\n          fi\n\n  deploy-staging-certified:\n    name: Deploy exact staging-verified 1.2 ZIP to STAGING ONLY\n    needs: [all-green, windows-release]\n    if: ${{ github.event_name == 'push' && github.run_attempt == '1' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.all-green.result == 'success' }}\n    runs-on: ubuntu-latest\n    timeout-minutes: 35\n    environment: staging\n    env:\n      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}\n      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}\n      STAGING_WORKER_NAME: cosmic-transcriber-web-staging\n      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}\n      SOURCE_FILE: ${{ needs.windows-release.outputs.source-file }}\n      SOURCE_SHA256: ${{ needs.windows-release.outputs.source-sha256 }}\n      RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e\n        with:\n          node-version: '26.7.0'\n      - name: Install exact npm\n        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund\n      - name: Fail closed unless staging Cloudflare credentials are available\n        shell: bash\n        run: |\n          set -euo pipefail\n          test \"$(node --version)\" = 'v26.7.0'\n          test \"$(npm --version)\" = '12.0.2'\n          test -n \"${CLOUDFLARE_API_TOKEN:-}\" || { echo 'Missing staging environment secret CLOUDFLARE_API_TOKEN' >&2; exit 1; }\n          test -n \"${CLOUDFLARE_ACCOUNT_ID:-}\" || { echo 'Missing staging environment secret CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }\n      - name: Verify legitimate staging Access before deployment or D1 migration\n        run: node scripts/staging-access-preflight.mjs\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c\n        with:\n          name: ${{ needs.windows-release.outputs.artifact-name }}\n          path: certified\n      - name: Use exact Windows all-green staging source, never a historical artifact\n        shell: bash\n        run: |\n          set -euo pipefail\n          test \"$RELEASE_VERSION\" = '1.2.0'\n          test \"$SOURCE_FILE\" = 'CosmicTranscriberWeb-1.2.0-source.zip'\n          test \"$SOURCE_SHA256\" != ''\n          printf '%s  %s\\n' \"$SOURCE_SHA256\" \"certified/$SOURCE_FILE\" | sha256sum -c -\n          test \"$(git ls-remote origin refs/heads/ci/v1.2.0-production-readiness | cut -f1)\" = \"$GITHUB_SHA\" || { echo 'Ref advanced after CI; stale candidate must not deploy.' >&2; exit 1; }\n          root=\"$RUNNER_TEMP/v12-staging\"\n          mkdir -p \"$root/source\"\n          unzip -q \"certified/$SOURCE_FILE\" -d \"$root/source\"\n          candidate=\"$root/source/CosmicTranscriberWeb-1.2.0\"\n          chmod -R u+rwX \"$candidate\"\n          test -f \"$candidate/package.json\"\n          test -f \"$candidate/RELEASE_MANIFEST.json\"\n          echo \"CANDIDATE=$candidate\" >> \"$GITHUB_ENV\"\n      - name: Verify staging-certified non-final identity\n        shell: bash\n        run: |\n          set -euo pipefail\n          cd \"$CANDIDATE\"\n          test \"$(node -p \"require('./package.json').version\")\" = '1.2.0'\n          test \"$(node -p \"require('./RELEASE_MANIFEST.json').releaseReady\")\" = 'false'\n          test \"$(node -p \"require('./RELEASE_MANIFEST.json').certificationLevel\")\" = 'staging'\n          test \"$(node -p \"require('./RELEASE_MANIFEST.json').dependencyLock.status\")\" = 'verified'\n          lock_expected=\"$(node -p \"require('./RELEASE_MANIFEST.json').dependencyLock.sha256\")\"\n          test \"$(sha256sum package-lock.json | awk '{print $1}')\" = \"$lock_expected\"\n          npm ci\n          npm run deps:install-scripts:verify\n          npm audit\n          npm outdated --depth=0\n      - name: Reuse approved private bindings from current staging deployment\n        shell: bash\n        run: |\n          set -euo pipefail\n          settings=\"$RUNNER_TEMP/current-staging-settings.json\"\n          curl --fail-with-body --silent --show-error \\\n            -H \"Authorization: Bearer ${CLOUDFLARE_API_TOKEN}\" \\\n            \"https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${STAGING_WORKER_NAME}/settings\" > \"$settings\"\n          SETTINGS_FILE=\"$settings\" node --input-type=module <<'NODE'\n          import {readFile, writeFile} from 'node:fs/promises';\n          import path from 'node:path';\n          import {pathToFileURL} from 'node:url';\n          const root=process.env.CANDIDATE;\n          const response=JSON.parse(await readFile(process.env.SETTINGS_FILE,'utf8'));\n          if(response?.success!==true||!response?.result||!Array.isArray(response.result.bindings)) throw new Error('Could not read current staging Worker bindings.');\n          const bindings=response.result.bindings;\n          const plain=name=>{const b=bindings.find(x=>x?.name===name&&x?.type==='plain_text'); if(!b||typeof b.text!=='string'||!b.text.trim())throw new Error(`Current staging binding ${name} is unavailable.`); return b.text;};\n          const d1=bindings.find(x=>x?.name==='USER_DB'&&x?.type==='d1');\n          const databaseId=d1?.database_id||d1?.id;\n          if(typeof databaseId!=='string'||!/^[0-9a-f-]{36}$/i.test(databaseId)) throw new Error('Current staging USER_DB binding is unavailable.');\n          const {applyAccessValues}=await import(pathToFileURL(path.join(root,'scripts/configure-access.mjs')).href);\n          const {applyRegistryValues}=await import(pathToFileURL(path.join(root,'scripts/configure-registry.mjs')).href);\n          const configPath=path.join(root,'wrangler.jsonc');\n          const config=JSON.parse(await readFile(configPath,'utf8'));\n          applyAccessValues(config,'staging',plain('ACCESS_TEAM_DOMAIN'),plain('ACCESS_AUDIENCE'));\n          applyRegistryValues(config,'staging',databaseId,plain('ADMIN_EMAILS'));\n          await writeFile(configPath,JSON.stringify(config,null,2)+'\\n','utf8');\n          console.log('Reused current staging Access/admin/D1 bindings without printing private values.');\n          NODE\n          cd \"$CANDIDATE\"\n          node scripts/deploy-verify.mjs staging\n      - name: Confirm existing staging BYOK secret without replacing it\n        shell: bash\n        run: |\n          set -euo pipefail\n          cd \"$CANDIDATE\"\n          node scripts/wrangler-invoke.mjs secret list --env staging --format json > \"$RUNNER_TEMP/v12-staging-secret-names.json\"\n          node -e \"const x=require(process.argv[1]); if (!Array.isArray(x)||!x.some(y=>y?.name==='BYOK_SESSION_MASTER_KEY_CURRENT'))process.exit(1)\" \"$RUNNER_TEMP/v12-staging-secret-names.json\" || { echo 'Existing staging BYOK master secret missing; refusing to deploy.' >&2; exit 1; }\n          rm -f \"$RUNNER_TEMP/v12-staging-secret-names.json\"\n      - name: Record known-good staging version for rollback\n        shell: bash\n        run: |\n          cd \"$CANDIDATE\"\n          node scripts/wrangler-invoke.mjs deployments list --env staging\n      - name: Deploy STAGING ONLY\n        shell: bash\n        run: |\n          set -euo pipefail\n          cd \"$CANDIDATE\"\n          npm run deploy:staging\n      - name: Staging reachability smoke\n        shell: bash\n        run: |\n          set -euo pipefail\n          code=\"$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 20 https://transcriber-staging.awakeningtoreality.com/)\"\n          case \"$code\" in\n            2*|3*|401|403) echo \"Staging endpoint reachable through expected app/Access boundary: HTTP $code\" ;;\n            *) echo \"Unexpected staging HTTP status: $code\" >&2; exit 1 ;;\n          esac\n      - name: Record newly deployed staging version\n        shell: bash\n        run: |\n          cd \"$CANDIDATE\"\n          node scripts/wrangler-invoke.mjs deployments list --env staging\n      - name: Reassert release boundary\n        shell: bash\n        run: |\n          set -euo pipefail\n          cd \"$CANDIDATE\"\n          test \"$(node -p \"require('./RELEASE_MANIFEST.json').releaseReady\")\" = 'false'\n          test \"$(node -p \"require('./RELEASE_MANIFEST.json').certificationLevel\")\" = 'staging'\n          echo 'STAGING deployment only. Production remains blocked until live staging acceptance passes.'\n\n  staging-live-nine-formats:\n    name: Actual authenticated STAGING paid nine-format acceptance\n    needs: [deploy-staging-certified]\n    if: ${{ github.event_name == 'push' && github.run_attempt == '1' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.deploy-staging-certified.result == 'success' }}\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n    environment: staging\n    env:\n      STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}\n      STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}\n      COSMIC_PAID_STAGING_MODE: exact-nine-real-requests\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e\n        with:\n          node-version: '26.7.0'\n          package-manager-cache: false\n      - name: Run bounded nine-format paid staging acceptance, no ambiguous retries\n        run: node scripts/staging-live-acceptance.mjs\n      - name: Preserve sanitized nine-format paid receipts\n        if: ${{ always() }}\n        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n        with:\n          name: staging-live-nine-format-evidence\n          path: test-results/staging-live-acceptance.json\n          if-no-files-found: warn\n          retention-days: 7\n"
+  }
+}

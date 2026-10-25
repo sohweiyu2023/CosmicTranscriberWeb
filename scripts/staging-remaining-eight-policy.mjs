@@ -1,6 +1,7 @@
 // Bounded remaining-eight acceptance policy; no provider calls in this module.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {CANCELLED_CI_PIN,verifyExactNeverStartedCancelledCi} from './staging-cancelled-ci-proof.mjs';
 import {shortPcmWavSeconds} from '../src/short-wav.js';
 export const POLICY=Object.freeze({repo:'sohweiyu2023/CosmicTranscriberWeb',origin:'https://transcriber-staging.awakeningtoreality.com',worker:'cosmic-transcriber-web-staging',workflow:'staging-remaining-eight.yml',approval:'Sentinel_c2c095975b008191b6e4af85864f70eb',priorRun:39979683866,priorArtifact:12512662440,maximumRequests:9,maximumMicroUsd:250000});
 // Old-source automatic chunking is ineligible for this bounded eight-request plan.
@@ -121,7 +122,7 @@ export function verifyHeldContinuation(budget,reservation,currentRun){
  assert.deepEqual(budget,expected.budget);assert.deepEqual(reservation,expected.reservation);
  return expected.reservation.continuation;
 }
-export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroPaidArtifacts={},reservedZeroEvidence){
+export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroPaidArtifacts={},reservedZeroEvidence,cancelledCiEvidence={}){
  assert.equal(smokeRuns.filter(x=>x.event==='workflow_dispatch').length,1,'history_smoke_dispatch_count');
  for(const run of smokeRuns){assert.equal(run.run_attempt,1,'history_smoke_attempt');assert.equal(run.status,'completed','history_smoke_status');
   if(run.id===POLICY.priorRun){assert.equal(run.event,'workflow_dispatch','history_smoke_identity');assert.equal(run.conclusion,'success','history_smoke_result');}
@@ -137,7 +138,7 @@ export function verifyHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun
  if(reservedZeroEvidence)assert.equal(remainingRuns.filter(x=>x.id===RESERVED_ZERO_ATTEMPT.id).length,1,'history_reserved_zero_missing');
  for(const run of ciRuns){assert.equal(run.status,'completed','history_ci_active');assert.ok(Number.isSafeInteger(run.run_attempt)&&run.run_attempt>=1&&run.run_attempt<=20,'history_ci_attempts');
   const paid=jobLists[run.id]?.filter(x=>x.name==='Actual authenticated STAGING paid nine-format acceptance');assert.equal(paid?.length,run.run_attempt,'history_ci_paid_count');
-  for(let a=1;a<=run.run_attempt;a++){const p=paid.filter(x=>x.run_attempt===a);assert.equal(p.length,1,'history_ci_paid_attempt');assert.equal(p[0].status,'completed','history_ci_paid_status');assert.equal(p[0].conclusion,'skipped','history_ci_paid_executed');}
+  for(let a=1;a<=run.run_attempt;a++){const p=paid.filter(x=>x.run_attempt===a);assert.equal(p.length,1,'history_ci_paid_attempt');assert.equal(p[0].status,'completed','history_ci_paid_status');if(run.id===CANCELLED_CI_PIN.run&&p[0].conclusion==='cancelled')verifyExactNeverStartedCancelledCi({...cancelledCiEvidence[run.id],run,jobs:jobLists[run.id]});else assert.equal(p[0].conclusion,'skipped','history_ci_paid_executed');}
  }
  return true;
 }
