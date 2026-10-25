@@ -1,5 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
+import {selectNativeModelWithDiagnostics} from './native-select-diagnostic.mjs';
 const seeded='SEED-NO-PERSIST-KEY-7d9b4676';
 
 async function expectAccountWithinPage(page){
@@ -75,14 +76,16 @@ test('secure key setup, native controls, queue, mocked transcript and downloads'
     await page.setViewportSize(initialViewport);
   }
   const model=page.locator('#modelSelect');
+  let modelSelectionOrdinal=0;
+  const selectNativeModel=id=>selectNativeModelWithDiagnostics(model,id,{ordinal:modelSelectionOrdinal++});
   await expect(model.locator('option')).toHaveCount(4);
   await expect(model.locator('option',{hasText:/realtime|live/i})).toHaveCount(0);
-  for(const id of ['gpt-transcribe','gpt-4o-transcribe-diarize','gpt-4o-transcribe','gpt-4o-mini-transcribe']){await model.selectOption(id);await expect(model).toHaveValue(id)}
-  await model.selectOption('gpt-4o-transcribe-diarize');
+  for(const id of ['gpt-transcribe','gpt-4o-transcribe-diarize','gpt-4o-transcribe','gpt-4o-mini-transcribe']){await selectNativeModel(id);await expect(model).toHaveValue(id)}
+  await selectNativeModel('gpt-4o-transcribe-diarize');
   await expect(page.locator('#languageInput')).toBeEnabled();
   await expect(page.locator('#promptInput')).toBeDisabled();
   await expect(page.locator('#keywordsInput')).toBeDisabled();
-  await model.selectOption('gpt-transcribe');
+  await selectNativeModel('gpt-transcribe');
   await page.getByRole('button',{name:/Configure API key/i}).click();
   await page.locator('#apiKeyInput').fill(seeded);
   const createKeySessionButton=page.getByRole('button',{name:/Create secure session/i});
