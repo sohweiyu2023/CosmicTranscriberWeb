@@ -28,7 +28,7 @@ test('exact first-party action policy admits precisely the sixth approved upload
  const y=await readFile(new URL('../../.github/workflows/ci.yml',import.meta.url),'utf8');
  const check=workflow=>safeguards({'.github/workflows/ci.yml':workflow}).find(([name])=>name==='GitHub CI uses current exact first-party action releases')[1]();
  assert.equal(check(y),true);
- const pin='actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a';assert.equal((y.match(/actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/g)||[]).length,6);
+ const pin='actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9';assert.equal((y.match(/actions\/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9/g)||[]).length,6);
  assert.equal(check(y.replace(pin,'actions/upload-artifact@v7')),false);assert.equal(check(y.replace(pin,'')),false);assert.equal(check(y+'\n      - uses: '+pin+'\n'),false);
  assert.match(y,/runs-on: ubuntu-latest\n    timeout-minutes: 20/);assert.equal((y.match(/timeout-minutes: 10\n        run: node scripts\/provision-ci-media.mjs/g)||[]).length,2);
 });

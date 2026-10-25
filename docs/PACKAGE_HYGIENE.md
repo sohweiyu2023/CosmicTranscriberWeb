@@ -8,7 +8,7 @@ It excludes `node_modules`, `dist`, `.wrangler`, `.git`, Playwright reports/test
 ## Audit candidate versus release-certified ZIP
 The assistant environment cannot reproduce the user's public-registry Windows lock, so the ZIP produced here uses `npm run package:source:candidate` and records `releaseReady:false`. It is intentionally **undeployable**: `deploy-verify` rejects it.
 
-A deployment artifact must be produced on Windows through the reviewed private Node 26.7.0 + npm 12.0.2 release toolchain by the normal `npm run package:source` path. That path cannot be bypassed by calling the ZIP writer directly: it invokes the full release verifier first.
+A deployment artifact must be produced on Windows through the reviewed private Node 26.12.1 + npm 12.2.1 release toolchain by the normal `npm run package:source` path. That path cannot be bypassed by calling the ZIP writer directly: it invokes the full release verifier first.
 
 ## Release-mode contract
 A normal release package requires:

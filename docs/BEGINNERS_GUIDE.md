@@ -65,7 +65,7 @@ Configured administrators can manage registration mode and mark non-administrato
 
 The hosted site is already deployed. Updating GitHub main does not itself authorize resetting production secrets or replacing the database. For an existing deployment, follow [the upgrade instructions](CLOUDFLARE_DEPLOYMENT.md) and [production operations](PRODUCTION_OPERATIONS.md): use a verified source ZIP, staging qualification and the existing private bindings. Do not run first-deploy/bootstrap helpers for an upgrade. Keep Cloudflare Access enabled and preserve the existing BYOK master secret and D1 data.
 
-For local development from a separate source checkout, the supported toolchain is Node **26.7.0** with npm **12.0.2**; use the shipped Windows toolchain helpers, `npm ci`, and the developer/testing guides. An editable audit checkout is not a certified deployable package.
+For local development from a separate source checkout, the supported toolchain is Node **26.12.1** with npm **12.2.1**; use the shipped Windows toolchain helpers, `npm ci`, and the developer/testing guides. An editable audit checkout is not a certified deployable package.
 
 ## Verification limits
 

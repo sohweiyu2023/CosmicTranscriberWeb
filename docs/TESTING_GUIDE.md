@@ -2,7 +2,7 @@
 
 ## Evidence discipline
 
-Never call a release gate PASS unless it actually ran successfully on the named artifact. The editable 1.2.0 candidate is **not release-certified**. Historical 1.1.1 receipts listed 214 static safeguards, 109 Node/ffprobe tests and 308 mutations; those counts are historical, not the current source's results. Current run receipts must establish the Node 26.7.0 dependency-backed Worker, integration, browser, Windows release, macOS real-Safari and native fresh-ZIP gates independently.
+Never call a release gate PASS unless it actually ran successfully on the named artifact. The editable 1.2.0 candidate is **not release-certified**. Historical 1.1.1 receipts listed 214 static safeguards, 109 Node/ffprobe tests and 308 mutations; those counts are historical, not the current source's results. Current run receipts must establish the Node 26.12.1 dependency-backed Worker, integration, browser, Windows release, macOS real-Safari and native fresh-ZIP gates independently.
 
 The 1.0.15 release immediately preceding this candidate completed the full Linux + macOS WebKit/real Safari + Windows branded-browser/full-release + independent certified-ZIP matrix. V1.1 must independently repeat that matrix after resolving the current registry-latest dependency graph; prior 1.0.15 evidence is advisory only.
 
@@ -16,7 +16,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\RELEASE-WINDOWS.ps1
 
 This certification-only process activates the shipped private toolchain and fails on any required Windows gate. It performs no deployment. Do not use `FIRST-DEPLOY-WINDOWS.ps1` or `deploy:first:*` for the existing staging/production upgrade; the bootstrap route expects release-ready output and can create or replace BYOK secrets.
 
-The script validates PowerShell, exact Node 26.7.0/npm 12.0.2 and registry/install policy, checks the reviewed dependency graph, performs clean `npm ci`, installs browsers and packages with `--staging-candidate`. Packaging runs Windows verification before ZIP creation and again after actual .NET extraction. The result stays `releaseReady:false`, `certificationLevel:staging`. CI must also finish Linux and macOS acceptance on the same inputs/artifact. Only then follow [the upgrade runbook](CLOUDFLARE_DEPLOYMENT.md) for staging deployment, live acceptance and final Windows `npm run package:source` without candidate flags on the same accepted source. The local packager does not independently check external CI/live receipts.
+The script validates PowerShell, exact Node 26.12.1/npm 12.2.1 and registry/install policy, checks the reviewed dependency graph, performs clean `npm ci`, installs browsers and packages with `--staging-candidate`. Packaging runs Windows verification before ZIP creation and again after actual .NET extraction. The result stays `releaseReady:false`, `certificationLevel:staging`. CI must also finish Linux and macOS acceptance on the same inputs/artifact. Only then follow [the upgrade runbook](CLOUDFLARE_DEPLOYMENT.md) for staging deployment, live acceptance and final Windows `npm run package:source` without candidate flags on the same accepted source. The local packager does not independently check external CI/live receipts.
 
 ## Individual gates for debugging only
 
@@ -93,3 +93,10 @@ Certification must additionally prove:
 - admin UI and status controls work in Chromium, Firefox/WebKit/mobile coverage, branded Windows browsers and real Safari smoke where applicable;
 - registry schema and diagnostics/logging contain no OpenAI keys, raw audio, transcript bodies, prompt text, filenames or fingerprints;
 - mutation tests detect removal of registry/admin authorization and environment-isolation controls.
+
+
+### Windows Playwright WebKit file metadata and media support
+
+The 2026-10-25 baseline/candidate native-input probes used identical Playwright1.64.1 package integrity and browser revisions under Node26.7.0 and26.12.1. Both preserve full native bytes, size and unchanged disk timestamps. Chromium/Firefox expose1792935646732ms; Windows WebKit exposes exactly1792935646000ms. The oracle predicts exact whole seconds on Windows/Linux WebKit, with no tolerance; Mac and other engines retain exact milliseconds.
+
+Independent native media elements returned MediaError4 for all nine formats in both Windows WebKit builds. This is an existing platform capability, not introduced by the dependency update. MP3 frame and Ogg granule parsers still require real preparation duration. Other Windows WebKit formats must become Ready with exact Unknown duration, Duration unavailable queue text, Estimate unavailable and a warning that API usage may still be charged. All full/slice hashes, file identity, unchanged disk time, no-dispatch and queue assertions remain. No test is skipped or converted to success through tolerance. All Linux/macOS duration expectations stay unchanged. These simulated Windows WebKit checks do not validate genuine Safari or change its disclosed waiver.

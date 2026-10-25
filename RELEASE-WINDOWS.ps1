@@ -20,8 +20,8 @@ try {
   Write-Host "Node: $nodeVersion | npm: $npmVersion"
   $nodeSemver = [version]($nodeVersion.TrimStart('v'))
   $npmSemver = [version]$npmVersion
-  if ($nodeVersion -ne 'v26.7.0') { throw "Reviewed private Node v26.7.0 is required for this release; found $nodeVersion. Run through the shipped toolchain bootstrap instead of changing global Node." }
-  if ($npmVersion -ne '12.0.2') { throw "Reviewed private npm 12.0.2 is required for this release; found $npmVersion. Run through the shipped toolchain bootstrap instead of changing global npm." }
+  if ($nodeVersion -ne 'v26.12.1') { throw "Reviewed private Node v26.12.1 is required for this release; found $nodeVersion. Run through the shipped toolchain bootstrap instead of changing global Node." }
+  if ($npmVersion -ne '12.2.1') { throw "Reviewed private npm 12.2.1 is required for this release; found $npmVersion. Run through the shipped toolchain bootstrap instead of changing global npm." }
 
   $registry = (& npm config get registry).Trim(); Require-Success 'npm registry check'
   $strictAllowScripts = (& npm config get strict-allow-scripts).Trim(); Require-Success 'npm strict allow-scripts check'

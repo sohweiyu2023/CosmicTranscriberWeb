@@ -6,7 +6,7 @@ The checked-in graph was refreshed through the documented lifecycle-disabled wor
 
 ## V1.2 dependency refresh under review
 
-The 2026-10-11 V1.2 refresh uses the exact reviewed **Node 26.7.0 / npm 12.0.2** toolchain. The package engine ranges are compatibility bounds, not permission to substitute a different runtime during certification. Use the private toolchain; do not replace the machine's global Node/npm installation.
+The isolated 2026-10-25 toolchain refresh candidate uses the exact reviewed **Node 26.12.1 / npm 12.2.1** toolchain. The package engine ranges are compatibility bounds, not permission to substitute a different runtime during certification. Use the private toolchain; do not replace the machine's global Node/npm installation.
 
 The following direct versions are resolved in the refresh proposal. `package.json` declares compatible ranges; `package-lock.json` records the exact transitive graph and registry integrity values that must be installed and tested. A dependency refresh changes the candidate and invalidates prior test evidence for the old graph.
 
@@ -59,5 +59,5 @@ PR21's required audit reported vulnerabilities in Miniflare's Undici and the Clo
 
 Official advisories: [Undici EventSource memory bound](https://github.com/advisories/GHSA-4qv8-2p9j-2685), [integrity token normalization](https://github.com/advisories/GHSA-f72v-6w45-q472), [excessive content-encoding error](https://github.com/advisories/GHSA-xjj6-f33q-929c), and [Zod constrained collection validation](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5). All affected Undici 7 copies must be at least 7.30.1 and Zod copies at least 4.6.6. Audit the actual complete graph; these are tooling findings, not proof of a deployed Worker exploit.
 
-The source-only regression checks all locked copies without installed dependencies. Dependency-backed tests resolve the libraries through their actual parents, verify uppercase integrity tokens against valid and incorrect mocked bytes with network access disabled, and reject oversized constrained collections without collecting an issue per element. The existing Worker/integration gates still verify compatibility. Resolution uses Node 26.7.0/npm 12.0.2, scripts disabled until the existing lock-wide lifecycle policy passes. Keep the overrides until a reviewed upstream graph fixes the same advisories and all required checks pass without them.
+The source-only regression checks all locked copies without installed dependencies. Dependency-backed tests resolve the libraries through their actual parents, verify uppercase integrity tokens against valid and incorrect mocked bytes with network access disabled, and reject oversized constrained collections without collecting an issue per element. The existing Worker/integration gates still verify compatibility. Resolution uses Node 26.12.1/npm 12.2.1, scripts disabled until the existing lock-wide lifecycle policy passes. Keep the overrides until a reviewed upstream graph fixes the same advisories and all required checks pass without them.
 

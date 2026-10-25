@@ -25,10 +25,24 @@ export function expectedNativeLastModified(mtimeMs,{browserName,platform}){
   assert.ok(Number.isFinite(mtimeMs)&&mtimeMs>=0&&Number.isSafeInteger(Math.trunc(mtimeMs)),'Invalid on-disk modification time');
   assert.ok(['chromium','firefox','webkit'].includes(browserName),'Unknown browser engine');
   assert.ok(['linux','darwin','win32'].includes(platform),'Unknown browser host platform');
-  // Linux WebKit exposes whole seconds for disk-backed File timestamps:
+  // Linux and Windows WebKit expose whole seconds for disk-backed File timestamps.
+  // Windows precision is confirmed by the before/after native-input probe on
+  // both Node26.7.0 and26.12.1 with the same Playwright1.64.1/browser revision:
   // https://github.com/microsoft/playwright/blob/main/tests/page/page-set-input-files.spec.ts
   // This predicts that exact value; it does not alter the file or accept a tolerance.
-  return browserName==='webkit'&&platform==='linux'?Math.floor(mtimeMs/1000)*1000:Math.trunc(mtimeMs);
+  return browserName==='webkit'&&['linux','win32'].includes(platform)?Math.floor(mtimeMs/1000)*1000:Math.trunc(mtimeMs);
+}
+
+// Windows Playwright WebKit has no native media metadata decoder in the
+// measured baseline/candidate builds (MediaError4 for all nine fixtures).
+// MP3 frame and Ogg granule parsers still establish actual app duration.
+// Other formats remain direct-upload eligible, with an explicit unavailable
+// duration/cost state. This predicts a concrete UI state, not a skipped test.
+export function expectedPreparedDurationText(duration,{browserName,platform,format}){
+  expectedNativeLastModified(0,{browserName,platform});
+  assert.ok(Object.hasOwn(CANONICAL_MIME,format),'Unknown native format');
+  assert.match(duration,/^[0-9]+:[0-5][0-9]$/);
+  return browserName==='webkit'&&platform==='win32'&&!['mp3','ogg'].includes(format)?'Unknown':duration;
 }
 
 export function assertDuration(actual,expected,label){
