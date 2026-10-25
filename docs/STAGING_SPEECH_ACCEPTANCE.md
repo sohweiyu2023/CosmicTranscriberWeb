@@ -376,3 +376,12 @@ receipt or automatically set releaseReady/fullAcceptance. Coverage can be review
 across the two actual same-source runs; production promotion requires its own
 supported evidence/rollback/access checks. The disclosed native Safari failure
 remains FAIL/WAIVED, and genuine Mac Safari validation is still unavailable.
+
+
+### Fixed fixture pin and exact pre-reservation zero-attempt reconciliation
+
+The first final-MP3 manual run, `40245143343` at source `d6d749889f9735f4c27dbdcb4164fb3656a8253a`, failed before reservation upload, BYOK or transcription. Its fixture ZIP digest pin had a one-character transcription error. The actual artifact `12565238332` was downloaded independently: ZIP SHA-256 `c291ab8175af70d488643ffad5f0f4c5dbaa138a168191ddd52f3cb6adb2f6a7`, 133819 bytes, containing only the unchanged approved 194156-byte MP3. The payload SHA-256 remains `9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a`.
+
+Only that exact failed run/attempt/head/job is reconciled. Fresh GitHub metadata must show its exact completed step graph: preparation failed, reservation/source/BYOK/provider steps skipped, no artifacts, and the three original workflow/preflight/policy blob IDs. A changed, missing, duplicate, rerun, started, ambiguous or unknown manual attempt still fails closed. This admits no paid retry and changes neither the original nine-request evidence nor the separately approved tenth request/reservation. A new live submission is not made by this repair or its CI.
+
+Validation lesson: mock metadata constructed from the same pin under test cannot detect a typo in that pin. Keep an independently captured real artifact record and archive verification, and explicitly test rejection of the original incorrect digest. The exact-zero proof relies on the immutable job graph and code, not a self-asserted `paidRequests:0` label. Runtime history/source/Access/account/BYOK gates, no automatic retries, and the US$0.0045 additional / US$0.2205 cumulative reservation remain required. Same-source MP3 acceptance and production readiness remain pending.

@@ -7,7 +7,7 @@ import {collectPages} from './staging-single-mp3-preflight.mjs';
 import {readPreflightJson,collectRunAttemptJobs,verifySource} from './staging-remaining-eight-preflight.mjs';
 import {POLICY,APPROVED_DEPLOYMENT,ZERO_PAID_ATTEMPT,RESERVED_ZERO_ATTEMPT} from './staging-remaining-eight-policy.mjs';
 import {CANCELLED_CI_PIN} from './staging-cancelled-ci-proof.mjs';
-import {FINAL_MP3,verifyCompletedEight,reserveFinalMp3,verifyFinalHistory} from './staging-final-mp3-policy.mjs';
+import {FINAL_MP3,FINAL_MP3_ZERO,verifyFinalFixtureArtifact,verifyCompletedEight,reserveFinalMp3,verifyFinalHistory} from './staging-final-mp3-policy.mjs';
 export function verifyFinalIdentity(env){
  assert.equal(env.GITHUB_REPOSITORY,POLICY.repo);assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.GITHUB_RUN_ATTEMPT,'1');
  assert.equal(env.GITHUB_WORKFLOW,'One approved STAGING MP3 smoke ONLY');assert.equal(env.COSMIC_SMOKE_AUTHORIZATION,FINAL_MP3.authorization);
@@ -39,12 +39,14 @@ async function main(){let phase='identity';try{
   const blob=await gh('/contents/.github/workflows/ci.yml?ref='+CANCELLED_CI_PIN.head);assert.equal(blob.encoding,'base64');assert.equal(blob.sha,CANCELLED_CI_PIN.workflowBlob);assert.ok(typeof blob.content==='string'&&blob.content.length<100000);
   cancelledEvidence[CANCELLED_CI_PIN.run]={workflow:{sha:blob.sha,content:Buffer.from(blob.content,'base64').toString('utf8')},artifacts:await collectPages(gh,'/actions/runs/'+CANCELLED_CI_PIN.run+'/artifacts','artifacts')};
  }
- phase='accounting';verifyFinalHistory(smoke,remaining,ci,jobs,env.GITHUB_RUN_ID,zeroArtifacts,{artifacts:heldArtifacts,files:heldFiles},cancelledEvidence,proof);
+ phase='final-zero-proof';const workflowBlobs={};for(const [name,sha]of Object.entries(FINAL_MP3_ZERO.blobs)){const blob=await gh('/contents/'+name+'?ref='+FINAL_MP3_ZERO.head);assert.equal(blob.sha,sha);workflowBlobs[name]=blob.sha;}
+ const finalZeroEvidence={workflowBlobs,artifacts:await collectPages(gh,'/actions/runs/'+FINAL_MP3_ZERO.run+'/artifacts','artifacts')};
+ phase='accounting';verifyFinalHistory(smoke,remaining,ci,jobs,env.GITHUB_RUN_ID,zeroArtifacts,{artifacts:heldArtifacts,files:heldFiles},cancelledEvidence,proof,finalZeroEvidence);
  const prior=await readFour(path.join(env.RUNNER_TEMP,'prior-mp3'));
  const planned=reserveFinalMp3(prior,proof,env.GITHUB_RUN_ID);
  if(process.argv[2]==='prepare'){
   phase='fixed-fixture-artifact';const artifacts=await collectPages(gh,'/actions/runs/'+FINAL_MP3.fixtureRun+'/artifacts','artifacts');
-  const a=artifacts.filter(a=>a.id===FINAL_MP3.fixtureArtifact);assert.equal(a.length,1);assert.equal(a[0].name,'cosmic-approved-single-mp3-fixture');assert.equal(a[0].digest,'sha256:'+FINAL_MP3.fixtureDigest);assert.equal(a[0].expired,false);assert.equal(a[0].size_in_bytes,133819);assert.equal(a[0].workflow_run.id,FINAL_MP3.fixtureRun);assert.equal(a[0].workflow_run.head_sha,'a4f25ce6534baa7144317c4ac09ba30143937aa6');
+  verifyFinalFixtureArtifact(artifacts);
   await writeFile(path.join(output,'budget.json'),JSON.stringify(planned.budget)+'\n',{flag:'wx'});
   await writeFile(path.join(output,'reservation.json'),JSON.stringify(planned.reservation)+'\n',{flag:'wx'});
   await writeFile(path.join(output,'lineage.json'),JSON.stringify(proof)+'\n',{flag:'wx'});
