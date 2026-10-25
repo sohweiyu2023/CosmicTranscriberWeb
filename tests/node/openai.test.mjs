@@ -3,6 +3,10 @@ import {dispatchTranscription} from '../../src/openai.js';
 function meta(model='gpt-transcribe',audioFormat='mp3'){return {attemptId:'a-123',declaredBytes:4,durationSeconds:1,model,audioFormat,languages:model==='gpt-transcribe'||model.includes('diarize')?['en']:[],keywords:model==='gpt-transcribe'?['Cosmic']:[],prompt:model.includes('diarize')?'':'faithful'}}
 function body(bytes=[1,2,3,4]){return new Blob([Uint8Array.from(bytes)]).stream()}
 async function collect(stream){const r=stream.getReader();const a=[];while(true){const x=await r.read();if(x.done)break;a.push(x.value)}return Buffer.concat(a.map(x=>Buffer.from(x)))}
+function waitForMockAbort(signal){
+  signal.throwIfAborted();
+  return new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true}));
+}
 
 test('upstream is hard-coded, auth is server-created, redirect fails',async()=>{let seen;const fetchImpl=async(url,init)=>{seen={url,init,bytes:await collect(init.body)};return new Response(JSON.stringify({text:'ok'}),{status:200,headers:{'x-request-id':'req-test'}})};const r=await dispatchTranscription({requestBody:body(),metadata:meta(),apiKey:'secret-test',fetchImpl});assert.equal(seen.url,'https://api.openai.com/v1/audio/transcriptions');assert.equal(seen.init.redirect,'manual');assert.equal(seen.init.headers.Authorization,'Bearer secret-test');assert.equal(r.diagnostics.openaiRequestId,'req-test');const txt=seen.bytes.toString('utf8');assert.match(txt,/name="model"\r\n\r\ngpt-transcribe/);assert.match(txt,/name="languages\[\]"/);assert.match(txt,/name="keywords\[\]"/);assert.match(txt,/filename="audio.mp3"/)});
 test('diarization uses diarized_json and auto chunking without prompt',async()=>{let txt='';const fetchImpl=async(_u,i)=>{txt=(await collect(i.body)).toString('utf8');return new Response(JSON.stringify({text:'ok',segments:[]}),{status:200})};await dispatchTranscription({requestBody:body(),metadata:meta('gpt-4o-transcribe-diarize'),apiKey:'k',fetchImpl});assert.match(txt,/diarized_json/);assert.match(txt,/chunking_strategy/);assert.match(txt,/name="language"\r\n\r\nen/);assert.doesNotMatch(txt,/name="prompt"/);assert.doesNotMatch(txt,/name="keywords\[\]"/)});
@@ -20,8 +24,8 @@ test('oversized upstream response is billing-ambiguous rather than silently retr
   await assert.rejects(()=>dispatchTranscription({requestBody:body(),metadata:meta(),apiKey:'k',fetchImpl:async(_u,i)=>{await collect(i.body);return new Response(stream,{status:200})}}),e=>e.code==='upstream_response_too_large'&&e.details.billingState==='completed_or_ambiguous');
 });
 
-test('upstream timeout after dispatch is billing-ambiguous',async()=>{
-  await assert.rejects(()=>dispatchTranscription({requestBody:body(),metadata:meta(),apiKey:'k',timeoutMs:5,fetchImpl:async(_u,i)=>{await collect(i.body);return await new Promise((resolve,reject)=>{i.signal.addEventListener('abort',()=>reject(i.signal.reason),{once:true})})}}),e=>e.code==='upstream_ambiguous'&&e.status===504&&e.details.billingState==='ambiguous_after_dispatch');
+test('upstream timeout after dispatch is billing-ambiguous',{timeout:5000},async()=>{
+  await assert.rejects(()=>dispatchTranscription({requestBody:body(),metadata:meta(),apiKey:'k',timeoutMs:5,fetchImpl:async(_u,i)=>{await collect(i.body);return await waitForMockAbort(i.signal)}}),e=>e.code==='upstream_ambiguous'&&e.status===504&&e.details.billingState==='ambiguous_after_dispatch');
 });
 
 
@@ -88,4 +92,20 @@ test('untrusted MPEG metadata cannot opt into the server-only Layer III proof',a
     file=(await request.formData()).get('file');return new Response('{"text":"ok"}',{status:200});
   }});
   assert.equal(file.name,'audio.mpeg');assert.equal(metadata.audioFormat,'mpeg');
+});
+
+
+test('timeout mock observes abort that occurs before upload collection finishes',{timeout:5000},async()=>{
+  let releaseUpload,observedAlreadyAborted=false;
+  const slowBody=new ReadableStream({start(controller){releaseUpload=()=>{controller.enqueue(Uint8Array.from([1,2,3,4]));controller.close()}}});
+  await assert.rejects(()=>dispatchTranscription({requestBody:slowBody,metadata:meta(),apiKey:'offline-test-only',timeoutMs:5,fetchImpl:async(_url,init)=>{
+    // Release the synthetic upload only after timeout, forcing the lost-event
+    // ordering without depending on runner speed or making a network request.
+    if(init.signal.aborted)releaseUpload();
+    else init.signal.addEventListener('abort',releaseUpload,{once:true});
+    await collect(init.body);
+    observedAlreadyAborted=init.signal.aborted;
+    return waitForMockAbort(init.signal);
+  }}),error=>error.code==='upstream_ambiguous'&&error.status===504&&error.details.billingState==='ambiguous_after_dispatch');
+  assert.equal(observedAlreadyAborted,true);
 });
