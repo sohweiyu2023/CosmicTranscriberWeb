@@ -1,5 +1,13 @@
 ## 1.1.1 — candidate
 
+## Unreleased toolchain/dependency candidate — 2026-10-25
+
+- Updates reviewed portable Node26.7.0 to26.12.1 (official security release) and private npm12.0.2 to12.2.1; both Windows architectures retain exact official archive/executable hashes. No global runtime installation.
+- All seven direct packages were already npm latest stable: noble/hashes2.4.0, jose6.2.13, Cloudflare Vitest plugin1.4.7, Playwright1.64.1, MSW3.0.3, Vitest5.0.5 and Wrangler4.152.0. Refreshes25 compatible transitive lock entries, including Vite8.3.5/Rolldown1.2.15, and their exact license inventory. Lock format remainsv4.
+- Pins setup-node7.1.0, upload-artifact7.0.2 and download-artifact8.0.2 to verified official commits; checkout7.0.1 was already current. Input scopes, cache-off policy, artifact counts and paid guards remain unchanged. Node24-capable hosted runners are required by these actions; setup-node7 removes the dummy NODE_AUTH_TOKEN fallback, unused by these workflows.
+- Corrects existing Windows Playwright WebKit test oracles using baseline/candidate probes: exact whole-second native timestamps and explicit unavailable duration/cost UI where native decoders are absent; byte/source identity and Mac/Safari assertions remain unchanged.
+- Isolated candidate only: no main merge, deployment, paid retest, reservation reset or acceptance transfer. Historical workflow proof remains byte-for-byte unchanged. Any new release graph needs deliberate exact-source certification and acceptance reconciliation.
+
 - Repairs the V1.1 partial deployment configuration deadlock: Access and registry helpers now validate only their own permitted post-certification edits; the final full deployment verifier runs only after both are configured.
 - Validates Cloudflare Access AUD tags at the documented 64-character maximum and validates administrator email input before any remote D1 creation.
 - Fixes the guided Windows deployment flow to authenticate the intended Cloudflare account, configure the D1 registry, then run final deployment verification for both staging and production.

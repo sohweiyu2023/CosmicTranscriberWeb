@@ -74,7 +74,7 @@ test('version consistency rejects Node/npm toolchain drift',async()=>{
   const dir2=await fixture();
   try{
     const p=path.join(dir2,'WINDOWS-TOOLCHAIN.ps1');
-    await writeFile(p,(await readFile(p,'utf8')).replace("CosmicNodeVersion = '26.7.0'","CosmicNodeVersion = '25.6.1'"));
+    await writeFile(p,(await readFile(p,'utf8')).replace("CosmicNodeVersion = '26.12.1'","CosmicNodeVersion = '25.6.1'"));
     await assert.rejects(verifyVersionConsistency(dir2),/WINDOWS-TOOLCHAIN.*Node version/);
   }finally{await rm(dir2,{recursive:true,force:true})}
 });

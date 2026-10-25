@@ -3,18 +3,18 @@ import {browserGates,BROWSER_POLICY_REVISION} from './browser-platform-policy.mj
 
 const requireWindows=process.argv.includes('--release-package');
 const nodeParts=process.versions.node.split('.').map(Number);
-const minimumNode=[26,7,0];
+const minimumNode=[26,12,1];
 const nodeCurrentEnough=nodeParts[0]===26 && (nodeParts[1]>minimumNode[1] || (nodeParts[1]===minimumNode[1] && nodeParts[2]>=minimumNode[2]));
 if(!nodeCurrentEnough){
-  console.error(`Release verification requires Node >=26.7.0 <27 (current reviewed Current-major floor); current runtime is ${process.version}.`);
+  console.error(`Release verification requires Node >=26.12.1 <27 (current reviewed Current-major floor); current runtime is ${process.version}.`);
   process.exit(1);
 }
 const npmVersionResult=invokeNpm(['--version'],{stdio:'pipe'});
 const npmVersionText=npmVersionResult.status===0?String(npmVersionResult.stdout||'').trim():'';
 const npmMatch=/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(npmVersionText);
-const npmCurrentEnough=!!npmMatch && Number(npmMatch[1])===12 && (Number(npmMatch[2])>0 || Number(npmMatch[3])>=2);
+const npmCurrentEnough=!!npmMatch && Number(npmMatch[1])===12 && (Number(npmMatch[2])>2 || (Number(npmMatch[2])===2 && Number(npmMatch[3])>=1));
 if(!npmCurrentEnough){
-  console.error(`Release verification requires npm >=12.0.2 <13 (current reviewed stable major); current npm is ${npmVersionText||'unavailable'}.`);
+  console.error(`Release verification requires npm >=12.2.1 <13 (current reviewed stable major); current npm is ${npmVersionText||'unavailable'}.`);
   process.exit(1);
 }
 if(requireWindows && process.platform!=='win32'){

@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {readFile,stat} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-import {expectedNativeLastModified} from '../safari/native-file-contract.mjs';
+import {expectedNativeLastModified,expectedPreparedDurationText} from '../safari/native-file-contract.mjs';
 
 const fixtures=[...['mp3','flac','mp4','mpeg','mpga','m4a','ogg','wav','webm'].map(ext=>({name:`format.${ext}`,duration:'0:01'})),{name:'ID3 Unicode 東京.mp3',duration:'0:04'}];
 const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -55,12 +55,19 @@ for(const fixture of fixtures)test(`native file bytes and preparation: ${fixture
   expect(native.sha256).toBe(sha256(bytes));
   expect(native.slices).toEqual(ranges.map(([start,end])=>sha256(bytes.subarray(start,end))));
   await expect(page.locator('#queueList .mini-state')).toHaveText('Ready');
-  // These generated fixtures contain one or four seconds of audio. A failed
-  // media probe's 0.001-second fallback must not satisfy native preparation.
-  await expect(page.locator('#durationStat')).toHaveText(fixture.duration);
+  // Require real duration from a supported decoder/parser, or the exact
+  // measured Windows WebKit unavailable state. A 0.001 fallback never passes.
+  const expectedDuration=expectedPreparedDurationText(fixture.duration,{browserName,platform:process.platform,format:path.extname(source).slice(1)});
+  await expect(page.locator('#durationStat')).toHaveText(expectedDuration);
+  if(expectedDuration==='Unknown'){
+    await expect(page.locator('#durationStat')).toHaveAttribute('title','Duration could not be measured for 1 file(s).');
+    await expect(page.locator('#queueList')).toContainText('Duration unavailable');
+    await expect(page.locator('#costEstimate')).toHaveText('Estimate unavailable');
+    await expect(page.locator('#costEstimate')).toHaveAttribute('title',/OpenAI API usage may still be charged/);
+  }
   expect(dispatches).toBe(0);
   const after=await stat(source);
   expect(after.mtimeMs).toBe(before.mtimeMs);
   expect(sha256(await readFile(source))).toBe(sha256(bytes));
-  await testInfo.attach('native-file-evidence',{body:JSON.stringify({project:testInfo.project.name,browserName,platform:process.platform,sourceName:fixture.name,sourceMtimeMs:before.mtimeMs,expectedLastModified,...native,ranges,preparedDuration:fixture.duration},null,2),contentType:'application/json'});
+  await testInfo.attach('native-file-evidence',{body:JSON.stringify({project:testInfo.project.name,browserName,platform:process.platform,sourceName:fixture.name,sourceMtimeMs:before.mtimeMs,expectedLastModified,...native,ranges,preparedDuration:expectedDuration},null,2),contentType:'application/json'});
 });

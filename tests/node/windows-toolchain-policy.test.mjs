@@ -10,9 +10,9 @@ test('Windows release uses exact private reviewed Node/npm toolchain without win
   const [tool,first,release,nvm]=await Promise.all([
     read('WINDOWS-TOOLCHAIN.ps1'),read('FIRST-DEPLOY-WINDOWS.ps1'),read('RELEASE-WINDOWS.ps1'),read('.nvmrc')
   ]);
-  assert.match(tool,/\$script:CosmicNodeVersion = '26\.7\.0'/);
-  assert.match(tool,/\$script:CosmicNpmVersion = '12\.0\.2'/);
-  assert.equal(nvm.trim(),'26.7.0');
+  assert.match(tool,/\$script:CosmicNodeVersion = '26\.12\.1'/);
+  assert.match(tool,/\$script:CosmicNpmVersion = '12\.2\.1'/);
+  assert.equal(nvm.trim(),'26.12.1');
   assert.match(first,/Use-CosmicNodeToolchain/);
   assert.match(release,/Use-CosmicNodeToolchain/);
   for(const text of [tool,first,release]) assert.doesNotMatch(text,/\bwinget\b/i);
@@ -20,12 +20,12 @@ test('Windows release uses exact private reviewed Node/npm toolchain without win
 
 test('portable Node archives are architecture-specific and pinned to official SHA-256 values',async()=>{
   const tool=await read('WINDOWS-TOOLCHAIN.ps1');
-  assert.match(tool,/node-v26\.7\.0-win-x64\.zip/);
-  assert.match(tool,/d3bd72755141ed32bbcd841228ee81897c8a98d50dfa7dae2179399a0a7c90f8/);
-  assert.match(tool,/e921fe5307e29bf6fd00000dd594356affd3a7b044e52720c7f10decbdc305b9/);
-  assert.match(tool,/node-v26\.7\.0-win-arm64\.zip/);
-  assert.match(tool,/be8775204cfceca5a73c30f91bf0de5e85274c01b776dc13f16b91aa251ebb01/);
-  assert.match(tool,/ed13b0ca216ef8d9e8a1781cf26e95ec7f56983d25beaf46b01cb472132d8e80/);
+  assert.match(tool,/node-v26\.12\.1-win-x64\.zip/);
+  assert.match(tool,/b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4/);
+  assert.match(tool,/1c63f1417e2e26d83ca9a9ec1d548524ab1305bc7209d90ebca56257ff0d84ed/);
+  assert.match(tool,/node-v26\.12\.1-win-arm64\.zip/);
+  assert.match(tool,/34567581ee63967b37afb6b7a0cc63a2d550a43d5d838adb75982d7e356f2e2c/);
+  assert.match(tool,/7384299eeb99f419acaa4142771689fbca72e1c942f8da02b7928ffe1744e3ff/);
   assert.match(tool,/https:\/\/nodejs\.org\/dist\/v\$script:CosmicNodeVersion/);
   assert.match(tool,/Get-FileHash[^\n]+SHA256/);
   assert.match(tool,/\$downloadHash -ne \$spec\.Sha256/);

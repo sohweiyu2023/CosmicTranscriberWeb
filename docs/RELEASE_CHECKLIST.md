@@ -20,7 +20,7 @@ The [22 October 2026 owner exception](RELEASE_EXCEPTION_2026-10-22.md) changes o
 
 The final certification run must independently prove all of the following on the final candidate commit:
 
-- [ ] Exact reviewed Node **26.7.0** and npm **12.0.2**.
+- [ ] Exact reviewed Node **26.12.1** and npm **12.2.1**.
 - [ ] Every direct production/development dependency intentionally refreshed to registry `@latest`.
 - [ ] Reviewed install-script policy PASS before lifecycle scripts execute.
 - [ ] `npm audit` zero known vulnerabilities or explicit release-blocking review.

@@ -138,18 +138,18 @@ try {
   & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'WINDOWS-TOOLCHAIN-SELFTEST.ps1')
   Require-LastExit 'Windows toolchain executable self-test'
   # Do not mutate or trust the machine-wide Node installation. The reviewed
-  # release uses a SHA-256-verified portable Node 26.7.0 + private npm 12.0.2
+  # release uses a SHA-256-verified portable Node 26.12.1 + private npm 12.2.1
   # cache and prepends those executables for this process tree only.
   $toolchain = Use-CosmicNodeToolchain
   $node = Get-NodeSemver
-  if ($null -eq $node -or $node.Text -ne 'v26.7.0') {
+  if ($null -eq $node -or $node.Text -ne 'v26.12.1') {
     $currentNode = if ($null -eq $node) { 'not found' } else { $node.Text }
-    throw "Reviewed private Node v26.7.0 activation failed; current process sees: $currentNode"
+    throw "Reviewed private Node v26.12.1 activation failed; current process sees: $currentNode"
   }
   $npm = Get-NpmSemver
-  if ($null -eq $npm -or $npm.Text -ne '12.0.2') {
+  if ($null -eq $npm -or $npm.Text -ne '12.2.1') {
     $currentNpm = if ($null -eq $npm) { 'not found' } else { $npm.Text }
-    throw "Reviewed private npm 12.0.2 activation failed; current process sees: $currentNpm"
+    throw "Reviewed private npm 12.2.1 activation failed; current process sees: $currentNpm"
   }
   Write-Host "Toolchain cache: $($toolchain.NodeHome)" -ForegroundColor DarkGray
 

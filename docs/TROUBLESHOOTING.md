@@ -36,7 +36,7 @@ Web 1.0.1 had stale Playwright locators. Web 1.0.15 asserts the actual accessibi
 
 
 ## Toolchain reports the wrong machine Node version
-Cosmic Transcriber Web 1.1.1 does not require you to uninstall, downgrade or switch the machine-wide Node installation. The guided runner downloads an official portable Node 26.7.0 archive into the per-user Cosmic toolchain cache, verifies its architecture-specific published SHA-256, and installs private npm 12.0.2. For PowerShell it binds `npm` to the exact private `node.exe + npm-cli.js` pair so Node's bundled npm 11 `npm.ps1` cannot win command resolution; child package scripts receive the private npm prefix first on PATH. If either exact verification reports a different version, stop and send the complete log; do not modify global PATH or continue to deployment manually.
+Cosmic Transcriber Web 1.1.1 does not require you to uninstall, downgrade or switch the machine-wide Node installation. The guided runner downloads an official portable Node 26.12.1 archive into the per-user Cosmic toolchain cache, verifies its architecture-specific published SHA-256, and installs private npm 12.2.1. For PowerShell it binds `npm` to the exact private `node.exe + npm-cli.js` pair so Node's bundled npm 11 `npm.ps1` cannot win command resolution; child package scripts receive the private npm prefix first on PATH. If either exact verification reports a different version, stop and send the complete log; do not modify global PATH or continue to deployment manually.
 
 
 ## Private npm activation says npm 11.17.0

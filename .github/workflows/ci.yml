@@ -16,17 +16,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '26.7.0'
+          node-version: '26.12.1'
           package-manager-cache: false
       - name: Activate reviewed npm
-        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+        run: npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
       - name: Verify tool versions
         run: |
           node --version
-          test "$(node --version)" = "v26.7.0"
-          test "$(npm --version)" = "12.0.2"
+          test "$(node --version)" = "v26.12.1"
+          test "$(npm --version)" = "12.2.1"
       - name: Refresh all direct dependencies to registry latest and resolve one graph
         run: node scripts/deps-latest.mjs
       - name: Verify reviewed install-script policy
@@ -47,7 +47,7 @@ jobs:
       - name: Verify exact approved single MP3 bytes (no provider calls)
         run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
       - name: Preserve only the approved MP3 for the manual smoke workflow
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: cosmic-approved-single-mp3-fixture
           path: tests/fixtures/approved-single-mp3/staging-speech.mp3
@@ -56,14 +56,14 @@ jobs:
       - name: Validate exactly the eight approved synthetic speech fixtures (no provider calls)
         run: node scripts/prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight "$RUNNER_TEMP/approved-eight"
       - name: Preserve only the eight approved speech fixtures for bounded staging acceptance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: cosmic-approved-remaining-eight-fixtures
           path: ${{ runner.temp }}/approved-eight/files/*
           if-no-files-found: error
           retention-days: 7
       - name: Upload reviewed lock and fixtures
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: reviewed-release-inputs
           path: |
@@ -79,15 +79,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '26.7.0'
+          node-version: '26.12.1'
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: reviewed-release-inputs
           path: .
-      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
       - run: npm ci
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
@@ -115,11 +115,11 @@ jobs:
         working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '26.7.0'
+          node-version: '26.12.1'
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ needs.windows-release.outputs.artifact-name }}
           path: ${{ runner.temp }}/cosmic-archive
@@ -158,7 +158,7 @@ jobs:
                       raise SystemExit(f'Native extraction timestamp mismatch: {entry.filename}')
               print(f'Untouched native archive verified: {source.name}; SHA256={os.environ["SOURCE_SHA256"]}')
           PY
-      - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - run: npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
       - run: npm ci
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
@@ -193,7 +193,7 @@ jobs:
         run: node scripts/safari-release-exception.mjs test-results/safari-native-acceptance.json
       - name: Preserve macOS browser evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-native-browser-evidence
           path: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}/test-results/
@@ -211,17 +211,17 @@ jobs:
       source-sha256: ${{ steps.certified.outputs.source-sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '26.7.0'
+          node-version: '26.12.1'
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: reviewed-release-inputs
           path: .
       - name: Activate reviewed npm for shared-lock preflight
         shell: pwsh
-        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+        run: npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
       - run: npm ci
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
@@ -321,7 +321,7 @@ jobs:
           Write-Output ('source-file=' + $sourceFile) >> $env:GITHUB_OUTPUT
           Write-Output ('source-sha256=' + $sourceHash) >> $env:GITHUB_OUTPUT
       - name: Upload staging-certified candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ steps.certified.outputs.artifact-name }}
           path: ${{ steps.certified.outputs.path }}
@@ -355,7 +355,7 @@ jobs:
             echo 'STAGING ONLY: known SafariDriver 26.6.2 native-file failure waived; real Safari NOT CERTIFIED.'
             echo 'Safari26 staging waiver active; staging preflight alone does not authorize final release. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> "$GITHUB_STEP_SUMMARY"
           fi
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ needs.windows-release.outputs.artifact-name }}
           path: certified
@@ -438,22 +438,22 @@ jobs:
       RELEASE_VERSION: ${{ needs.windows-release.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '26.7.0'
+          node-version: '26.12.1'
       - name: Install exact npm
-        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+        run: npm install --global npm@12.2.1 --ignore-scripts --no-audit --no-fund
       - name: Fail closed unless staging Cloudflare credentials are available
         shell: bash
         run: |
           set -euo pipefail
-          test "$(node --version)" = 'v26.7.0'
-          test "$(npm --version)" = '12.0.2'
+          test "$(node --version)" = 'v26.12.1'
+          test "$(npm --version)" = '12.2.1'
           test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo 'Missing staging environment secret CLOUDFLARE_API_TOKEN' >&2; exit 1; }
           test -n "${CLOUDFLARE_ACCOUNT_ID:-}" || { echo 'Missing staging environment secret CLOUDFLARE_ACCOUNT_ID' >&2; exit 1; }
       - name: Verify legitimate staging Access before deployment or D1 migration
         run: node scripts/staging-access-preflight.mjs
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: ${{ needs.windows-release.outputs.artifact-name }}
           path: certified
@@ -575,15 +575,15 @@ jobs:
       COSMIC_PAID_STAGING_MODE: exact-nine-real-requests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '26.7.0'
+          node-version: '26.12.1'
           package-manager-cache: false
       - name: Run bounded nine-format paid staging acceptance, no ambiguous retries
         run: node scripts/staging-live-acceptance.mjs
       - name: Preserve sanitized nine-format paid receipts
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: staging-live-nine-format-evidence
           path: test-results/staging-live-acceptance.json

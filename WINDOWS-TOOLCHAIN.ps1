@@ -5,8 +5,8 @@
 # npm 12 in a private per-user prefix. The caller then inherits a PATH whose
 # first entries are this private npm and Node runtime.
 
-$script:CosmicNodeVersion = '26.7.0'
-$script:CosmicNpmVersion = '12.0.2'
+$script:CosmicNodeVersion = '26.12.1'
+$script:CosmicNpmVersion = '12.2.1'
 
 function Get-CosmicToolchainSpec {
   $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
@@ -14,17 +14,17 @@ function Get-CosmicToolchainSpec {
     ([System.Runtime.InteropServices.Architecture]::X64) {
       return [pscustomobject]@{
         ArchToken = 'x64'
-        Archive = 'node-v26.7.0-win-x64.zip'
-        Sha256 = 'd3bd72755141ed32bbcd841228ee81897c8a98d50dfa7dae2179399a0a7c90f8'
-        NodeExeSha256 = 'e921fe5307e29bf6fd00000dd594356affd3a7b044e52720c7f10decbdc305b9'
+        Archive = 'node-v26.12.1-win-x64.zip'
+        Sha256 = 'b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4'
+        NodeExeSha256 = '1c63f1417e2e26d83ca9a9ec1d548524ab1305bc7209d90ebca56257ff0d84ed'
       }
     }
     ([System.Runtime.InteropServices.Architecture]::Arm64) {
       return [pscustomobject]@{
         ArchToken = 'arm64'
-        Archive = 'node-v26.7.0-win-arm64.zip'
-        Sha256 = 'be8775204cfceca5a73c30f91bf0de5e85274c01b776dc13f16b91aa251ebb01'
-        NodeExeSha256 = 'ed13b0ca216ef8d9e8a1781cf26e95ec7f56983d25beaf46b01cb472132d8e80'
+        Archive = 'node-v26.12.1-win-arm64.zip'
+        Sha256 = '34567581ee63967b37afb6b7a0cc63a2d550a43d5d838adb75982d7e356f2e2c'
+        NodeExeSha256 = '7384299eeb99f419acaa4142771689fbca72e1c942f8da02b7928ffe1744e3ff'
       }
     }
     default {

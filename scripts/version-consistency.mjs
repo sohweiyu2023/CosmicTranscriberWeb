@@ -56,11 +56,11 @@ export async function verifyVersionConsistency(base=root){
   requireAllLiteralVersions(e2eMockText,/\bversion\s*:\s*["']([^"']+)["']/g,'tests/e2e/mock-server.mjs runtime responses',version);
   const launcherVersion=exactMatch(pasteOnceText,/\$Version\s*=\s*["']([^"']+)["']/,'PASTE-ONCE-WINDOWS.ps1 version');
   requireVersion('PASTE-ONCE-WINDOWS.ps1 version',launcherVersion,version);
-  const expectedNode='26.7.0';
-  const expectedNpm='12.0.2';
+  const expectedNode='26.12.1';
+  const expectedNpm='12.2.1';
   if(nvmrcText.trim()!==expectedNode)fail(`.nvmrc ${nvmrcText.trim()||'(empty)'} does not match reviewed Node ${expectedNode}`);
-  if(!String(pkg?.engines?.node||'').includes('>=26.7.0')||!String(pkg?.engines?.node||'').includes('<27'))fail('package.json Node engine does not preserve the reviewed Node 26.7.0 floor');
-  if(!String(pkg?.engines?.npm||'').includes('>=12.0.2')||!String(pkg?.engines?.npm||'').includes('<13'))fail('package.json npm engine does not preserve the reviewed npm 12.0.2 floor');
+  if(!String(pkg?.engines?.node||'').includes('>=26.12.1')||!String(pkg?.engines?.node||'').includes('<27'))fail('package.json Node engine does not preserve the reviewed Node 26.12.1 floor');
+  if(!String(pkg?.engines?.npm||'').includes('>=12.2.1')||!String(pkg?.engines?.npm||'').includes('<13'))fail('package.json npm engine does not preserve the reviewed npm 12.2.1 floor');
   const toolNode=exactMatch(toolchainText,/\$script:CosmicNodeVersion\s*=\s*["']([^"']+)["']/,'WINDOWS-TOOLCHAIN.ps1 Node version');
   const toolNpm=exactMatch(toolchainText,/\$script:CosmicNpmVersion\s*=\s*["']([^"']+)["']/,'WINDOWS-TOOLCHAIN.ps1 npm version');
   requireVersion('WINDOWS-TOOLCHAIN.ps1 Node version',toolNode,expectedNode);

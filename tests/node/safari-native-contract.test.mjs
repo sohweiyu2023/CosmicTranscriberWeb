@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {NATIVE_FIXTURES,expectedNativeLastModified,assertDuration,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from '../safari/native-file-contract.mjs';
+import {NATIVE_FIXTURES,expectedNativeLastModified,expectedPreparedDurationText,assertDuration,assertNativeObservation,assertPreparedDiagnostic,assertDispatch} from '../safari/native-file-contract.mjs';
 
 // Synthetic observations exercise the validator only; they are not Safari evidence.
 const hash='a'.repeat(64);
@@ -9,20 +9,22 @@ const observed=()=>({isFile:true,name:fixture.name,size:96078,type:'audio/wav',l
 const prepared=()=>({schema:'cosmic-web-diagnostics-2',queue:[{ref:'file-ref',size:96078,status:'ready',chunks:1,errorCode:null,duration:1}],events:[{category:'file_prepared',fileRef:'file-ref',audioFormat:'wav',duration:1}]});
 const dispatched=()=>({bytes:96078,sha256:hash,contentType:'audio/wav',metadata:{v:2,audioFormat:'wav',chunkIndex:1,chunkCount:1,model:'gpt-transcribe',requestKind:'transcription',declaredBytes:96078,durationSeconds:1,attemptId:`attempt-${'a'.repeat(24)}`,jobId:`run-${'b'.repeat(24)}`,fileId:`file-${'c'.repeat(24)}`}});
 
-test('Linux WebKit native timestamp requires the exact whole-second value, not a tolerance',()=>{
-  const host={browserName:'webkit',platform:'linux'};
+test('Linux and Windows WebKit timestamps require exact whole seconds, never a tolerance',()=>{
+ for(const platform of ['linux','win32']){
+  const host={browserName:'webkit',platform};
   assert.equal(expectedNativeLastModified(1791698653912,host),1791698653000);
   assert.equal(expectedNativeLastModified(1791698653999.75,host),1791698653000);
   assert.equal(expectedNativeLastModified(1791698654000,host),1791698654000);
   const expected=expectedNativeLastModified(1791698653912,host);
   for(const wrong of [1791698652999,1791698653001,1791698653912,1791698654000])assert.throws(()=>assert.equal(wrong,expected));
+ }
 });
 
-test('native timestamp seconds precision applies only to Linux WebKit, independent of project labels',()=>{
-  for(const platform of ['linux','darwin','win32'])for(const browserName of ['chromium','firefox','webkit']){
-    if(platform==='linux'&&browserName==='webkit')continue;
-    assert.equal(expectedNativeLastModified(1791698653912.75,{browserName,platform}),1791698653912,`${browserName} on ${platform}`);
-  }
+test('seconds precision applies only to Linux/Windows WebKit; other engines and Mac stay exact milliseconds',()=>{
+ for(const platform of ['linux','darwin','win32'])for(const browserName of ['chromium','firefox','webkit']){
+  if(['linux','win32'].includes(platform)&&browserName==='webkit')continue;
+  assert.equal(expectedNativeLastModified(1791698653912.75,{browserName,platform}),1791698653912,`${browserName} on ${platform}`);
+ }
 });
 
 test('native timestamp expectation fails closed for invalid times and unknown engine or platform',()=>{
@@ -73,4 +75,14 @@ test('MP3 dispatch hash must equal the separate prepared-chunk oracle, not merel
   Object.assign(record.metadata,{audioFormat:'mp3',declaredBytes:16000});assertDispatch(record,mp3);
   assert.throws(()=>assertDispatch({...record,sha256:hash},mp3));
   assert.throws(()=>assertDispatch({...record,bytes:15999,metadata:{...record.metadata,declaredBytes:15999}},mp3));
+});
+
+
+test('only measured Windows WebKit decoder gaps require explicit unavailable duration; parser paths and other platforms stay strict',()=>{
+ for(const platform of ['linux','darwin','win32'])for(const browserName of ['chromium','firefox','webkit'])for(const format of ['mp3','flac','mp4','mpeg','mpga','m4a','ogg','wav','webm']){
+  const unavailable=platform==='win32'&&browserName==='webkit'&&!['mp3','ogg'].includes(format);
+  assert.equal(expectedPreparedDurationText('0:01',{platform,browserName,format}),unavailable?'Unknown':'0:01');
+ }
+ for(const duration of ['0.001','0:99','Unavailable',undefined])assert.throws(()=>expectedPreparedDurationText(duration,{platform:'win32',browserName:'webkit',format:'flac'}));
+ assert.throws(()=>expectedPreparedDurationText('0:01',{platform:'win32',browserName:'webkit',format:'unknown'}));
 });
