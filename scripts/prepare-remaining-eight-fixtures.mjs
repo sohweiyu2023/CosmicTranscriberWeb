@@ -8,18 +8,37 @@ import {pathToFileURL} from 'node:url';
 import {FIXTURES,verifyFixtures} from './staging-remaining-eight-policy.mjs';
 
 const codecs={flac:['flac',16000],mp4:['aac',16000],mpeg:['mp3',16000],mpga:['mp3',16000],m4a:['aac',16000],ogg:['vorbis',16000],wav:['pcm_s16le',16000],webm:['opus',48000]};
+// Exact decoded PCM16/mono/16kHz sample counts for these hash-pinned inputs.
+export const DECODED_SAMPLES=Object.freeze({flac:192000,mp4:192512,mpeg:192000,mpga:192000,m4a:192512,ogg:192000,wav:240159,webm:192000});
+const REASONS=new Set(['probe_streams','probe_codec','probe_rate','probe_channels','probe_size','probe_duration','probe_bits','decoded_samples','media_command','media_json']);
+function requireEvidence(ok,code,format){if(!ok)throw Object.assign(new Error('Fixed fixture validation failed'),{code,format});}
+export function safePreparationFailure(error){
+ const code=REASONS.has(error?.code)?error.code:'fixture_identity_or_preparation';
+ const format=Object.hasOwn(codecs,error?.format)?error.format:undefined;
+ return {status:'FAIL',code,...(format?{format}:{}),paidRequests:0};
+}
 export function verifyProbe(f,p){
- assert.equal(p.streams?.length,1);const s=p.streams[0];
- assert.equal(s.codec_type,'audio');assert.equal(s.codec_name,codecs[f.format][0]);
- assert.equal(Number(s.sample_rate),codecs[f.format][1]);assert.equal(s.channels,1);
- assert.equal(Number(p.format?.size),f.bytes);
- const duration=Number(p.format?.duration);assert.ok(Number.isFinite(duration)&&Math.abs(duration-f.dispatchDurationSeconds)<=0.001);
- if(f.format==='wav')assert.equal(s.bits_per_sample,16);
+ requireEvidence(p.streams?.length===1,'probe_streams',f.format);const s=p.streams[0];
+ requireEvidence(s.codec_type==='audio'&&s.codec_name===codecs[f.format][0],'probe_codec',f.format);
+ requireEvidence(Number(s.sample_rate)===codecs[f.format][1],'probe_rate',f.format);
+ requireEvidence(s.channels===1,'probe_channels',f.format);
+ requireEvidence(Number(p.format?.size)===f.bytes,'probe_size',f.format);
+ const duration=Number(p.format?.duration);
+ // Saved FFprobe7 evidence reports12.096; the newer local probe reports12.000.
+ // Accept only those observed exact representations for the
+ // two fixed MP3-encoded filename cases, AND require exact decoded samples below.
+ const durations=['mpeg','mpga'].includes(f.format)?[f.dispatchDurationSeconds,12]:[f.dispatchDurationSeconds];
+ requireEvidence(Number.isFinite(duration)&&durations.some(expected=>Math.abs(duration-expected)<=0.001),'probe_duration',f.format);
+ if(f.format==='wav')requireEvidence(s.bits_per_sample===16,'probe_bits',f.format);
  return {format:f.format,name:f.name,bytes:f.bytes,sha256:f.sha256,durationSeconds:duration,codec:s.codec_name,sampleRate:Number(s.sample_rate),channels:s.channels,decode:'PASS'};
 }
-function command(run,exe,args){
- const r=run(exe,args,{encoding:'utf8',stdio:'pipe',timeout:30000,killSignal:'SIGKILL',maxBuffer:131072});
- assert.ok(!r.error&&r.status===0,'Offline media validation failed');return r.stdout;
+export function verifyDecodedSamples(f,pcm){
+ requireEvidence(Buffer.isBuffer(pcm)&&pcm.length===DECODED_SAMPLES[f.format]*2,'decoded_samples',f.format);
+ return pcm.length/2;
+}
+function command(run,exe,args,{binary=false,format}={}){
+ const r=run(exe,args,{encoding:binary?null:'utf8',stdio:'pipe',timeout:30000,killSignal:'SIGKILL',maxBuffer:binary?524288:131072});
+ requireEvidence(!r.error&&r.status===0,'media_command',format);return r.stdout;
 }
 export async function prepareFixtures(sourceRoot,outputRoot,{run=spawnSync,ffmpeg='ffmpeg',ffprobe='ffprobe'}={}){
  const source=path.resolve(sourceRoot),output=path.resolve(outputRoot);
@@ -31,9 +50,10 @@ export async function prepareFixtures(sourceRoot,outputRoot,{run=spawnSync,ffmpe
  const rows=[];
  for(const f of FIXTURES){
   const file=path.join(source,f.name);
-  const p=JSON.parse(command(run,ffprobe,['-v','error','-protocol_whitelist','file,pipe','-show_entries','format=duration,size:stream=codec_type,codec_name,sample_rate,channels,bits_per_sample','-of','json',file]));
+  let p;try{p=JSON.parse(command(run,ffprobe,['-v','error','-protocol_whitelist','file,pipe','-show_entries','format=duration,size:stream=codec_type,codec_name,sample_rate,channels,bits_per_sample','-of','json',file],{format:f.format}));}catch(error){if(error?.code==='media_command')throw error;requireEvidence(false,'media_json',f.format);}
   const row=verifyProbe(f,p);
-  command(run,ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-protocol_whitelist','file,pipe','-i',file,'-map','0:a:0','-f','null','-']);rows.push(row);
+  const pcm=command(run,ffmpeg,['-hide_banner','-loglevel','error','-nostdin','-protocol_whitelist','file,pipe','-i',file,'-map','0:a:0','-f','s16le','-c:a','pcm_s16le','-ac','1','-ar','16000','-'],{binary:true,format:f.format});
+  row.decodedSamples=verifyDecodedSamples(f,pcm);rows.push(row);
  }
  // Existing outputs are never overwritten. Validate everything before creating.
  await mkdir(output);const files=path.join(output,'files');await mkdir(files);
@@ -44,5 +64,5 @@ export async function prepareFixtures(sourceRoot,outputRoot,{run=spawnSync,ffmpe
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  try{assert.equal(process.argv.length,4);const receipt=await prepareFixtures(process.argv[2],process.argv[3]);console.log(JSON.stringify({status:receipt.status,files:receipt.fileCount,paidRequests:0}));}
- catch{console.error('FIXTURE_PREPARATION FAILED; no upload or provider call performed');process.exitCode=1;}
+ catch(error){console.error(JSON.stringify(safePreparationFailure(error)));process.exitCode=1;}
 }
