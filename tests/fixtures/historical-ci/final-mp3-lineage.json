@@ -1,0 +1,382 @@
+{
+  "completedEight": {
+    "run": {
+      "id": 40200059681,
+      "head_sha": "cdac98f1745d7515277309bbf83465e634a33ec4",
+      "head_branch": "main",
+      "event": "workflow_dispatch",
+      "path": ".github/workflows/staging-remaining-eight.yml",
+      "run_attempt": 1,
+      "status": "completed",
+      "conclusion": "success"
+    },
+    "jobs": [
+      {
+        "id": 121189153192,
+        "run_id": 40200059681,
+        "workflow_name": "Remaining EIGHT approved STAGING formats ONLY",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/runs/40200059681",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTzyKms8AAAAcN2-5qA",
+        "head_sha": "cdac98f1745d7515277309bbf83465e634a33ec4",
+        "url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/jobs/121189153192",
+        "html_url": "https://github.com/sohweiyu2023/CosmicTranscriberWeb/actions/runs/40200059681/job/121189153192",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-25T13:58:35Z",
+        "started_at": "2026-10-25T13:58:37Z",
+        "completed_at": "2026-10-25T14:00:45Z",
+        "name": "remaining",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-25T13:58:38Z",
+            "completed_at": "2026-10-25T13:58:39Z"
+          },
+          {
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-25T13:58:39Z",
+            "completed_at": "2026-10-25T13:58:41Z"
+          },
+          {
+            "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-25T13:58:41Z",
+            "completed_at": "2026-10-25T13:58:45Z"
+          },
+          {
+            "name": "Refuse until reviewed deployment pins replace the intentionally empty draft",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-25T13:58:45Z",
+            "completed_at": "2026-10-25T13:58:45Z"
+          },
+          {
+            "name": "Read only the pinned successful MP3 evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-25T13:58:45Z",
+            "completed_at": "2026-10-25T13:58:46Z"
+          },
+          {
+            "name": "Read only exact zero-attempt evidence for the existing held reservation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-25T13:58:46Z",
+            "completed_at": "2026-10-25T13:58:47Z"
+          },
+          {
+            "name": "Reconcile complete history and reuse only the eight held unused slots",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-25T13:58:47Z",
+            "completed_at": "2026-10-25T13:59:35Z"
+          },
+          {
+            "name": "Persist cumulative reservation before any paid request",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-25T13:59:35Z",
+            "completed_at": "2026-10-25T13:59:37Z"
+          },
+          {
+            "name": "Download only the reviewed synthetic eight-format artifact",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-25T13:59:37Z",
+            "completed_at": "2026-10-25T13:59:38Z"
+          },
+          {
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-25T13:59:38Z",
+            "completed_at": "2026-10-25T13:59:40Z"
+          },
+          {
+            "name": "Fresh exact-source staging proof using existing read access",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-25T13:59:40Z",
+            "completed_at": "2026-10-25T14:00:10Z"
+          },
+          {
+            "name": "At most eight fixed requests, stop on first failure, never retry",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-25T14:00:10Z",
+            "completed_at": "2026-10-25T14:00:39Z"
+          },
+          {
+            "name": "Preserve only redacted evidence with no release or production successor",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-25T14:00:39Z",
+            "completed_at": "2026-10-25T14:00:41Z"
+          },
+          {
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 24,
+            "started_at": "2026-10-25T14:00:41Z",
+            "completed_at": "2026-10-25T14:00:41Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 25,
+            "started_at": "2026-10-25T14:00:41Z",
+            "completed_at": "2026-10-25T14:00:41Z"
+          },
+          {
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 26,
+            "started_at": "2026-10-25T14:00:41Z",
+            "completed_at": "2026-10-25T14:00:42Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 27,
+            "started_at": "2026-10-25T14:00:42Z",
+            "completed_at": "2026-10-25T14:00:42Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/check-runs/121189153192",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000005079,
+        "runner_name": "GitHub Actions 1000005079",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ],
+    "artifacts": [
+      {
+        "id": 12601926194,
+        "name": "remaining-eight-approved-reservation",
+        "size_in_bytes": 526,
+        "url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12601926194",
+        "archive_download_url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12601926194/zip",
+        "expired": false,
+        "created_at": "2026-10-25T13:59:37Z",
+        "expires_at": "2027-01-23T13:58:34Z",
+        "updated_at": "2026-10-25T13:59:37Z",
+        "digest": "sha256:ce7d31fc41d2255d07281292a93244967ed768618e4e9b235561b96e3d1ec43a",
+        "workflow_run": {
+          "id": 40200059681,
+          "repository_id": 1329367706,
+          "head_repository_id": 1329367706,
+          "head_branch": "main",
+          "head_sha": "cdac98f1745d7515277309bbf83465e634a33ec4"
+        }
+      },
+      {
+        "id": 12601587812,
+        "name": "remaining-eight-redacted-evidence",
+        "size_in_bytes": 2282,
+        "url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12601587812",
+        "archive_download_url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12601587812/zip",
+        "expired": false,
+        "created_at": "2026-10-25T14:00:41Z",
+        "expires_at": "2027-01-23T13:58:34Z",
+        "updated_at": "2026-10-25T14:00:41Z",
+        "digest": "sha256:7ef8e928b1003e09d47fa95f0c0ea3698ddc0ae93ee588499f62d40568183e7b",
+        "workflow_run": {
+          "id": 40200059681,
+          "repository_id": 1329367706,
+          "head_repository_id": 1329367706,
+          "head_branch": "main",
+          "head_sha": "cdac98f1745d7515277309bbf83465e634a33ec4"
+        }
+      }
+    ],
+    "files": {
+      "budget.json": "{\"schema\":\"cosmic-approved-paid-budget-1\",\"approval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":9,\"maximumMicroUsd\":250000,\"reservedRequests\":9,\"reservedMicroUsd\":216000}\n",
+      "receipt.json": "{\n  \"schema\": \"cosmic-staging-remaining-eight-1\",\n  \"formats\": [\n    {\n      \"format\": \"flac\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-575138256d524e88aa25fbf27f58e3da\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 31\n    },\n    {\n      \"format\": \"mp4\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-908d72a2650c48778a3ac743a76d84dd\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 29\n    },\n    {\n      \"format\": \"mpeg\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-023b8a7f718d486594d78d7bf5b3703a\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 29\n    },\n    {\n      \"format\": \"mpga\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-599d31329ee94a78b631ed5fc6ea28c7\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 31\n    },\n    {\n      \"format\": \"m4a\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-3a6868109ea24ae7b907f4eec160c8bc\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 29\n    },\n    {\n      \"format\": \"ogg\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-398fb34090e24287ab58dbde8405a3af\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 31\n    },\n    {\n      \"format\": \"wav\",\n      \"model\": \"gpt-4o-transcribe-diarize\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-a2f0717f892746ea9cd9bf9cf5bbe4f1\",\n      \"requestIdPresent\": true,\n      \"speakers\": 3,\n      \"segments\": 4\n    },\n    {\n      \"format\": \"webm\",\n      \"model\": \"gpt-transcribe\",\n      \"status\": \"PASS\",\n      \"attemptId\": \"a-bbe5c78dbde94d8dbed50bee0adbec9e\",\n      \"requestIdPresent\": true,\n      \"wordCount\": 31\n    }\n  ],\n  \"baseCommit\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n  \"status\": \"PASS\",\n  \"phase\": \"complete\",\n  \"attempted\": 8,\n  \"releaseReady\": false,\n  \"fullAcceptance\": false,\n  \"genuineMacSafariValidated\": false,\n  \"startedAt\": \"2026-10-25T14:00:10.881Z\",\n  \"runnerSha256\": \"d2cd52fbc17c1c87de6c28d40b9be614fe9b35921d53e9c832636eb5cdd42d0c\",\n  \"pricing\": {\n    \"currency\": \"USD\",\n    \"gptMinuteMicroUsd\": 4500,\n    \"diarizationContextTokens\": 16000,\n    \"diarizationOutputTokens\": 2000,\n    \"conservativeBothTokenRateUsdPerMillion\": 10,\n    \"diarizationReservationMicroUsd\": 180000,\n    \"cumulativeReservationMicroUsd\": 216000,\n    \"invoiceVerified\": false\n  },\n  \"deployedSource\": {\n    \"commit\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n    \"workerVersionId\": \"e1c94498-bfb2-4cbd-8488-e75cdec32877\"\n  },\n  \"continuation\": {\n    \"schema\": \"cosmic-eight-held-reservation-continuation-1\",\n    \"sourceRunId\": 40161696792,\n    \"paidAttempts\": 0,\n    \"evidenceArtifact\": 12586114319,\n    \"evidenceDigest\": \"4940a85d98c2e1a7bf847c8fe50e39b723e5cda0b3007b0797a7ecc2abcdc961\",\n    \"reservedRequests\": 9,\n    \"reservedMicroUsd\": 216000,\n    \"continuationRunId\": \"40200059681\",\n    \"unusedSlots\": 8,\n    \"additionalReservationMicroUsd\": 0,\n    \"oneShot\": true\n  },\n  \"access\": \"PASS\",\n  \"budget\": {\n    \"reservedRequests\": 9,\n    \"reservedMicroUsd\": 216000\n  },\n  \"byokForget\": \"PASS\",\n  \"finishedAt\": \"2026-10-25T14:00:39.975Z\"\n}\n",
+      "reservation.json": "{\"schema\":\"cosmic-approved-paid-budget-1\",\"approval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":9,\"maximumMicroUsd\":250000,\"reservedRequests\":9,\"reservedMicroUsd\":216000,\"runId\":\"40200059681\",\"remainingRequests\":0,\"priorSmokeRun\":39979683866,\"fullAcceptance\":false,\"releaseReady\":false,\"continuation\":{\"schema\":\"cosmic-eight-held-reservation-continuation-1\",\"sourceRunId\":40161696792,\"paidAttempts\":0,\"evidenceArtifact\":12586114319,\"evidenceDigest\":\"4940a85d98c2e1a7bf847c8fe50e39b723e5cda0b3007b0797a7ecc2abcdc961\",\"reservedRequests\":9,\"reservedMicroUsd\":216000,\"continuationRunId\":\"40200059681\",\"unusedSlots\":8,\"additionalReservationMicroUsd\":0,\"oneShot\":true}}\n",
+      "source.json": "{\"schema\":\"cosmic-verified-staging-source-1\",\"origin\":\"https://transcriber-staging.awakeningtoreality.com\",\"commit\":\"88ee4a683c8c277885f0737db53226e658390fae\",\"workerVersionId\":\"e1c94498-bfb2-4cbd-8488-e75cdec32877\",\"deploymentRun\":40063452013,\"verified\":true,\"checkedAtUtc\":\"2026-10-25T14:00:10.802Z\",\"releaseReady\":false}\n"
+    }
+  },
+  "priorSmokeFiles": {
+    "budget.json": "{\n  \"schema\": \"cosmic-approved-paid-budget-1\",\n  \"approval\": \"Sentinel_c2c095975b008191b6e4af85864f70eb\",\n  \"maximumRequests\": 9,\n  \"maximumMicroUsd\": 250000,\n  \"reservedRequests\": 1,\n  \"reservedMicroUsd\": 4500\n}\n",
+    "receipt.json": "{\n  \"schema\": \"cosmic-staging-single-mp3-smoke-1\",\n  \"baseCommit\": \"82392336cfea5bc417098a2c6e3066dafca97b5b\",\n  \"status\": \"PASS\",\n  \"phase\": \"complete\",\n  \"attempted\": 1,\n  \"releaseReady\": false,\n  \"fullAcceptance\": false,\n  \"genuineMacSafariValidated\": false,\n  \"startedAt\": \"2026-10-23T15:37:01.022Z\",\n  \"runnerSha256\": \"38de7db2fd7784f8f7554e5df32c9c2c2ba7b29b5d84eca96f2b07f2efa1f385\",\n  \"fixture\": {\n    \"sha256\": \"9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a\",\n    \"bytes\": 194156,\n    \"durationSeconds\": 12.096,\n    \"model\": \"gpt-transcribe\",\n    \"reservationMicroUsd\": 4500\n  },\n  \"pricing\": {\n    \"currency\": \"USD\",\n    \"perMinuteMicroUsd\": 4500,\n    \"expectedMicroUsd\": 907.2,\n    \"reservationMicroUsd\": 4500,\n    \"source\": \"https://developers.openai.com/api/docs/pricing\",\n    \"invoiceVerified\": false\n  },\n  \"deployedSource\": {\n    \"commit\": \"82392336cfea5bc417098a2c6e3066dafca97b5b\",\n    \"workerVersionId\": \"fdbfa10f-d2bb-4c22-bb32-90e6bb522ab7\"\n  },\n  \"access\": \"PASS\",\n  \"budget\": {\n    \"reservedRequests\": 1,\n    \"reservedMicroUsd\": 4500\n  },\n  \"attemptId\": \"a-d92701a563364d16aa27b46e0dfd7e47\",\n  \"result\": {\n    \"status\": \"PASS\",\n    \"wordCount\": 31,\n    \"requestIdPresent\": true\n  },\n  \"byokForget\": \"PASS\",\n  \"finishedAt\": \"2026-10-23T15:37:08.216Z\"\n}\n",
+    "reservation.json": "{\"schema\":\"cosmic-approved-paid-budget-1\",\"approval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":9,\"maximumMicroUsd\":250000,\"reservedRequests\":1,\"reservedMicroUsd\":4500,\"runId\":\"39979683866\",\"remainingRequests\":8,\"fullAcceptance\":false,\"releaseReady\":false}\n",
+    "source.json": "{\"schema\":\"cosmic-verified-staging-source-1\",\"origin\":\"https://transcriber-staging.awakeningtoreality.com\",\"commit\":\"82392336cfea5bc417098a2c6e3066dafca97b5b\",\"workerVersionId\":\"fdbfa10f-d2bb-4c22-bb32-90e6bb522ab7\",\"deploymentRun\":39945096462,\"verified\":true,\"checkedAtUtc\":\"2026-10-23T15:37:00.951Z\",\"verification\":\"GitHub successful pinned deployment and current Cloudflare deployment GET\",\"releaseReady\":false}\n"
+  },
+  "heldZero": {
+    "run": {
+      "id": 40161696792,
+      "head_sha": "813e66aea0a334c62d3dba0f634fc9ff70ca4310",
+      "head_branch": "main",
+      "path": ".github/workflows/staging-remaining-eight.yml",
+      "event": "workflow_dispatch",
+      "run_attempt": 1,
+      "status": "completed",
+      "conclusion": "failure"
+    },
+    "jobs": [
+      {
+        "id": 121074434504,
+        "run_id": 40161696792,
+        "run_attempt": 1,
+        "name": "remaining",
+        "status": "completed",
+        "conclusion": "failure",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Refuse until reviewed deployment pins replace the intentionally empty draft",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Read only the pinned successful MP3 evidence",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Account every previous attempt and reserve the final eight slots",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Persist cumulative reservation before any paid request",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Download only the reviewed synthetic eight-format artifact",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Fresh exact-source staging proof using existing read access",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "At most eight fixed requests, stop on first failure, never retry",
+            "status": "completed",
+            "conclusion": "failure"
+          },
+          {
+            "name": "Preserve only redacted evidence with no release or production successor",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+            "status": "completed",
+            "conclusion": "skipped"
+          },
+          {
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "status": "completed",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "artifacts": [
+      {
+        "id": 12586114319,
+        "name": "remaining-eight-redacted-evidence",
+        "size_in_bytes": 1608,
+        "url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12586114319",
+        "archive_download_url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12586114319/zip",
+        "expired": false,
+        "created_at": "2026-10-25T04:24:29Z",
+        "expires_at": "2027-01-23T04:23:19Z",
+        "updated_at": "2026-10-25T04:24:29Z",
+        "digest": "sha256:4940a85d98c2e1a7bf847c8fe50e39b723e5cda0b3007b0797a7ecc2abcdc961",
+        "workflow_run": {
+          "id": 40161696792,
+          "repository_id": 1329367706,
+          "head_repository_id": 1329367706,
+          "head_branch": "main",
+          "head_sha": "813e66aea0a334c62d3dba0f634fc9ff70ca4310"
+        }
+      },
+      {
+        "id": 12585919515,
+        "name": "remaining-eight-approved-reservation",
+        "size_in_bytes": 356,
+        "url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12585919515",
+        "archive_download_url": "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/12585919515/zip",
+        "expired": false,
+        "created_at": "2026-10-25T04:24:05Z",
+        "expires_at": "2027-01-23T04:23:19Z",
+        "updated_at": "2026-10-25T04:24:05Z",
+        "digest": "sha256:2056065a1b992f6c2642d38309f5d528c1bb47655a8b7475060f688d28228427",
+        "workflow_run": {
+          "id": 40161696792,
+          "repository_id": 1329367706,
+          "head_repository_id": 1329367706,
+          "head_branch": "main",
+          "head_sha": "813e66aea0a334c62d3dba0f634fc9ff70ca4310"
+        }
+      }
+    ],
+    "files": {
+      "budget.json": "{\"schema\":\"cosmic-approved-paid-budget-1\",\"approval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":9,\"maximumMicroUsd\":250000,\"reservedRequests\":9,\"reservedMicroUsd\":216000}\n",
+      "receipt.json": "{\n  \"schema\": \"cosmic-staging-remaining-eight-1\",\n  \"formats\": [],\n  \"baseCommit\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n  \"status\": \"FAIL\",\n  \"phase\": \"access-status\",\n  \"attempted\": 0,\n  \"releaseReady\": false,\n  \"fullAcceptance\": false,\n  \"genuineMacSafariValidated\": false,\n  \"startedAt\": \"2026-10-25T04:24:28.990Z\",\n  \"runnerSha256\": \"1be2fdbedd4d4e75bec04a750fb2c3abdbf1511b312c68f4c4011cedd7ab5afc\",\n  \"pricing\": {\n    \"currency\": \"USD\",\n    \"gptMinuteMicroUsd\": 4500,\n    \"diarizationContextTokens\": 16000,\n    \"diarizationOutputTokens\": 2000,\n    \"conservativeBothTokenRateUsdPerMillion\": 10,\n    \"diarizationReservationMicroUsd\": 180000,\n    \"cumulativeReservationMicroUsd\": 216000,\n    \"invoiceVerified\": false\n  },\n  \"deployedSource\": {\n    \"commit\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n    \"workerVersionId\": \"e1c94498-bfb2-4cbd-8488-e75cdec32877\"\n  },\n  \"failure\": {\n    \"phase\": \"access-status\",\n    \"code\": \"access_redirect\"\n  },\n  \"finishedAt\": \"2026-10-25T04:24:29.162Z\"\n}\n",
+      "reservation.json": "{\"schema\":\"cosmic-approved-paid-budget-1\",\"approval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":9,\"maximumMicroUsd\":250000,\"reservedRequests\":9,\"reservedMicroUsd\":216000,\"runId\":\"40161696792\",\"remainingRequests\":0,\"priorSmokeRun\":39979683866,\"fullAcceptance\":false,\"releaseReady\":false}\n",
+      "source.json": "{\"schema\":\"cosmic-verified-staging-source-1\",\"origin\":\"https://transcriber-staging.awakeningtoreality.com\",\"commit\":\"88ee4a683c8c277885f0737db53226e658390fae\",\"workerVersionId\":\"e1c94498-bfb2-4cbd-8488-e75cdec32877\",\"deploymentRun\":40063452013,\"verified\":true,\"checkedAtUtc\":\"2026-10-25T04:24:28.927Z\",\"releaseReady\":false}\n"
+    }
+  }
+}
