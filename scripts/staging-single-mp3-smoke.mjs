@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import {createHash,randomUUID} from 'node:crypto';
-import {readFile,writeFile,open} from 'node:fs/promises';
+import {readFile,writeFile,open,readdir} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseStagingAccessCredential} from './staging-access-credential.mjs';
 import {assertSpeechTranscription} from './staging-paid-audio.mjs';
+import {FINAL_MP3,verifyEightFiles,verifyFinalReservation} from './staging-final-mp3-policy.mjs';
+import {APPROVED_DEPLOYMENT} from './staging-remaining-eight-policy.mjs';
 import {SESSION_SLIDING_SECONDS} from '../src/config.js';
 const ORIGIN='https://transcriber-staging.awakeningtoreality.com';
-const BASE='82392336cfea5bc417098a2c6e3066dafca97b5b';
+const finalMode=process.env.COSMIC_SINGLE_MP3_MODE===FINAL_MP3.mode;
+const BASE=finalMode?FINAL_MP3.source:'82392336cfea5bc417098a2c6e3066dafca97b5b';
 export const MP3=Object.freeze({sha256:'9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a',bytes:194156,durationSeconds:12.096,model:'gpt-transcribe',reservationMicroUsd:4500});
 const report={schema:'cosmic-staging-single-mp3-smoke-1',baseCommit:BASE,status:'RUNNING',phase:'preflight',attempted:0,releaseReady:false,fullAcceptance:false,genuineMacSafariValidated:false,startedAt:new Date().toISOString()};
 let accessCookie='',authHeader='',byokCookie='',byokForgetAttempted=false;
@@ -149,9 +152,21 @@ export function reserveBudget(ledger){
  assert.ok(Number.isSafeInteger(ledger.reservedMicroUsd)&&ledger.reservedMicroUsd>=0&&ledger.reservedMicroUsd+4500<=250000);
  return {...ledger,reservedRequests:ledger.reservedRequests+1,reservedMicroUsd:ledger.reservedMicroUsd+4500};
 }
+export function verifyFinalRunnerIdentity(env){
+ assert.equal(env.GITHUB_REPOSITORY,'sohweiyu2023/CosmicTranscriberWeb');assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.GITHUB_RUN_ATTEMPT,'1');assert.equal(env.GITHUB_WORKFLOW,'One approved STAGING MP3 smoke ONLY');assert.equal(env.COSMIC_SMOKE_AUTHORIZATION,FINAL_MP3.authorization);assert.match(env.GITHUB_RUN_ID||'',/^[1-9][0-9]{0,19}$/);assert.match(env.GITHUB_SHA||'',/^[a-f0-9]{40}$/);
+}
+async function readProofDirectory(directory){const files=Object.create(null);for(const entry of await readdir(directory,{withFileTypes:true})){assert.equal(entry.isFile(),true);files[entry.name]=await readFile(path.join(directory,entry.name));}return files;}
+async function verifyFinalLedger(ledgerPath){
+ verifyFinalRunnerIdentity(process.env);
+ const prior=await readProofDirectory(path.join(process.env.RUNNER_TEMP,'prior-mp3'));
+ const proof=verifyEightFiles(await readProofDirectory(path.join(process.env.RUNNER_TEMP,'completed-eight')));
+ const budget=JSON.parse(await readFile(ledgerPath,'utf8')),reservation=JSON.parse(await readFile(path.join(path.dirname(ledgerPath),'reservation.json'),'utf8'));
+ verifyFinalReservation(budget,reservation,process.env.GITHUB_RUN_ID,prior,proof);return {budget,reservation};
+}
 async function run(fixturePath,receiptPath,ledgerPath){
  report.runnerSha256=createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex');
- assert.equal(process.env.COSMIC_SINGLE_MP3_MODE,'one-approved-staging-diagnostic');
+ assert.ok(finalMode||process.env.COSMIC_SINGLE_MP3_MODE==='one-approved-staging-diagnostic');
+ if(finalMode){const {reservation}=await verifyFinalLedger(ledgerPath);report.approval=FINAL_MP3.approval;report.lineage=reservation.lineage;report.coordinatorCommit=process.env.GITHUB_SHA;}
  // No spoofed GitHub identity and no reuse of the certification runner.
  const root=path.resolve(process.env.COSMIC_SMOKE_SOURCE_ROOT||path.resolve(import.meta.dirname,'..'));
  assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),BASE);
@@ -169,6 +184,7 @@ async function run(fixturePath,receiptPath,ledgerPath){
  assert.equal(deployed.schema,'cosmic-verified-staging-source-1');
  assert.equal(deployed.origin,ORIGIN);assert.equal(deployed.commit,BASE);
  assert.match(deployed.workerVersionId||'',/^[0-9a-f-]{36}$/i);
+ if(finalMode)assert.equal(deployed.workerVersionId,APPROVED_DEPLOYMENT.version);
  assert.equal(deployed.verified,true);
  assert.ok(typeof deployed.checkedAtUtc==='string'&&Number.isFinite(Date.parse(deployed.checkedAtUtc)));
  const sourceAge=Date.now()-Date.parse(deployed.checkedAtUtc);assert.ok(sourceAge>=0&&sourceAge<=300000,'Deployed-source evidence is stale');
@@ -183,9 +199,9 @@ async function run(fixturePath,receiptPath,ledgerPath){
  assert.equal((await api('/api/session/status')).j.configured,true);
  const lock=await open(ledgerPath+'.lock','wx');
  try{
-  const ledger=reserveBudget(JSON.parse(await readFile(ledgerPath,'utf8')));
+  const ledger=finalMode?(await verifyFinalLedger(ledgerPath)).budget:reserveBudget(JSON.parse(await readFile(ledgerPath,'utf8')));
   // Persist a conservative reservation BEFORE dispatch, including ambiguous failures.
-  await writeFile(ledgerPath,JSON.stringify(ledger,null,2)+'\n');
+  if(!finalMode)await writeFile(ledgerPath,JSON.stringify(ledger,null,2)+'\n');
   report.budget={reservedRequests:ledger.reservedRequests,reservedMicroUsd:ledger.reservedMicroUsd};
   const id=randomUUID().replaceAll('-','');
   const metadata={v:2,audioFormat:'mp3',jobId:'smoke-'+id,fileId:'f-'+id,attemptId:'a-'+id,chunkIndex:1,chunkCount:1,declaredBytes:bytes.length,durationSeconds:MP3.durationSeconds,model:MP3.model,languages:[],keywords:[],prompt:'',requestKind:'transcription'};

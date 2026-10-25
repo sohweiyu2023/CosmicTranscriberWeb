@@ -333,3 +333,46 @@ The superseded push-to-main run40169170360 at e88e30389e2c1f2ee3b08c72485989fa88
 Preflight retrieves the exact original content-addressed workflow and complete artifact/attempt-job metadata. Accounting requires the pinned run/head/event/branch/attempt, original Git blob, both job identities with runner null/steps empty, and exact canonical eight-job/three-artifact snapshot SHA2564304ceeeb03d79fde0a631def06e94d0612281bd7bd1dd3931147f60e66c940a. Sorting API rows only removes irrelevant ordering; missing, additional, duplicate, altered or started job evidence rejects. Every other cancelled/ambiguous paid job still rejects. The public test fixture contains metadata and workflow source only, no credential values, private payloads or audio.
 
 This is authenticated GitHub execution evidence bound by hashes, not a GitHub-signed attestation. Synthetic started_at values on runner-less jobs are not execution proof. This reconciliation does not turn the cancelled certification into a pass, reset or add reservation, allow reruns, add provider retries, or waive any release check. The original9-slot/US$0.216 hold and one-shot eight-unused-slot continuation remain unchanged.
+
+
+## One separately approved same-source MP3 confirmation (2026-10-25)
+
+The completed remaining-eight run 40200059681 used app source
+88ee4a683c8c277885f0737db53226e658390fae. The earlier MP3 run 39979683866
+used source 82392336cfea5bc417098a2c6e3066dafca97b5b, so those original nine
+requests do not establish nine-format coverage at one source.
+
+The owner separately approved exactly one additional MP3 request, with no retry,
+against the same deployed source as the successful eight. The existing manual
+single-MP3 workflow now requires `one-mp3-same-source-tenth`, fixture producer
+40107978892 and artifact 12565238332. It retains the existing staging-only
+credentials and shared paid-workflow concurrency group. No new login, credential,
+Access policy, production deployment or fixture publication is part of this change.
+
+Before admission it verifies complete history, the immutable earlier MP3 evidence,
+exact successful eight-run/job/artifact identities and every receipt byte, the
+original zero-attempt reservation and the narrowly pinned never-started cancelled
+CI proof. It rejects any other manual attempt, rerun, active/ambiguous paid history,
+partial history or modified proof. Current coordinator main must have successful
+exact-head CI and licensing; the application checkout and fresh runtime deployment
+must independently identify source 88ee4a6 and version
+e1c94498-bfb2-4cbd-8488-e75cdec32877. Coordinator source is not application source.
+
+The original nine-slot ledger remains unchanged. A new approval-specific reservation
+records nine prior requests and one extra request, adding 4,500 microUSD to the
+216,000 microUSD reservation: ten total requests / US$0.2205. The tighter workflow
+ceiling remains below the owner's US$2 cumulative authorization. Reservations are
+conservative accounting, not verified invoices. An ambiguous fetch consumes the
+single attempt; it must never be retried automatically. Exclusive receipt and lock
+files preserve this rule inside a run, while complete history blocks a second run.
+
+The fixed synthetic MP3 is 194,156 bytes / 12.096 seconds, SHA-256
+9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a.
+No private audio is used. Local fake-fetch replay uses an explicitly synthetic run
+ID and is not a live reservation, provider request or acceptance receipt.
+
+Even a successful final confirmation does not create the legacy same-run nine-format
+receipt or automatically set releaseReady/fullAcceptance. Coverage can be reviewed
+across the two actual same-source runs; production promotion requires its own
+supported evidence/rollback/access checks. The disclosed native Safari failure
+remains FAIL/WAIVED, and genuine Mac Safari validation is still unavailable.

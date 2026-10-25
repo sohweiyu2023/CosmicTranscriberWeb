@@ -56,7 +56,7 @@ test('manual workflow has read-only permissions, pre-dispatch reservation, scope
  assert.equal(y.includes('${{ runner.temp }}/single-mp3-evidence'),false,'All receipt paths must match job env');
  assert.ok(y.indexOf('reservation.json')<y.indexOf('One fixed MP3 request'));
  assert.ok(y.indexOf('verifyFixedMp3(await readFile')<y.indexOf('CLOUDFLARE_API_TOKEN:'));assert.match(y,/assert.equal\(entries.length,1\)/);
- assert.match(y,/COSMIC_SMOKE_SOURCE_ROOT:.*certified-source/);assert.match(y,/ref: 82392336cfea5bc417098a2c6e3066dafca97b5b/);
+ assert.match(y,/COSMIC_SMOKE_SOURCE_ROOT:.*certified-source/);assert.match(y,/ref: 88ee4a683c8c277885f0737db53226e658390fae/);
  assert.equal((y.match(/STAGING_OPENAI_API_KEY:/g)||[]).length,1);assert.match(y,/if-no-files-found: error/);
  for(const forbidden of ['deploy:','deploy:production','staging-live-acceptance.mjs','workflow_run:','pull_request:','push:','--retry','always-success'])assert.equal(y.includes(forbidden),false,forbidden);
 });

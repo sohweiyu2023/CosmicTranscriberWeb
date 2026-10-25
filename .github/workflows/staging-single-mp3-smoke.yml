@@ -3,11 +3,11 @@ on:
   workflow_dispatch:
     inputs:
       authorization:
-        description: One of nine total requests; reserve USD0.0045 within USD0.25; existing staging secrets only
+        description: One approved tenth MP3; additional USD0.0045, cumulative USD0.2205 within owner USD2 cap
         required: true
         type: choice
         default: refuse
-        options: [refuse, one-mp3-with-existing-staging-secrets]
+        options: [refuse, one-mp3-same-source-tenth]
       fixture_run_id:
         description: Existing same-repository run containing the approved synthetic fixture artifact
         required: true
@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   smoke:
-    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.authorization == 'one-mp3-with-existing-staging-secrets' }}
+    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' && inputs.authorization == 'one-mp3-same-source-tenth' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -42,8 +42,32 @@ jobs:
         with:
           node-version: '26.7.0'
           package-manager-cache: false
+      - name: Read immutable prior MP3 evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: 12512662440
+          run-id: 39979683866
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/prior-mp3
+      - name: Read original zero-attempt held reservation evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: 12586114319
+          run-id: 40161696792
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/prior-eight-zero
+      - name: Read completed eight-request source-bound evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: 12601587812
+          run-id: 40200059681
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/completed-eight
       - name: Reserve one attempt after complete prior-run accounting
-        run: node scripts/staging-single-mp3-preflight.mjs prepare
+        run: node scripts/staging-final-mp3-preflight.mjs prepare
       - name: Persist conservative reservation BEFORE any paid attempt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -76,19 +100,19 @@ jobs:
       - name: Checkout exact deployed application source separately
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 82392336cfea5bc417098a2c6e3066dafca97b5b
+          ref: 88ee4a683c8c277885f0737db53226e658390fae
           path: certified-source
           persist-credentials: false
       - name: Verify fresh current staging deployment through read-only APIs
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: node scripts/staging-single-mp3-preflight.mjs source
+        run: node scripts/staging-final-mp3-preflight.mjs source
       - name: One fixed MP3 request; no retry and no release certification
         env:
           STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
           STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
-          COSMIC_SINGLE_MP3_MODE: one-approved-staging-diagnostic
+          COSMIC_SINGLE_MP3_MODE: one-approved-same-source-tenth
           COSMIC_SMOKE_SOURCE_ROOT: ${{ github.workspace }}/certified-source
           COSMIC_STAGING_SOURCE_RECEIPT: ${{ github.workspace }}/single-mp3-evidence/source.json
         run: node scripts/staging-single-mp3-smoke.mjs "$RUNNER_TEMP/single-mp3-fixture/staging-speech.mp3" "$COSMIC_SMOKE_EVIDENCE/receipt.json" "$COSMIC_SMOKE_EVIDENCE/budget.json"
