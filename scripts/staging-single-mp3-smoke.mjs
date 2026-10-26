@@ -6,7 +6,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {parseStagingAccessCredential} from './staging-access-credential.mjs';
 import {assertSpeechTranscription} from './staging-paid-audio.mjs';
-import {FINAL_MP3,verifyEightFiles,verifyFinalReservation} from './staging-final-mp3-policy.mjs';
+import {FINAL_MP3,verifyHeldFinalFiles,verifyEightFiles,verifyFinalReservation} from './staging-final-mp3-policy.mjs';
 import {APPROVED_DEPLOYMENT} from './staging-remaining-eight-policy.mjs';
 import {SESSION_SLIDING_SECONDS} from '../src/config.js';
 const ORIGIN='https://transcriber-staging.awakeningtoreality.com';
@@ -63,13 +63,17 @@ async function readWorkerJsonBounded(response){
 async function discardRejectedResponse(response){
  try{await response.body?.cancel()}catch{/* never reveal response or network errors */}
 }
+export function stagingRedirectCategory(location){
+ if(typeof location!=='string'||!location)return 'missing';if(location.length>4096)return 'invalid';
+ try{const url=new URL(location,ORIGIN);if(url.hostname.endsWith('.cloudflareaccess.com')||(url.origin===ORIGIN&&url.pathname.startsWith('/cdn-cgi/access/')))return 'access-login';return url.origin===ORIGIN?'same-origin':'external-other';}catch{return 'invalid';}
+}
 async function api(route,method='GET',body=null,headers={}){
  assert.ok(route.startsWith('/api/'),'Only staging API permitted');
  const h={...headers};const cookie=[accessCookie,byokCookie].filter(Boolean).join('; ');
  if(cookie)h.Cookie=cookie;if(authHeader)h['Cf-Access-Token']=authHeader;
  if(method!=='GET')h.Origin=ORIGIN;
  const response=await fetch(ORIGIN+route,{method,body,headers:h,redirect:'manual',signal:AbortSignal.timeout(90000)});
- if(response.status>=300&&response.status<400){await discardRejectedResponse(response);const e=Error('Cloudflare Access returned a redirect');e.code='access_redirect';e.httpStatus=response.status;throw e}
+ if(response.status>=300&&response.status<400){await discardRejectedResponse(response);const e=Error('Cloudflare Access returned a redirect');e.code='access_redirect';e.httpStatus=response.status;e.redirectCategory=stagingRedirectCategory(response.headers.get('location'));throw e}
  // Compare the actual media type, not a substring in a suffix or parameter.
  // application/jsonp and text/plain; hint=application/json are NOT JSON responses.
  const responseMediaType=response.headers.get('content-type')?.split(';',1)[0].trim().toLowerCase();
@@ -161,12 +165,13 @@ async function verifyFinalLedger(ledgerPath){
  const prior=await readProofDirectory(path.join(process.env.RUNNER_TEMP,'prior-mp3'));
  const proof=verifyEightFiles(await readProofDirectory(path.join(process.env.RUNNER_TEMP,'completed-eight')));
  const budget=JSON.parse(await readFile(ledgerPath,'utf8')),reservation=JSON.parse(await readFile(path.join(path.dirname(ledgerPath),'reservation.json'),'utf8'));
- verifyFinalReservation(budget,reservation,process.env.GITHUB_RUN_ID,prior,proof);return {budget,reservation};
+ const heldProof=verifyHeldFinalFiles(await readProofDirectory(path.join(process.env.RUNNER_TEMP,'held-final-mp3')));
+ verifyFinalReservation(budget,reservation,process.env.GITHUB_RUN_ID,prior,proof,heldProof);return {budget,reservation};
 }
 async function run(fixturePath,receiptPath,ledgerPath){
  report.runnerSha256=createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex');
  assert.ok(finalMode||process.env.COSMIC_SINGLE_MP3_MODE==='one-approved-staging-diagnostic');
- if(finalMode){const {reservation}=await verifyFinalLedger(ledgerPath);report.approval=FINAL_MP3.approval;report.lineage=reservation.lineage;report.coordinatorCommit=process.env.GITHUB_SHA;}
+ if(finalMode){const {reservation}=await verifyFinalLedger(ledgerPath);report.approval=FINAL_MP3.approval;report.lineage=reservation.lineage;report.coordinatorCommit=process.env.GITHUB_SHA;report.continuation=reservation.continuation;}
  // No spoofed GitHub identity and no reuse of the certification runner.
  const root=path.resolve(process.env.COSMIC_SMOKE_SOURCE_ROOT||path.resolve(import.meta.dirname,'..'));
  assert.equal(execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),BASE);
@@ -224,7 +229,7 @@ async function main(){
   const receiptHandle=await open(receiptPath,'wx');receiptOwned=true;await receiptHandle.close();
   await run(path.resolve(fixture),receiptPath,path.resolve(ledger));
  }catch(e){
-  const primary={phase:report.phase,code:safeError(e)};report.status='FAIL';report.failure=primary;
+  const primary={phase:report.phase,code:safeError(e)};if(Number.isInteger(e?.httpStatus)&&e.httpStatus>=100&&e.httpStatus<=599)primary.httpStatus=e.httpStatus;if(['access-login','same-origin','external-other','missing','invalid'].includes(e?.redirectCategory))primary.redirectCategory=e.redirectCategory;report.status='FAIL';report.failure=primary;
   if(byokCookie&&!byokForgetAttempted){try{await forgetByok()}catch{report.byokForget='FAIL'}}
   if(byokForgetAttempted&&report.byokForget!=='PASS')report.byokForget='FAIL';
   report.phase=primary.phase;process.exitCode=1;

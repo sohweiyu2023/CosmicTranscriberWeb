@@ -1,0 +1,175 @@
+{
+  "run": {
+    "id": 40336352549,
+    "head_sha": "b6bb26f698dc143468bb34c8b7133ab8ce5b4e9a",
+    "path": ".github/workflows/staging-single-mp3-smoke.yml",
+    "head_branch": "main",
+    "event": "workflow_dispatch",
+    "run_attempt": 1,
+    "status": "completed",
+    "conclusion": "failure"
+  },
+  "jobs": [
+    {
+      "id": 121618877281,
+      "run_id": 40336352549,
+      "run_attempt": 1,
+      "name": "smoke",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 2,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "number": 3,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read immutable prior MP3 evidence",
+          "number": 4,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read original zero-attempt held reservation evidence",
+          "number": 5,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read completed eight-request source-bound evidence",
+          "number": 6,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reserve one attempt after complete prior-run accounting",
+          "number": 7,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Persist conservative reservation BEFORE any paid attempt",
+          "number": 8,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Fetch approved synthetic data without adding it to public source",
+          "number": 9,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reject unexpected artifact entries and verify fixed MP3 before secrets",
+          "number": 10,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Checkout exact deployed application source separately",
+          "number": 11,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify fresh current staging deployment through read-only APIs",
+          "number": 12,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "One fixed MP3 request; no retry and no release certification",
+          "number": 13,
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Preserve only redacted source, reservation and outcome records",
+          "number": 14,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Checkout exact deployed application source separately",
+          "number": 26,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "number": 27,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 28,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "number": 29,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 12657152831,
+      "name": "single-mp3-approved-reservation",
+      "digest": "sha256:5ab4e2b96e7c5952dbac0aa6085b1b8aea3b06c39f720e2dbb08d38418f77162",
+      "size_in_bytes": 597,
+      "expired": false,
+      "workflow_run": {
+        "id": 40336352549,
+        "repository_id": 1329367706,
+        "head_repository_id": 1329367706,
+        "head_branch": "main",
+        "head_sha": "b6bb26f698dc143468bb34c8b7133ab8ce5b4e9a"
+      }
+    },
+    {
+      "id": 12656454065,
+      "name": "single-mp3-redacted-evidence",
+      "digest": "sha256:c06d9457cf31ab821946369e7d0511609477460ae80c006f2081c3250154692a",
+      "size_in_bytes": 2535,
+      "expired": false,
+      "workflow_run": {
+        "id": 40336352549,
+        "repository_id": 1329367706,
+        "head_repository_id": 1329367706,
+        "head_branch": "main",
+        "head_sha": "b6bb26f698dc143468bb34c8b7133ab8ce5b4e9a"
+      }
+    }
+  ],
+  "files": {
+    "budget.json": "{\"schema\":\"cosmic-approved-final-mp3-budget-1\",\"approval\":\"owner-approved-same-source-mp3-2026-10-25\",\"previousApproval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":10,\"maximumMicroUsd\":220500,\"ownerCumulativeMaximumMicroUsd\":2000000,\"reservedRequests\":10,\"reservedMicroUsd\":220500}\n",
+    "reservation.json": "{\"schema\":\"cosmic-approved-final-mp3-budget-1\",\"approval\":\"owner-approved-same-source-mp3-2026-10-25\",\"previousApproval\":\"Sentinel_c2c095975b008191b6e4af85864f70eb\",\"maximumRequests\":10,\"maximumMicroUsd\":220500,\"ownerCumulativeMaximumMicroUsd\":2000000,\"reservedRequests\":10,\"reservedMicroUsd\":220500,\"runId\":\"40336352549\",\"priorPaidRequests\":9,\"additionalApprovedRequests\":1,\"additionalReservationMicroUsd\":4500,\"lineage\":{\"schema\":\"cosmic-completed-nine-request-lineage-1\",\"priorSmokeRun\":39979683866,\"eightRun\":40200059681,\"source\":\"88ee4a683c8c277885f0737db53226e658390fae\",\"eightEvidenceArtifact\":12601587812,\"eightEvidenceDigest\":\"7ef8e928b1003e09d47fa95f0c0ea3698ddc0ae93ee588499f62d40568183e7b\",\"paidRequests\":9,\"reservedMicroUsd\":216000},\"oneShot\":true,\"fullAcceptance\":false,\"releaseReady\":false}\n",
+    "lineage.json": "{\"schema\":\"cosmic-completed-nine-request-lineage-1\",\"priorSmokeRun\":39979683866,\"eightRun\":40200059681,\"source\":\"88ee4a683c8c277885f0737db53226e658390fae\",\"eightEvidenceArtifact\":12601587812,\"eightEvidenceDigest\":\"7ef8e928b1003e09d47fa95f0c0ea3698ddc0ae93ee588499f62d40568183e7b\",\"paidRequests\":9,\"reservedMicroUsd\":216000}\n",
+    "receipt.json": "{\n  \"schema\": \"cosmic-staging-single-mp3-smoke-1\",\n  \"baseCommit\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n  \"status\": \"FAIL\",\n  \"phase\": \"access-status\",\n  \"attempted\": 0,\n  \"releaseReady\": false,\n  \"fullAcceptance\": false,\n  \"genuineMacSafariValidated\": false,\n  \"startedAt\": \"2026-10-26T14:07:36.732Z\",\n  \"runnerSha256\": \"ff54ca8beb43414adcc16cebb27876f98a2451179a5893e58de4d3f1e2e0cb79\",\n  \"approval\": \"owner-approved-same-source-mp3-2026-10-25\",\n  \"lineage\": {\n    \"schema\": \"cosmic-completed-nine-request-lineage-1\",\n    \"priorSmokeRun\": 39979683866,\n    \"eightRun\": 40200059681,\n    \"source\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n    \"eightEvidenceArtifact\": 12601587812,\n    \"eightEvidenceDigest\": \"7ef8e928b1003e09d47fa95f0c0ea3698ddc0ae93ee588499f62d40568183e7b\",\n    \"paidRequests\": 9,\n    \"reservedMicroUsd\": 216000\n  },\n  \"coordinatorCommit\": \"b6bb26f698dc143468bb34c8b7133ab8ce5b4e9a\",\n  \"fixture\": {\n    \"sha256\": \"9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a\",\n    \"bytes\": 194156,\n    \"durationSeconds\": 12.096,\n    \"model\": \"gpt-transcribe\",\n    \"reservationMicroUsd\": 4500\n  },\n  \"pricing\": {\n    \"currency\": \"USD\",\n    \"perMinuteMicroUsd\": 4500,\n    \"expectedMicroUsd\": 907.2,\n    \"reservationMicroUsd\": 4500,\n    \"source\": \"https://developers.openai.com/api/docs/pricing\",\n    \"invoiceVerified\": false\n  },\n  \"deployedSource\": {\n    \"commit\": \"88ee4a683c8c277885f0737db53226e658390fae\",\n    \"workerVersionId\": \"e1c94498-bfb2-4cbd-8488-e75cdec32877\"\n  },\n  \"failure\": {\n    \"phase\": \"access-status\",\n    \"code\": \"access_redirect\"\n  },\n  \"finishedAt\": \"2026-10-26T14:07:37.088Z\"\n}\n",
+    "source.json": "{\"schema\":\"cosmic-verified-staging-source-1\",\"origin\":\"https://transcriber-staging.awakeningtoreality.com\",\"commit\":\"88ee4a683c8c277885f0737db53226e658390fae\",\"workerVersionId\":\"e1c94498-bfb2-4cbd-8488-e75cdec32877\",\"deploymentRun\":40063452013,\"verified\":true,\"checkedAtUtc\":\"2026-10-26T14:07:36.674Z\",\"releaseReady\":false}\n"
+  },
+  "workflowBlobs": {
+    ".github/workflows/staging-single-mp3-smoke.yml": "bcc1dbc233a8ad6be11bdf1042d904d0d1fbd123",
+    "scripts/staging-final-mp3-preflight.mjs": "ca1d319052afa7814e694ae8268de00028da5ad0",
+    "scripts/staging-final-mp3-policy.mjs": "e08cdb92c3309291c2511dfa43092c1ef7158ba4",
+    "scripts/staging-single-mp3-smoke.mjs": "5d42f1d1b44c522991aaf522b4677946ed420038"
+  }
+}
