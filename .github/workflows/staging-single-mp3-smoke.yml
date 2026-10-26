@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       authorization:
-        description: One approved tenth MP3; additional USD0.0045, cumulative USD0.2205 within owner USD2 cap
+        description: Reuse the held unused tenth MP3 slot; no new reservation, cumulative USD0.2205 within owner USD2 cap
         required: true
         type: choice
         default: refuse
@@ -66,9 +66,17 @@ jobs:
           github-token: ${{ github.token }}
           merge-multiple: true
           path: ${{ runner.temp }}/completed-eight
-      - name: Reserve one attempt after complete prior-run accounting
+      - name: Read exact zero-provider held tenth-slot evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: 12656454065
+          run-id: 40336352549
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/held-final-mp3
+      - name: Reconcile exact held unused tenth slot without increasing reservation
         run: node scripts/staging-final-mp3-preflight.mjs prepare
-      - name: Persist conservative reservation BEFORE any paid attempt
+      - name: Persist reused held-slot declaration before any paid attempt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: single-mp3-approved-reservation

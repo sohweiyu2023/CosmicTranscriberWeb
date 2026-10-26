@@ -15,6 +15,30 @@ export function verifyFinalZeroAttempt(run,jobs,evidence){
  assert.deepEqual(evidence.artifacts,[]);assert.deepEqual(evidence.workflowBlobs,p.blobs);
  return true;
 }
+
+// Reuse only the one unused slot already reserved by this exact zero-provider
+// Access failure. Artifact/file hashes and immutable code bind the proof.
+export const FINAL_MP3_HELD=Object.freeze({run:40336352549,head:'b6bb26f698dc143468bb34c8b7133ab8ce5b4e9a',job:121618877281,stepDigest:'0e3134c490aa12ae53398092b08e64e9c5cb543a6e71209bc4f3a9ebf418f6c5',evidenceArtifact:12656454065,evidenceDigest:'c06d9457cf31ab821946369e7d0511609477460ae80c006f2081c3250154692a',reservationArtifact:12657152831,reservationDigest:'5ab4e2b96e7c5952dbac0aa6085b1b8aea3b06c39f720e2dbb08d38418f77162',blobs:Object.freeze({'.github/workflows/staging-single-mp3-smoke.yml':'bcc1dbc233a8ad6be11bdf1042d904d0d1fbd123','scripts/staging-final-mp3-preflight.mjs':'ca1d319052afa7814e694ae8268de00028da5ad0','scripts/staging-final-mp3-policy.mjs':'e08cdb92c3309291c2511dfa43092c1ef7158ba4','scripts/staging-single-mp3-smoke.mjs':'5d42f1d1b44c522991aaf522b4677946ed420038'})});
+export const FINAL_HELD_FILES=Object.freeze({'budget.json':'b40b9ab8f8df4a144fe9e81335e26e45389b38833a19bbed30952798579e98d7','reservation.json':'c8f784932306acb5452d88ca765a7b3858042547876b181d94ec07873c2091c8','lineage.json':'43c2cdd5ce54965d12eaa707f2996392d95f40bb11827d6e6e3ce54971797710','receipt.json':'5f15814195d711f9b491610ce4c4782410ac6d94e138f754e1b8d62687b0d3bd','source.json':'2a43bab535c3a5882990da32fe876b83d9148a11826cdae46a4f925e28e9a272'});
+function finalBudget(){return {schema:'cosmic-approved-final-mp3-budget-1',approval:FINAL_MP3.approval,previousApproval:POLICY.approval,maximumRequests:10,maximumMicroUsd:220500,ownerCumulativeMaximumMicroUsd:2000000,reservedRequests:10,reservedMicroUsd:220500};}
+function eightLineage(){return {schema:'cosmic-completed-nine-request-lineage-1',priorSmokeRun:POLICY.priorRun,eightRun:FINAL_MP3.run,source:FINAL_MP3.source,eightEvidenceArtifact:FINAL_MP3.evidenceArtifact,eightEvidenceDigest:FINAL_MP3.evidenceDigest,paidRequests:9,reservedMicroUsd:216000};}
+function heldSlotProof(){return {schema:'cosmic-final-mp3-held-slot-proof-1',heldRun:FINAL_MP3_HELD.run,heldHead:FINAL_MP3_HELD.head,heldJob:FINAL_MP3_HELD.job,evidenceArtifact:FINAL_MP3_HELD.evidenceArtifact,evidenceDigest:FINAL_MP3_HELD.evidenceDigest,receiptSha256:FINAL_HELD_FILES['receipt.json'],reservationSha256:FINAL_HELD_FILES['reservation.json'],paidRequests:0,reservedRequests:10,reservedMicroUsd:220500,unusedSlots:1};}
+export function verifyHeldFinalFiles(files){
+ assert.deepEqual(Object.keys(files).sort(),Object.keys(FINAL_HELD_FILES).sort());for(const [name,hash]of Object.entries(FINAL_HELD_FILES))assert.equal(sha256(files[name]),hash);
+ const b=JSON.parse(files['budget.json']),r=JSON.parse(files['receipt.json']),reservation=JSON.parse(files['reservation.json']),source=JSON.parse(files['source.json']),lineage=JSON.parse(files['lineage.json']);
+ assert.deepEqual(b,finalBudget());assert.deepEqual(lineage,eightLineage());assert.deepEqual(reservation,{...b,runId:String(FINAL_MP3_HELD.run),priorPaidRequests:9,additionalApprovedRequests:1,additionalReservationMicroUsd:4500,lineage,oneShot:true,fullAcceptance:false,releaseReady:false});
+ assert.equal(r.schema,'cosmic-staging-single-mp3-smoke-1');assert.equal(r.status,'FAIL');assert.equal(r.phase,'access-status');assert.deepEqual(r.failure,{phase:'access-status',code:'access_redirect'});assert.equal(r.attempted,0);for(const key of ['attemptId','result','byokForget','access'])assert.equal(key in r,false);assert.equal(r.coordinatorCommit,FINAL_MP3_HELD.head);assert.equal(r.baseCommit,FINAL_MP3.source);assert.deepEqual(r.lineage,lineage);
+ assert.equal(source.schema,'cosmic-verified-staging-source-1');assert.equal(source.verified,true);assert.equal(source.commit,FINAL_MP3.source);assert.equal(source.workerVersionId,APPROVED_DEPLOYMENT.version);assert.deepEqual(r.deployedSource,{commit:source.commit,workerVersionId:source.workerVersionId});for(const key of ['fullAcceptance','releaseReady','genuineMacSafariValidated'])assert.equal(r[key],false);
+ return heldSlotProof();
+}
+export function verifyHeldFinalAttempt(run,jobs,evidence){
+ const p=FINAL_MP3_HELD;assert.equal(run.id,p.run);assert.equal(run.head_sha,p.head);assert.equal(run.head_branch,'main');assert.equal(run.event,'workflow_dispatch');assert.equal(run.path,'.github/workflows/staging-single-mp3-smoke.yml');assert.equal(run.run_attempt,1);assert.equal(run.status,'completed');assert.equal(run.conclusion,'failure');
+ assert.equal(jobs.length,1);const j=jobs[0];assert.equal(j.id,p.job);assert.equal(j.run_id,p.run);assert.equal(j.run_attempt,1);assert.equal(j.name,'smoke');assert.equal(j.status,'completed');assert.equal(j.conclusion,'failure');assert.equal(sha256(JSON.stringify(j.steps.map(s=>[s.number,s.name,s.status,s.conclusion]))),p.stepDigest);
+ assert.deepEqual(evidence.workflowBlobs,p.blobs);assert.equal(evidence.artifacts.length,2);
+ for(const [id,name,digest,size]of [[p.evidenceArtifact,'single-mp3-redacted-evidence',p.evidenceDigest,2535],[p.reservationArtifact,'single-mp3-approved-reservation',p.reservationDigest,597]]){const matches=evidence.artifacts.filter(a=>a.id===id);assert.equal(matches.length,1);const a=matches[0];assert.equal(a.name,name);assert.equal(a.digest,'sha256:'+digest);assert.equal(a.size_in_bytes,size);assert.equal(a.expired,false);assert.equal(a.workflow_run.id,p.run);assert.equal(a.workflow_run.head_sha,p.head);}
+ return verifyHeldFinalFiles(evidence.files);
+}
+
 const fixtureFailures=new WeakMap();
 export function finalFixtureFailureDiagnostic(error){const value=error&&typeof error==='object'?fixtureFailures.get(error):undefined;return value?structuredClone(value):undefined;}
 export function finalFixtureArtifactDiagnostic(artifacts){
@@ -54,19 +78,20 @@ export function verifyEightFiles(files){
  for(const key of ['fullAcceptance','releaseReady','genuineMacSafariValidated'])assert.equal(r[key],false);
  return {schema:'cosmic-completed-nine-request-lineage-1',priorSmokeRun:POLICY.priorRun,eightRun:p.run,source:p.source,eightEvidenceArtifact:p.evidenceArtifact,eightEvidenceDigest:p.evidenceDigest,paidRequests:9,reservedMicroUsd:216000};
 }
-export function reserveFinalMp3(priorFiles,eightProof,currentRun){
- const prior=verifyPriorSmoke(priorFiles);assert.equal(prior.reservedRequests,1);assert.equal(prior.reservedMicroUsd,4500);
- assert.deepEqual(eightProof,{schema:'cosmic-completed-nine-request-lineage-1',priorSmokeRun:POLICY.priorRun,eightRun:FINAL_MP3.run,source:FINAL_MP3.source,eightEvidenceArtifact:FINAL_MP3.evidenceArtifact,eightEvidenceDigest:FINAL_MP3.evidenceDigest,paidRequests:9,reservedMicroUsd:216000});
- assert.match(String(currentRun),/^[1-9][0-9]{0,19}$/);for(const id of [POLICY.priorRun,FINAL_MP3.run,40161696792,40113556242,FINAL_MP3_ZERO.run])assert.notEqual(String(currentRun),String(id));
- const budget={schema:'cosmic-approved-final-mp3-budget-1',approval:FINAL_MP3.approval,previousApproval:POLICY.approval,maximumRequests:10,maximumMicroUsd:220500,ownerCumulativeMaximumMicroUsd:2000000,reservedRequests:10,reservedMicroUsd:220500};
- return {budget,reservation:{...budget,runId:String(currentRun),priorPaidRequests:9,additionalApprovedRequests:1,additionalReservationMicroUsd:4500,lineage:eightProof,oneShot:true,fullAcceptance:false,releaseReady:false}};
+export function reserveFinalMp3(priorFiles,eightProof,currentRun,heldProof){
+ const prior=verifyPriorSmoke(priorFiles);assert.equal(prior.reservedRequests,1);assert.equal(prior.reservedMicroUsd,4500);assert.deepEqual(eightProof,eightLineage());assert.deepEqual(heldProof,heldSlotProof());
+ assert.match(String(currentRun),/^[1-9][0-9]{0,19}$/);for(const id of [POLICY.priorRun,FINAL_MP3.run,40161696792,40113556242,FINAL_MP3_ZERO.run,FINAL_MP3_HELD.run])assert.notEqual(String(currentRun),String(id));
+ // The budget is copied unchanged from the exact held proof, never incremented.
+ const budget=finalBudget();return {budget,reservation:{...budget,runId:String(currentRun),priorPaidRequests:9,additionalApprovedRequests:1,additionalReservationMicroUsd:0,lineage:eightProof,oneShot:true,fullAcceptance:false,releaseReady:false,continuation:{...heldProof,continuationRunId:String(currentRun),additionalReservationMicroUsd:0,oneShot:true}}};
 }
-export function verifyFinalReservation(budget,reservation,currentRun,priorFiles,eightProof){const expected=reserveFinalMp3(priorFiles,eightProof,currentRun);assert.deepEqual(budget,expected.budget);assert.deepEqual(reservation,expected.reservation);return expected;}
-export function verifyFinalHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroArtifacts,heldEvidence,cancelledCiEvidence,eightProof,finalZeroEvidence){
+export function verifyFinalReservation(budget,reservation,currentRun,priorFiles,eightProof,heldProof){const expected=reserveFinalMp3(priorFiles,eightProof,currentRun,heldProof);assert.deepEqual(budget,expected.budget);assert.deepEqual(reservation,expected.reservation);return expected;}
+
+export function verifyFinalHistory(smokeRuns,remainingRuns,ciRuns,jobLists,currentRun,zeroArtifacts,heldEvidence,cancelledCiEvidence,eightProof,finalZeroEvidence,finalHeldEvidence){
  assert.deepEqual(eightProof,{schema:'cosmic-completed-nine-request-lineage-1',priorSmokeRun:POLICY.priorRun,eightRun:FINAL_MP3.run,source:FINAL_MP3.source,eightEvidenceArtifact:FINAL_MP3.evidenceArtifact,eightEvidenceDigest:FINAL_MP3.evidenceDigest,paidRequests:9,reservedMicroUsd:216000});
  const current=smokeRuns.filter(r=>String(r.id)===String(currentRun));assert.equal(current.length,1);assert.equal(current[0].event,'workflow_dispatch');assert.equal(current[0].head_branch,'main');assert.equal(current[0].run_attempt,1);assert.equal(current[0].path,'.github/workflows/staging-single-mp3-smoke.yml');
  // Reuse strict original history, with the now-completed exact eight run taking
  // its already-proved current-run role. Every other manual continuation rejects.
  const zero=smokeRuns.filter(r=>r.id===FINAL_MP3_ZERO.run);assert.equal(zero.length,1,'Exact zero-attempt history missing');verifyFinalZeroAttempt(zero[0],jobLists[FINAL_MP3_ZERO.run],finalZeroEvidence);
- return verifyHistory(smokeRuns.filter(r=>String(r.id)!==String(currentRun)&&r.id!==FINAL_MP3_ZERO.run),remainingRuns,ciRuns,jobLists,String(FINAL_MP3.run),zeroArtifacts,heldEvidence,cancelledCiEvidence);
+ const held=smokeRuns.filter(r=>r.id===FINAL_MP3_HELD.run);assert.equal(held.length,1,'Exact held-slot history missing');verifyHeldFinalAttempt(held[0],jobLists[FINAL_MP3_HELD.run],finalHeldEvidence);
+ return verifyHistory(smokeRuns.filter(r=>String(r.id)!==String(currentRun)&&r.id!==FINAL_MP3_ZERO.run&&r.id!==FINAL_MP3_HELD.run),remainingRuns,ciRuns,jobLists,String(FINAL_MP3.run),zeroArtifacts,heldEvidence,cancelledCiEvidence);
 }
