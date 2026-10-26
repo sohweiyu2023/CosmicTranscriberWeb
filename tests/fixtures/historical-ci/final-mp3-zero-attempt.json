@@ -1,0 +1,156 @@
+{
+  "run": {
+    "id": 40245143343,
+    "path": ".github/workflows/staging-single-mp3-smoke.yml",
+    "head_sha": "d6d749889f9735f4c27dbdcb4164fb3656a8253a",
+    "head_branch": "main",
+    "event": "workflow_dispatch",
+    "run_attempt": 1,
+    "status": "completed",
+    "conclusion": "failure"
+  },
+  "jobs": [
+    {
+      "id": 121325017956,
+      "run_id": 40245143343,
+      "run_attempt": 1,
+      "name": "smoke",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 2,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "number": 3,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read immutable prior MP3 evidence",
+          "number": 4,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read original zero-attempt held reservation evidence",
+          "number": 5,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Read completed eight-request source-bound evidence",
+          "number": 6,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Reserve one attempt after complete prior-run accounting",
+          "number": 7,
+          "status": "completed",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Persist conservative reservation BEFORE any paid attempt",
+          "number": 8,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Fetch approved synthetic data without adding it to public source",
+          "number": 9,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Reject unexpected artifact entries and verify fixed MP3 before secrets",
+          "number": 10,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Checkout exact deployed application source separately",
+          "number": 11,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Verify fresh current staging deployment through read-only APIs",
+          "number": 12,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "One fixed MP3 request; no retry and no release certification",
+          "number": 13,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Preserve only redacted source, reservation and outcome records",
+          "number": 14,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Post Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e",
+          "number": 27,
+          "status": "completed",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 28,
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "name": "Complete job",
+          "number": 29,
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ],
+  "artifacts": [],
+  "workflowBlobs": {
+    ".github/workflows/staging-single-mp3-smoke.yml": "bcc1dbc233a8ad6be11bdf1042d904d0d1fbd123",
+    "scripts/staging-final-mp3-preflight.mjs": "2a0e661ab70ef4bc42e79d88c25ded8b8f86dd5b",
+    "scripts/staging-final-mp3-policy.mjs": "1c8f537e8a84ec53c2f6c41f7a6275b13bd02692"
+  },
+  "artifact": {
+    "id": 12565238332,
+    "name": "cosmic-approved-single-mp3-fixture",
+    "size_in_bytes": 133819,
+    "expired": false,
+    "digest": "sha256:c291ab8175af70d488643ffad5f0f4c5dbaa138a168191ddd52f3cb6adb2f6a7",
+    "created_at": "2026-10-24T15:40:41Z",
+    "updated_at": "2026-10-24T15:40:41Z",
+    "expires_at": "2026-10-31T15:40:40Z",
+    "workflow_run": {
+      "id": 40107978892,
+      "repository_id": 1329367706,
+      "head_repository_id": 1329367706,
+      "head_branch": "review/remaining-eight-deployed-pins-20261024",
+      "head_sha": "a4f25ce6534baa7144317c4ac09ba30143937aa6"
+    }
+  },
+  "verifiedArchive": {
+    "bytes": 133819,
+    "sha256": "c291ab8175af70d488643ffad5f0f4c5dbaa138a168191ddd52f3cb6adb2f6a7",
+    "entry": "staging-speech.mp3",
+    "payloadBytes": 194156,
+    "payloadSha256": "9a89f3860a66d1d1e0fba139b51fded9a5e0e2f6f19d687616b2efaad1c2f78a"
+  }
+}

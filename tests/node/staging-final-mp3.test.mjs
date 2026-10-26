@@ -5,10 +5,11 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {FINAL_MP3,verifyCompletedEight,verifyEightFiles,reserveFinalMp3,verifyFinalReservation,verifyFinalHistory} from '../../scripts/staging-final-mp3-policy.mjs';
-import {verifyFinalIdentity,verifyCoordinatorGates} from '../../scripts/staging-final-mp3-preflight.mjs';
+import {FINAL_MP3,FINAL_MP3_ZERO,verifyFinalZeroAttempt,finalFixtureArtifactDiagnostic,verifyFinalFixtureArtifact,verifyCompletedEight,verifyEightFiles,reserveFinalMp3,verifyFinalReservation,verifyFinalHistory} from '../../scripts/staging-final-mp3-policy.mjs';
+import {verifyFinalIdentity,verifyCoordinatorGates,finalPreflightFailure} from '../../scripts/staging-final-mp3-preflight.mjs';
 import {verifyFinalRunnerIdentity} from '../../scripts/staging-single-mp3-smoke.mjs';
 const bundle=JSON.parse(await readFile(new URL('../fixtures/historical-ci/final-mp3-lineage.json',import.meta.url),'utf8'));
+const zero=JSON.parse(await readFile(new URL('../fixtures/historical-ci/final-mp3-zero-attempt.json',import.meta.url),'utf8'));
 const clone=x=>structuredClone(x),eight=bundle.completedEight,current='90000000001';
 const proof=()=>verifyCompletedEight(eight.run,eight.jobs,eight.artifacts,eight.files);
 const env={GITHUB_REPOSITORY:'sohweiyu2023/CosmicTranscriberWeb',GITHUB_REF:'refs/heads/main',GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_RUN_ATTEMPT:'1',GITHUB_WORKFLOW:'One approved STAGING MP3 smoke ONLY',COSMIC_SMOKE_AUTHORIZATION:FINAL_MP3.authorization,GITHUB_RUN_ID:current,GITHUB_SHA:'a'.repeat(40),FIXTURE_RUN_ID:String(FINAL_MP3.fixtureRun),FIXTURE_ARTIFACT_ID:String(FINAL_MP3.fixtureArtifact)};
@@ -35,7 +36,7 @@ test('reset, expanded cap, mutated lineage, reused identity and double reservati
  const x=reserveFinalMp3(bundle.priorSmokeFiles,proof(),current);
  for(const change of [{reservedRequests:9},{maximumRequests:11},{reservedMicroUsd:216000},{maximumMicroUsd:2000000},{approval:'other'}])assert.throws(()=>verifyFinalReservation({...x.budget,...change},x.reservation,current,bundle.priorSmokeFiles,proof()));
  for(const change of [{runId:'1'},{priorPaidRequests:8},{additionalApprovedRequests:2},{additionalReservationMicroUsd:9000},{oneShot:false},{lineage:{...proof(),paidRequests:8}}])assert.throws(()=>verifyFinalReservation(x.budget,{...x.reservation,...change},current,bundle.priorSmokeFiles,proof()));
- for(const id of ['0','-1','abc',39979683866,40200059681,40161696792,40113556242])assert.throws(()=>reserveFinalMp3(bundle.priorSmokeFiles,proof(),id));
+ for(const id of ['0','-1','abc',39979683866,40200059681,40161696792,40113556242,FINAL_MP3_ZERO.run])assert.throws(()=>reserveFinalMp3(bundle.priorSmokeFiles,proof(),id));
  assert.throws(()=>reserveFinalMp3({...bundle.priorSmokeFiles,'budget.json':'{}'},proof(),current));
  assert.throws(()=>reserveFinalMp3(bundle.priorSmokeFiles,{...proof(),paidRequests:8},current));
 });
@@ -51,13 +52,43 @@ test('coordinator main must have actual successful exact-head CI and licensing',
 test('complete history admits one final run and rejects duplicate, partial and active paid history',()=>{
  const old={id:39979683866,event:'workflow_dispatch',run_attempt:1,status:'completed',conclusion:'success'};
  const now={id:Number(current),event:'workflow_dispatch',head_branch:'main',run_attempt:1,path:'.github/workflows/staging-single-mp3-smoke.yml'};
- const held=bundle.heldZero;const remaining=[held.run,eight.run],jobs={[held.run.id]:held.jobs,[eight.run.id]:eight.jobs};const heldProof={artifacts:held.artifacts,files:held.files};
- const verify=(s=[old,now],r=remaining,c=[],j=jobs)=>verifyFinalHistory(s,r,c,j,current,{},heldProof,{},proof());
- assert.equal(verify(),true);
- assert.throws(()=>verify([old,now,{...now,id:90000000002}]));assert.throws(()=>verify([now]));assert.throws(()=>verify([old,{...now,run_attempt:2}]));assert.throws(()=>verify([old,now],[...remaining,{...eight.run,id:90000000003}]));assert.throws(()=>verify([old,now],[eight.run]));
- assert.throws(()=>verify([old,now],remaining,[{id:4,status:'in_progress',run_attempt:1}],{...jobs,4:[]}));
- for(const conclusion of ['success','failure','cancelled'])assert.throws(()=>verify([old,now],remaining,[{id:4,status:'completed',run_attempt:1}],{...jobs,4:[{name:'Actual authenticated STAGING paid nine-format acceptance',run_attempt:1,status:'completed',conclusion}]}));
+ const held=bundle.heldZero;const remaining=[held.run,eight.run],jobs={[held.run.id]:held.jobs,[eight.run.id]:eight.jobs,[zero.run.id]:zero.jobs};const heldProof={artifacts:held.artifacts,files:held.files};
+ const verify=(s=[old,zero.run,now],r=remaining,c=[],j=jobs)=>verifyFinalHistory(s,r,c,j,current,{},heldProof,{},proof(),zero);
+ assert.equal(verify(),true);assert.throws(()=>verify([old,now]));assert.throws(()=>verify([old,zero.run,zero.run,now]));
+ assert.throws(()=>verify([old,zero.run,now,{...now,id:90000000002}]));assert.throws(()=>verify([zero.run,now]));assert.throws(()=>verify([old,zero.run,{...now,run_attempt:2}]));assert.throws(()=>verify([old,zero.run,now],[...remaining,{...eight.run,id:90000000003}]));assert.throws(()=>verify([old,zero.run,now],[eight.run]));
+ assert.throws(()=>verify([old,zero.run,now],remaining,[{id:4,status:'in_progress',run_attempt:1}],{...jobs,4:[]}));
+ for(const conclusion of ['success','failure','cancelled'])assert.throws(()=>verify([old,zero.run,now],remaining,[{id:4,status:'completed',run_attempt:1}],{...jobs,4:[{name:'Actual authenticated STAGING paid nine-format acceptance',run_attempt:1,status:'completed',conclusion}]}));
 });
+
+test('real artifact capture rejects the original mistyped pin and all changed identity/hash metadata',()=>{
+ assert.equal(zero.verifiedArchive.sha256,'c291ab8175af70d488643ffad5f0f4c5dbaa138a168191ddd52f3cb6adb2f6a7');
+ assert.equal(FINAL_MP3.fixtureDigest,zero.verifiedArchive.sha256);assert.equal(verifyFinalFixtureArtifact([zero.artifact]),true);
+ for(const change of [{id:1},{name:'other'},{digest:'sha256:c291ab8175af70d488643ffad5f0c4c5dbaa138a168191ddd52f3cb6adb2f6a7'},{expired:true},{size_in_bytes:1},{workflow_run:{id:1,head_sha:zero.artifact.workflow_run.head_sha}},{workflow_run:{...zero.artifact.workflow_run,head_sha:'0'.repeat(40)}}])assert.throws(()=>verifyFinalFixtureArtifact([{...zero.artifact,...change}]));
+ assert.throws(()=>verifyFinalFixtureArtifact([]));assert.throws(()=>verifyFinalFixtureArtifact([zero.artifact,zero.artifact]));
+});
+
+test('artifact failure diagnostics are bounded, public-identity-only and distinguish pre-reservation zero execution',()=>{
+ const secret='DO-NOT-LOG-PRIVATE-CONTENT';
+ const candidate={...zero.artifact,name:secret,digest:secret,workflow_run:{...zero.artifact.workflow_run,head_sha:secret}};
+ const diagnostic=finalFixtureArtifactDiagnostic(Array(100).fill(candidate));assert.equal(diagnostic.actual.length,2);assert.equal(diagnostic.candidateCount,100);assert.equal(JSON.stringify(diagnostic).includes(secret),false);assert.equal(diagnostic.actual[0].digest,null);assert.equal(diagnostic.actual[0].head,null);assert.equal(diagnostic.actual[0].nameMatches,false);
+ let error;try{verifyFinalFixtureArtifact([{...zero.artifact,digest:'sha256:'+'0'.repeat(64)}])}catch(e){error=e}
+ const report=finalPreflightFailure('fixed-fixture-artifact',error,'not-written');assert.equal(report.code,'final_fixture_artifact_mismatch');assert.equal(report.artifact.expected.digest,zero.artifact.digest);assert.equal(report.artifact.actual[0].digest,'sha256:'+'0'.repeat(64));assert.equal(report.paidRequests,0);assert.equal(report.reservationState,'not-written');assert.equal(report.byokState,'not-started');assert.equal(report.cleanup,'not-required');
+ for(const state of ['budget-write-started','budget-written','reservation-write-started','reservation-written','lineage-write-started','complete'])assert.equal(finalPreflightFailure('fixed-fixture-artifact',error,state).reservationState,state);
+ const unrelated=finalPreflightFailure('fixed-fixture-artifact',{message:secret,code:'final_fixture_artifact_mismatch',artifactDiagnostic:{secret}},'existing-not-modified');assert.equal(JSON.stringify(unrelated).includes(secret),false);assert.equal(unrelated.code,'final_preflight_rejected');assert.equal(unrelated.reservationState,'existing-not-modified');assert.equal('artifact' in unrelated,false);
+});
+
+test('only exact immutable zero-execution graph is reconciled; changed or started evidence rejects',()=>{
+ assert.equal(verifyFinalZeroAttempt(zero.run,zero.jobs,zero),true);
+ for(const change of [{id:1},{head_sha:'0'.repeat(40)},{head_branch:'other'},{event:'push'},{path:'other'},{run_attempt:2},{status:'queued'},{conclusion:'success'}])assert.throws(()=>verifyFinalZeroAttempt({...zero.run,...change},zero.jobs,zero));
+ for(const change of [{id:1},{run_id:1},{run_attempt:2},{name:'other'},{status:'in_progress'},{conclusion:'cancelled'}])assert.throws(()=>verifyFinalZeroAttempt(zero.run,[{...zero.jobs[0],...change}],zero));
+ assert.throws(()=>verifyFinalZeroAttempt(zero.run,[],zero));assert.throws(()=>verifyFinalZeroAttempt(zero.run,[...zero.jobs,...zero.jobs],zero));
+ for(let i=0;i<zero.jobs[0].steps.length;i++){for(const field of ['name','number','status','conclusion']){const j=clone(zero.jobs);j[0].steps[i][field]=field==='number'?999:'changed';assert.throws(()=>verifyFinalZeroAttempt(zero.run,j,zero));}}
+ const removed=clone(zero.jobs);removed[0].steps.pop();assert.throws(()=>verifyFinalZeroAttempt(zero.run,removed,zero));
+ for(const name of Object.keys(zero.workflowBlobs))assert.throws(()=>verifyFinalZeroAttempt(zero.run,zero.jobs,{...zero,workflowBlobs:{...zero.workflowBlobs,[name]:'0'.repeat(40)}}));
+ assert.throws(()=>verifyFinalZeroAttempt(zero.run,zero.jobs,{...zero,artifacts:[{id:1}]}));assert.throws(()=>verifyFinalZeroAttempt(zero.run,zero.jobs,{}));
+ const started=clone(zero.jobs);started[0].steps.find(s=>s.name.startsWith('One fixed MP3')).conclusion='success';assert.throws(()=>verifyFinalZeroAttempt(zero.run,started,zero));
+});
+
 test('workflow keeps one request, shared serialization, proof downloads and no deploy successor',async()=>{
  const y=await readFile(new URL('../../.github/workflows/staging-single-mp3-smoke.yml',import.meta.url),'utf8');
  for(const text of ['options: [refuse, one-mp3-same-source-tenth]','github.run_attempt == \'1\'','cancel-in-progress: false','group: cosmic-approved-paid-staging','artifact-ids: 12601587812','artifact-ids: 12586114319','artifact-ids: 12512662440','ref: '+FINAL_MP3.source,'COSMIC_SINGLE_MP3_MODE: '+FINAL_MP3.mode,'staging-final-mp3-preflight.mjs prepare','staging-final-mp3-preflight.mjs source'])assert.ok(y.includes(text),text);
