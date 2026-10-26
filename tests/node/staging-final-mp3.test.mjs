@@ -5,8 +5,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
-import {FINAL_MP3,FINAL_MP3_ZERO,verifyFinalZeroAttempt,verifyFinalFixtureArtifact,verifyCompletedEight,verifyEightFiles,reserveFinalMp3,verifyFinalReservation,verifyFinalHistory} from '../../scripts/staging-final-mp3-policy.mjs';
-import {verifyFinalIdentity,verifyCoordinatorGates} from '../../scripts/staging-final-mp3-preflight.mjs';
+import {FINAL_MP3,FINAL_MP3_ZERO,verifyFinalZeroAttempt,finalFixtureArtifactDiagnostic,verifyFinalFixtureArtifact,verifyCompletedEight,verifyEightFiles,reserveFinalMp3,verifyFinalReservation,verifyFinalHistory} from '../../scripts/staging-final-mp3-policy.mjs';
+import {verifyFinalIdentity,verifyCoordinatorGates,finalPreflightFailure} from '../../scripts/staging-final-mp3-preflight.mjs';
 import {verifyFinalRunnerIdentity} from '../../scripts/staging-single-mp3-smoke.mjs';
 const bundle=JSON.parse(await readFile(new URL('../fixtures/historical-ci/final-mp3-lineage.json',import.meta.url),'utf8'));
 const zero=JSON.parse(await readFile(new URL('../fixtures/historical-ci/final-mp3-zero-attempt.json',import.meta.url),'utf8'));
@@ -66,6 +66,17 @@ test('real artifact capture rejects the original mistyped pin and all changed id
  for(const change of [{id:1},{name:'other'},{digest:'sha256:c291ab8175af70d488643ffad5f0c4c5dbaa138a168191ddd52f3cb6adb2f6a7'},{expired:true},{size_in_bytes:1},{workflow_run:{id:1,head_sha:zero.artifact.workflow_run.head_sha}},{workflow_run:{...zero.artifact.workflow_run,head_sha:'0'.repeat(40)}}])assert.throws(()=>verifyFinalFixtureArtifact([{...zero.artifact,...change}]));
  assert.throws(()=>verifyFinalFixtureArtifact([]));assert.throws(()=>verifyFinalFixtureArtifact([zero.artifact,zero.artifact]));
 });
+
+test('artifact failure diagnostics are bounded, public-identity-only and distinguish pre-reservation zero execution',()=>{
+ const secret='DO-NOT-LOG-PRIVATE-CONTENT';
+ const candidate={...zero.artifact,name:secret,digest:secret,workflow_run:{...zero.artifact.workflow_run,head_sha:secret}};
+ const diagnostic=finalFixtureArtifactDiagnostic(Array(100).fill(candidate));assert.equal(diagnostic.actual.length,2);assert.equal(diagnostic.candidateCount,100);assert.equal(JSON.stringify(diagnostic).includes(secret),false);assert.equal(diagnostic.actual[0].digest,null);assert.equal(diagnostic.actual[0].head,null);assert.equal(diagnostic.actual[0].nameMatches,false);
+ let error;try{verifyFinalFixtureArtifact([{...zero.artifact,digest:'sha256:'+'0'.repeat(64)}])}catch(e){error=e}
+ const report=finalPreflightFailure('fixed-fixture-artifact',error,'not-written');assert.equal(report.code,'final_fixture_artifact_mismatch');assert.equal(report.artifact.expected.digest,zero.artifact.digest);assert.equal(report.artifact.actual[0].digest,'sha256:'+'0'.repeat(64));assert.equal(report.paidRequests,0);assert.equal(report.reservationState,'not-written');assert.equal(report.byokState,'not-started');assert.equal(report.cleanup,'not-required');
+ for(const state of ['budget-write-started','budget-written','reservation-write-started','reservation-written','lineage-write-started','complete'])assert.equal(finalPreflightFailure('fixed-fixture-artifact',error,state).reservationState,state);
+ const unrelated=finalPreflightFailure('fixed-fixture-artifact',{message:secret,code:'final_fixture_artifact_mismatch',artifactDiagnostic:{secret}},'existing-not-modified');assert.equal(JSON.stringify(unrelated).includes(secret),false);assert.equal(unrelated.code,'final_preflight_rejected');assert.equal(unrelated.reservationState,'existing-not-modified');assert.equal('artifact' in unrelated,false);
+});
+
 test('only exact immutable zero-execution graph is reconciled; changed or started evidence rejects',()=>{
  assert.equal(verifyFinalZeroAttempt(zero.run,zero.jobs,zero),true);
  for(const change of [{id:1},{head_sha:'0'.repeat(40)},{head_branch:'other'},{event:'push'},{path:'other'},{run_attempt:2},{status:'queued'},{conclusion:'success'}])assert.throws(()=>verifyFinalZeroAttempt({...zero.run,...change},zero.jobs,zero));

@@ -7,7 +7,7 @@ import {collectPages} from './staging-single-mp3-preflight.mjs';
 import {readPreflightJson,collectRunAttemptJobs,verifySource} from './staging-remaining-eight-preflight.mjs';
 import {POLICY,APPROVED_DEPLOYMENT,ZERO_PAID_ATTEMPT,RESERVED_ZERO_ATTEMPT} from './staging-remaining-eight-policy.mjs';
 import {CANCELLED_CI_PIN} from './staging-cancelled-ci-proof.mjs';
-import {FINAL_MP3,FINAL_MP3_ZERO,verifyFinalFixtureArtifact,verifyCompletedEight,reserveFinalMp3,verifyFinalHistory} from './staging-final-mp3-policy.mjs';
+import {FINAL_MP3,FINAL_MP3_ZERO,finalFixtureFailureDiagnostic,verifyFinalFixtureArtifact,verifyCompletedEight,reserveFinalMp3,verifyFinalHistory} from './staging-final-mp3-policy.mjs';
 export function verifyFinalIdentity(env){
  assert.equal(env.GITHUB_REPOSITORY,POLICY.repo);assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.GITHUB_RUN_ATTEMPT,'1');
  assert.equal(env.GITHUB_WORKFLOW,'One approved STAGING MP3 smoke ONLY');assert.equal(env.COSMIC_SMOKE_AUTHORIZATION,FINAL_MP3.authorization);
@@ -17,8 +17,14 @@ export function verifyFinalIdentity(env){
 export function verifyCoordinatorGates(runs,sha){
  for(const workflow of ['ci.yml','licensing.yml']){const matching=runs.filter(r=>r.path==='.github/workflows/'+workflow&&r.head_sha===sha&&r.head_branch==='main'&&r.event==='push');assert.ok(matching.length>0);assert.ok(matching.every(r=>r.status==='completed'&&r.conclusion==='success'));}
 }
+export function finalPreflightFailure(phase,error,reservationState){
+ const result={status:'FAIL',phase,code:'final_preflight_rejected',paidRequests:0,reservationState,byokState:'not-started',cleanup:'not-required',releaseReady:false};
+ const artifact=phase==='fixed-fixture-artifact'?finalFixtureFailureDiagnostic(error):undefined;
+ if(artifact){result.code='final_fixture_artifact_mismatch';result.artifact=artifact;}
+ return result;
+}
 export async function readFour(dir){const files=Object.create(null);for(const e of await readdir(dir,{withFileTypes:true})){assert.equal(e.isFile(),true);files[e.name]=await readFile(path.join(dir,e.name));}return files;}
-async function main(){let phase='identity';try{
+async function main(){let phase='identity',reservationState=process.argv[2]==='source'?'existing-not-modified':'not-written';try{
  const env=process.env;verifyFinalIdentity(env);assert.ok(['prepare','source'].includes(process.argv[2]));
  const output=path.resolve(env.COSMIC_SMOKE_EVIDENCE);await mkdir(output,{recursive:true});
  const gh=route=>readPreflightJson('https://api.github.com/repos/'+POLICY.repo+route,env.GH_TOKEN);
@@ -47,9 +53,9 @@ async function main(){let phase='identity';try{
  if(process.argv[2]==='prepare'){
   phase='fixed-fixture-artifact';const artifacts=await collectPages(gh,'/actions/runs/'+FINAL_MP3.fixtureRun+'/artifacts','artifacts');
   verifyFinalFixtureArtifact(artifacts);
-  await writeFile(path.join(output,'budget.json'),JSON.stringify(planned.budget)+'\n',{flag:'wx'});
-  await writeFile(path.join(output,'reservation.json'),JSON.stringify(planned.reservation)+'\n',{flag:'wx'});
-  await writeFile(path.join(output,'lineage.json'),JSON.stringify(proof)+'\n',{flag:'wx'});
+  reservationState='budget-write-started';await writeFile(path.join(output,'budget.json'),JSON.stringify(planned.budget)+'\n',{flag:'wx'});reservationState='budget-written';
+  reservationState='reservation-write-started';await writeFile(path.join(output,'reservation.json'),JSON.stringify(planned.reservation)+'\n',{flag:'wx'});reservationState='reservation-written';
+  reservationState='lineage-write-started';await writeFile(path.join(output,'lineage.json'),JSON.stringify(proof)+'\n',{flag:'wx'});reservationState='complete';
  }else{
   phase='deployed-source';assert.match(env.CLOUDFLARE_ACCOUNT_ID||'',/^[a-f0-9]{32}$/i);
   const pin=APPROVED_DEPLOYMENT,run=await gh('/actions/runs/'+pin.run),deployJobs=await collectPages(gh,'/actions/runs/'+pin.run+'/jobs','jobs');
@@ -58,5 +64,5 @@ async function main(){let phase='identity';try{
   await writeFile(path.join(output,'source.json'),JSON.stringify(verifySource(run,deployJobs,sourceCi,licensing,cf.result?.deployments))+'\n',{flag:'wx'});
  }
  console.log(JSON.stringify({status:'PASS',phase,paidRequests:0,releaseReady:false}));
- }catch{console.log(JSON.stringify({status:'FAIL',phase,code:'final_preflight_rejected',paidRequests:0,releaseReady:false}));process.exitCode=1}}
+ }catch(error){console.log(JSON.stringify(finalPreflightFailure(phase,error,reservationState)));process.exitCode=1}}
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main();

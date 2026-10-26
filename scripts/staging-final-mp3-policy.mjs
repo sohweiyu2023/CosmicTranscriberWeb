@@ -15,9 +15,21 @@ export function verifyFinalZeroAttempt(run,jobs,evidence){
  assert.deepEqual(evidence.artifacts,[]);assert.deepEqual(evidence.workflowBlobs,p.blobs);
  return true;
 }
+const fixtureFailures=new WeakMap();
+export function finalFixtureFailureDiagnostic(error){const value=error&&typeof error==='object'?fixtureFailures.get(error):undefined;return value?structuredClone(value):undefined;}
+export function finalFixtureArtifactDiagnostic(artifacts){
+ const p=FINAL_MP3,candidates=Array.isArray(artifacts)?artifacts.filter(a=>a?.id===p.fixtureArtifact):[];
+ const integer=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+ const digest=value=>typeof value==='string'&&/^sha256:[a-f0-9]{64}$/.test(value)?value:null;
+ const head=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value)?value:null;
+ return {expected:{id:p.fixtureArtifact,digest:'sha256:'+p.fixtureDigest,bytes:133819,run:p.fixtureRun,head:'a4f25ce6534baa7144317c4ac09ba30143937aa6'},candidateCount:candidates.length,
+  actual:candidates.slice(0,2).map(a=>({id:integer(a.id),digest:digest(a.digest),bytes:integer(a.size_in_bytes),run:integer(a.workflow_run?.id),head:head(a.workflow_run?.head_sha),nameMatches:a.name==='cosmic-approved-single-mp3-fixture',unexpired:a.expired===false}))};
+}
 export function verifyFinalFixtureArtifact(artifacts){
- const p=FINAL_MP3,a=artifacts.filter(a=>a.id===p.fixtureArtifact);assert.equal(a.length,1);assert.equal(a[0].name,'cosmic-approved-single-mp3-fixture');assert.equal(a[0].digest,'sha256:'+p.fixtureDigest);assert.equal(a[0].expired,false);assert.equal(a[0].size_in_bytes,133819);assert.equal(a[0].workflow_run.id,p.fixtureRun);assert.equal(a[0].workflow_run.head_sha,'a4f25ce6534baa7144317c4ac09ba30143937aa6');
- return true;
+ try{
+  const p=FINAL_MP3,a=artifacts.filter(a=>a.id===p.fixtureArtifact);assert.equal(a.length,1);assert.equal(a[0].name,'cosmic-approved-single-mp3-fixture');assert.equal(a[0].digest,'sha256:'+p.fixtureDigest);assert.equal(a[0].expired,false);assert.equal(a[0].size_in_bytes,133819);assert.equal(a[0].workflow_run.id,p.fixtureRun);assert.equal(a[0].workflow_run.head_sha,'a4f25ce6534baa7144317c4ac09ba30143937aa6');
+  return true;
+ }catch{const error=Error('Fixed fixture artifact rejected');error.code='final_fixture_artifact_mismatch';fixtureFailures.set(error,finalFixtureArtifactDiagnostic(artifacts));throw error;}
 }
 
 export const EIGHT_FILES=Object.freeze({'budget.json':'fcd4374ad089cc29724324dec581b879216499610b5955d4cbb6110156bb8661','receipt.json':'9228c56a732ee93016f63f7311c3c07abc4d0e7823aa02299eadeec8e60777a9','reservation.json':'280149fa73a1bd41cce15e557ea35d1ba189e3d614deb93c12b11db3bcec88ae','source.json':'3b38dd6922cdb9dbf855de54e1e046c691b90f10012fcd3eab6d1eeb8b36fa6b'});
