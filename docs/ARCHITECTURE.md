@@ -3,14 +3,15 @@
 ## Baselines
 - Functional/behavioral control: Cosmic Transcriber for Windows 1.0.27.
 - Structural reference only: wake-call-cloudflare-v5.4.19.
-- Web version: independent semantic version `1.1.1`; diagnostics expose both Web version and desktop behavioral baseline.
+- Web version: independent semantic version `1.2.0`; diagnostics expose both Web version and desktop behavioral baseline.
 
 ## Data path
 
 ```text
 Browser
-  local MP3 parse + streaming SHA-256
-  frame-safe bounded chunk materialization
+  streaming source SHA-256
+  MP3: frame-safe bounded chunk materialization
+  FLAC/MP4/MPEG/MPGA/M4A/OGG/WAV/WebM: validated whole-file body
     ↓ same-origin HTTPS
 Cloudflare Access edge gate
     ↓
@@ -34,7 +35,7 @@ Browser validates result
 | DPAPI API-key storage | AES-GCM encrypted short-lived HttpOnly cookie, Access-sub bound |
 | Open Output Folder | TXT/Markdown/combined downloads |
 | Local checkpoint file | IndexedDB integrity-checked checkpoint |
-| Work lock | UI single-run gate + job/chunk attempt IDs; no server DB by default |
+| Work lock | UI single-run gate + D1 single-use attempt receipts before upstream dispatch; separate tabs/devices may create distinct paid attempts |
 | MP3 frame parser | Browser Blob-slice parser port preserving frame/VBR invariants |
 | Desktop dialogs | Native `<dialog>`/accessible status UI |
 | Desktop dropdowns | Native HTML `<select>` controls |
@@ -56,7 +57,9 @@ Server-side V1: no R2/D1/KV/DO audio or transcript persistence. Browser: non-sec
 ## Resource budget
 Application audio ceiling: 24,000,000 bytes per source body, under OpenAI's documented 25 MB file maximum. Worker uses Streams rather than full-body `formData()`/`arrayBuffer()`. OpenAI response ceiling: 4 MiB. Browser aggregate transcript ceiling: 25,000,000 characters per file; queue ceiling: 10,000 files; complete combined export ceiling: 1,000 files. Export strings are generated lazily on click instead of retained as duplicate transcript copies. Cloudflare Workers memory is currently documented as 128 MB; production concurrency/CPU measurements remain a deployment acceptance gate because they cannot be honestly inferred from source alone.
 
-## External assumptions — retrieved 2026-08-10
+## External assumptions
+
+See [the dated verification register](EXTERNAL_ASSUMPTIONS.md). Historical reference links below do not imply every assumption has been reverified for this checkout.
 - OpenAI file transcription guide and fixed endpoint behavior: https://developers.openai.com/api/docs/guides/speech-to-text
 - OpenAI Audio Transcriptions API reference: https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create
 - OpenAI pricing: https://developers.openai.com/api/docs/pricing

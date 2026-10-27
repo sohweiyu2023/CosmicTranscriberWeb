@@ -43,7 +43,7 @@ The final certification run must independently prove all of the following on the
 - [ ] Fresh ZIP extraction + `npm ci` + complete release verification PASS.
 - [ ] CI ZIP internal manifest says `releaseReady:false`, `certificationLevel:staging`, and exact dependency-lock SHA matches.
 - [ ] Independent final certified ZIP audit PASS.
-- [ ] Final `ALL RELEASE GATES GREEN` job PASS.
+- [ ] Final `RELEASE BROWSER GATE - native Safari PASS or exact disclosed exception` job passes its policy. Record actual native Safari PASS or the exact FAIL/WAIVED signature separately.
 - [ ] Certified ZIP SHA-256 recorded before user handoff.
 
 ## V1.2 staging upgrade — preserve existing BYOK secret
@@ -52,7 +52,7 @@ After all-platform CI succeeds, use a fresh extraction of its exact staging-cert
 
 - [ ] `npm ci` under shipped private Node/npm toolchain PASS.
 - [ ] `npm run configure:access:staging` with existing staging team domain/AUD.
-- [ ] `npm run configure:registry:staging` creates/resolves the private staging D1 and stores exact Access admin email(s).
+- [ ] Verify/reuse the existing private staging D1 and exact Access administrator configuration before `npm run configure:registry:staging`; investigate missing resources instead of creating them during an upgrade.
 - [ ] `node scripts/deploy-verify.mjs staging` says `Deployment configuration verified for staging.`
 - [ ] Existing `BYOK_SESSION_MASTER_KEY_CURRENT` confirmed before deployment.
 - [ ] `npm run deploy:staging` applies pending D1 migrations **before** strict Worker deploy.
@@ -76,7 +76,7 @@ Production already exists, so this is also an **upgrade**.
 - [ ] Windows `npm run package:source` without candidate flags reruns local/native-ZIP verification on the same accepted source without dependency or fixture changes.
 - [ ] Fresh final ZIP has `releaseReady:true`, `certificationLevel:release`; archive SHA-256 recorded and accepted application/lock/fixture identities preserved. No manual flag change.
 - [ ] Fresh certified source configured with existing production Access team domain and production AUD.
-- [ ] `npm run configure:registry:production` creates/resolves a **different** production D1 and exact production admin email(s).
+- [ ] Verify/reuse the existing production D1, distinct from staging, and existing administrator configuration before `npm run configure:registry:production`; stop if identity is missing or mismatched.
 - [ ] `node scripts/deploy-verify.mjs production` PASS.
 - [ ] Existing production `BYOK_SESSION_MASTER_KEY_CURRENT` confirmed and preserved.
 - [ ] `npm run deploy:production` applies production migrations then strict deploy.

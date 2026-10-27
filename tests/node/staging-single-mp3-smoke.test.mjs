@@ -8,18 +8,24 @@ import {spawnSync} from 'node:child_process';
 import {MP3,verifyFixedMp3,reserveBudget} from '../../scripts/staging-single-mp3-smoke.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 const fixture=process.env.COSMIC_SMOKE_TEST_FIXTURE;
+// Release archives exclude .git. An external local history repository keeps
+// fixture-enabled replay available during fresh-archive certification.
+const sourceRepository=process.env.COSMIC_SMOKE_TEST_SOURCE_REPO||root;
 const needsFixture={skip:!fixture?'Set COSMIC_SMOKE_TEST_FIXTURE to the separately preserved synthetic MP3':false};
 // Match Actions: edited diagnostic code runs against a separate clean checkout
 // of the exact deployed source. Clone local objects only; no remote fetch/auth.
 let sourceCheckout;
 if(fixture){
  sourceCheckout=await mkdtemp(path.join(tmpdir(),'cosmic-smoke-source-'));
- const clone=spawnSync('git',['clone','--local','--no-hardlinks','--quiet',root,sourceCheckout],{encoding:'utf8'});assert.equal(clone.status,0,clone.stderr);
- const checkout=spawnSync('git',['checkout','--detach','82392336cfea5bc417098a2c6e3066dafca97b5b'],{cwd:sourceCheckout,encoding:'utf8'});assert.equal(checkout.status,0,checkout.stderr);
- test.after(async()=>{
+ const cleanup=async()=>{
   assert.equal(path.dirname(path.resolve(sourceCheckout)),path.resolve(tmpdir()));assert.ok(path.basename(sourceCheckout).startsWith('cosmic-smoke-source-'));
   await rm(sourceCheckout,{recursive:true,force:true});
- });
+ };
+ try{
+  const clone=spawnSync('git',['clone','--local','--no-hardlinks','--quiet',sourceRepository,sourceCheckout],{encoding:'utf8'});assert.equal(clone.status,0,clone.stderr);
+  const checkout=spawnSync('git',['checkout','--detach','82392336cfea5bc417098a2c6e3066dafca97b5b'],{cwd:sourceCheckout,encoding:'utf8'});assert.equal(checkout.status,0,checkout.stderr);
+ }catch(error){await cleanup();throw error}
+ test.after(cleanup);
 }
 const ledger=()=>({schema:'cosmic-approved-paid-budget-1',maximumRequests:9,maximumMicroUsd:250000,reservedRequests:0,reservedMicroUsd:0});
 test('fixed synthetic MP3 pins bytes/hash and single-model/minute reservation',needsFixture,async()=>{

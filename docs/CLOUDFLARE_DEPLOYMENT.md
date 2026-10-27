@@ -51,22 +51,21 @@ staging Access team domain and AUD were saved. Release provenance remains valid.
 Next: npm run configure:registry:staging
 ```
 
-3. Authenticate Wrangler and verify the Cloudflare account **before any D1 creation**:
+3. First verify the existing secure Wrangler session and intended account with `whoami`. Only if login is actually missing, use the separately approved official keyring login route. Do not create a new grant merely for a routine upgrade:
 
 ```powershell
-node scripts/wrangler-invoke.mjs login --use-keyring
 node scripts/wrangler-invoke.mjs whoami
 ```
 
-Confirm that the displayed account is the intended owner of the staging Worker/domain.
+Confirm that the displayed account is the intended owner of the staging Worker/domain. If no session exists and the official persistent grant is already approved, use `node scripts/wrangler-invoke.mjs login --use-keyring`, then repeat `whoami`; stop on unexpected consent scope.
 
-4. Configure the new private staging registry:
+4. Verify and reuse the existing private staging registry and administrator configuration before running:
 
 ```powershell
 npm run configure:registry:staging
 ```
 
-The helper validates the administrator email input **before remote D1 side effects**, then lists existing D1 databases and creates `cosmic-transcriber-web-staging-users` if it does not already exist. Enter 1–32 comma-separated administrator email addresses **exactly as they appear in the verified Cloudflare Access identity**. The helper writes only the staging `USER_DB` UUID and staging `ADMIN_EMAILS`, and rechecks release provenance. Final full deployment validation deliberately happens only after both partial configuration steps are complete.
+The helper validates the administrator email input **before remote D1 side effects**, then lists existing D1 databases; it can create `cosmic-transcriber-web-staging-users` if missing. For this existing upgrade, verify its expected identity first and stop if absent or mismatched rather than permitting accidental provisioning. Enter 1–32 comma-separated administrator email addresses **exactly as they appear in the verified Cloudflare Access identity**. The helper writes only the staging `USER_DB` UUID and staging `ADMIN_EMAILS`, and rechecks release provenance. Final full deployment validation deliberately happens only after both partial configuration steps are complete.
 
 5. Verify configuration:
 
@@ -165,3 +164,9 @@ Cloudflare Dashboard → Workers & Pages → relevant Worker → Settings → Do
 - Preview URLs disabled.
 
 Open a fresh Incognito/InPrivate browser and verify Cloudflare Access intercepts the hostname before the Cosmic UI appears.
+
+## Existing-resource and rollback checkpoint
+
+Before either upgrade, compare the verified account, exact Worker, Access audience, administrator configuration and existing D1 UUID against the intended environment. Production and staging databases must differ. The configuration helper's ability to create a missing database is not permission to do so during an upgrade. Preserve the existing BYOK master secret; do not use first-deploy helpers.
+
+Immediately before production promotion, record the full currently active version UUID, traffic and annotation using supported `deployments list` / `versions list` metadata. Use that current version as the post-promotion rollback target, not a guessed dashboard prefix or an unrelated older version. See [production operations](PRODUCTION_OPERATIONS.md) for code-versus-migration rollback limits and bounded diagnostic logging.

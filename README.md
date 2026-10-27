@@ -116,4 +116,7 @@ Useful starting points:
 
 ## Current development release
 
-The active development/certification line is **1.2.0**. The project is being held to an all-green rule: no user-facing release ZIP is published until every defined release gate that can validate it has actually executed and passed.
+The active development/certification line is **1.2.0**. Required checks and exact-source staging acceptance must pass before release; genuine Safari must pass or match the expressly documented narrow exception. Preserve FAIL/WAIVED rather than describing a waiver as a Safari pass.
+
+## Upgrade status recorded 27 October 2026
+The 18 October production installation is historical evidence. Later main commits and the accepted staging upgrade are not automatically production deployments. The current upgrade still requires reviewed source/package provenance, exact external certification and production protection/rollback verification. Main, coordinator source and deployed application source are distinct identities. Public promotion remains source-only, not an anonymous hosted public trial. See [staging acceptance](docs/STAGING_SPEECH_ACCEPTANCE.md) and [production operations](docs/PRODUCTION_OPERATIONS.md).

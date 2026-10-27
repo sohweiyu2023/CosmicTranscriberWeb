@@ -49,7 +49,7 @@ Do not bypass the check or substitute an unofficial archive. Confirm internet ac
 `RELEASE-WINDOWS.ps1` creates and extracts a staging-certified ZIP only after its local gates pass, then prints the exact `Prepared deployment folder:` path. Its manifest correctly remains `releaseReady:false` with `certificationLevel:staging`. If certification failed, no deployable folder is promised. Do not guess a path or continue from an audit candidate; external Linux/macOS CI must also pass before staging deployment.
 
 ## `npm ci` says `package-lock.json` is missing
-You are almost certainly still in the audit-candidate tree. That tree deliberately has no fabricated lock and is marked `releaseReady:false`. Run certification successfully first, then change to the **prepared deployment folder printed by `RELEASE-WINDOWS.ps1`** and run `npm ci` there.
+A release-certified ZIP includes its audited `package-lock.json`. Check the exact checkout/extraction and manifest before continuing. Restore the lock only from that matching certified source artifact; do not copy a foreign lock or resolve fresh dependencies inside a certified deployment extraction. A clean development checkout may require the reviewed lock-generation workflow and a newly certified artifact. The prepared staging folder is the exact path printed by successful `RELEASE-WINDOWS.ps1`, not a guessed audit folder.
 
 ## Wrangler says it is not installed
 This normally follows the previous problem: `npm ci` never succeeded in the certified deployment copy, so `node_modules` does not contain Wrangler. Do not install Wrangler globally to bypass the project gate. Enter the prepared certified deployment folder and run its clean `npm ci`.

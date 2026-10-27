@@ -33,7 +33,7 @@ npm run audit:secrets
 npm run release:verify
 ```
 
-`test:integration` builds first and uses Cloudflare `createTestHarness()` against the Wrangler production build/config. The suite starts the harness, resets it between tests, closes it after tests, uses signed test Access JWTs and an MSW JWKS/OpenAI network layer with unhandled requests rejected. The 1.1.1 whole-Worker integration source currently includes 12 scenarios, extending the established Access/BYOK/upstream coverage with registration/account/admin behaviors and D1 migration setup.
+`test:integration` builds first and uses Cloudflare `createTestHarness()` against the Wrangler production build/config. The suite starts the harness, resets it between tests, closes it after tests, uses signed test Access JWTs and an MSW JWKS/OpenAI network layer with unhandled requests rejected. Current whole-Worker integration covers Access/BYOK/upstream, registration/account/admin behavior and local D1 migration setup. Use the exact test report for scenario counts; a fixed historical count is not a certification guarantee.
 
 `test:e2e:core` covers Chromium, Firefox, WebKit and Mobile Safari emulation and remains mandatory on Linux. Windows release verification runs `test:e2e:windows` (Chromium/Firefox), Firefox stress and `test:e2e:branded` (installed Chrome/Edge). macOS runs `test:e2e:macos` (WebKit/mobile emulation/installed Chrome) and `test:safari:real` against an untouched extraction of the exact Windows staging ZIP. See [the prospective platform policy](BROWSER_RELEASE_POLICY.md): the old Windows WebKit failure remains a failure, and none of these changes constitute a new PASS. The local web server uses a randomized port and authenticated health probe with no existing-server reuse.
 
