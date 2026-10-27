@@ -1,6 +1,6 @@
 # Known Limitations
 
-- V1.1 accepts MP3 only; broader WAV/M4A/FLAC/OGG/WebM/MP4 support remains planned V1.x work.
+- Supported inputs are MP3, FLAC, MP4, MPEG, MPGA, M4A, OGG, WAV and WebM. MP3 uses frame-aware preparation; other formats use whole-file uploads within 24,000,000 bytes. MPGA must be complete MPEG Layer III audio; an extension alone does not establish validity.
 - Active transcription jobs require the tab to remain open; durable background jobs are intentionally deferred to V2.
 - After browser restart the user must reselect the original source file; raw audio is not checkpointed.
 - Stateless BYOK cookie deletion does not retroactively revoke a stolen copy; revoke the OpenAI key if compromise is suspected.
@@ -12,3 +12,6 @@
 - Blocking a user in Cosmic prevents application paid/BYOK operations but does not by itself revoke an already-issued Cloudflare Access session. For abuse response, also use an Access-policy exclusion and Access session revocation when appropriate.
 - IndexedDB checkpoints remain inside the local browser profile; a malicious local browser-profile administrator/extension is outside the app trust boundary.
 - D1 stores verified email and Access subject as account metadata. Operators requiring anonymous/pseudonymous registration should not enable the V1.1 registry without redesigning that requirement.
+
+- Genuine desktop Safari remains FAIL/WAIVED only for the documented native-file `NotReadableError` signature. Playwright WebKit and a user-reported iPhone Safari success do not establish genuine Mac Safari acceptance. See [the platform policy](BROWSER_RELEASE_POLICY.md) and [the staging exception](SAFARI_MAC_ACCEPTANCE.md).
+- OpenAI's file-transcription guide now schedules the legacy `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe-diarize` and `whisper-1` models for shutdown on 26 February 2027. Existing compatibility does not establish availability after that date; model migration requires its own schema, pricing and regression review. The current ordinary-transcription default remains `gpt-transcribe`. See [external assumptions](EXTERNAL_ASSUMPTIONS.md).

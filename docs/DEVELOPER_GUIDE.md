@@ -19,3 +19,11 @@ Any parser/chunker change requires CBR/VBR/ID3v2/ID3v1/trailing-junk/leading-jun
 
 ## Billing-sensitive changes
 A successful response must be checkpointed before cancellation is honored. Do not automatically retry an error after upstream dispatch unless the current OpenAI API explicitly documents safe idempotency for this endpoint. No such guarantee was assumed for 1.0.15.
+
+## Non-paid first verification
+
+Use the shipped Node/npm toolchain in a separate source checkout. A certified extraction includes its matching lock; a development checkout without one needs the reviewed lock-generation workflow first. Install with `npm ci --ignore-scripts`, run `npm run deps:install-scripts:verify`, then allow `npm rebuild` only when the exact installed lifecycle scripts are reviewed and permitted. Do not bypass an unrecognized package-script rejection.
+
+Start with `npm run test:worker` and `npm run test:integration`. The integration command builds first; the harness supplies synthetic Access identities, test secrets and local D1 migrations, and MSW rejects unhandled network requests. These are offline application/provider mocks, not paid acceptance, production credentials or proof that a live preview is configured. Browser tests use their own isolated authenticated local harness. See [testing](TESTING_GUIDE.md) and the test configurations before adding a new local server.
+
+An interactive clean-checkout preview recipe with synthetic secrets and canonical preview origin has not been independently validated here; do not improvise authentication bypass or use production secrets to fill that gap. The existing private local launcher is a different deployment mode. Archive fixture replay and its explicit local-history environment variables are documented in [staging acceptance](STAGING_SPEECH_ACCEPTANCE.md).

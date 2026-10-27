@@ -1,6 +1,6 @@
 # External Assumptions Register
 
-Retrieved/reviewed **2026-08-10**. Re-verify on every release because model capability, pricing and Cloudflare limits can change.
+The table below is the historical **10 August 2026** baseline, not a blanket claim of current verification. Re-verify each relevant assumption for a release; the dated update below records only the sources actually checked.
 
 | Assumption | Official source | Release implication |
 |---|---|---|
@@ -21,3 +21,13 @@ Retrieved/reviewed **2026-08-10**. Re-verify on every release because model capa
 | `workers_dev=false` prevents the normal workers.dev route | https://developers.cloudflare.com/workers/configuration/routing/workers-dev/ | production routing gate |
 | Worker Custom Domains created with `custom_domain:true` can create the DNS record and certificate automatically | https://developers.cloudflare.com/workers/configuration/routing/custom-domains/ | do not pre-create a conflicting CNAME; verify the generated record/certificate after deploy |
 | Playwright WebKit automation is not branded Safari and cannot prove real Safari compatibility by itself | https://playwright.dev/docs/browsers | separate real-Mac Safari acceptance remains mandatory |
+
+## Focused source review - 27 October 2026
+
+The official [file-transcription guide](https://developers.openai.com/api/docs/guides/speech-to-text) was re-read for the fixed endpoint, 25 MB limit, `gpt-transcribe` language hints and legacy diarization compatibility. It now announces shutdown on **26 February 2027** for `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe-diarize` and the translations endpoint. This requires a planned compatibility migration; it does not authorize changing models during an accepted release. Runtime success on one date does not override provider deprecation.
+
+The official [pricing](https://developers.openai.com/api/docs/pricing) and [diarization model](https://developers.openai.com/api/docs/models/gpt-4o-transcribe-diarize) references were checked: ordinary `gpt-transcribe` remains US$0.0045/min; legacy 4o/mini minute estimates remain US$0.006/US$0.003, while diarization uses token pricing. Estimates and reservations are not invoices or provider-enforced caps.
+
+[Cloudflare limits](https://developers.cloudflare.com/workers/platform/limits/), [JWT validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) and [secrets](https://developers.cloudflare.com/workers/configuration/secrets/) were checked for the memory/connection limits, independent assertion verification and required-secret deployment behavior. Existing-production upgrades preserve the existing BYOK key; the historical first-deployment note does not instruct key replacement during an upgrade.
+
+[Playwright browsers](https://playwright.dev/docs/browsers) explicitly distinguishes its patched WebKit from branded Safari. WebKit pass and mobile emulation cannot close the documented genuine-Safari exception. Other historical rows remain verification obligations for the exact planned deployment; opening a reference or changing this date does not revalidate them.

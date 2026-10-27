@@ -1,3 +1,11 @@
+## 1.2.0 - current source and upgrade qualification
+
+- Supports MP3, FLAC, MP4, MPEG, MPGA, M4A, OGG, WAV and WebM with bounded upload validation and frame-aware MP3 preparation.
+- Improves browser workflow, export, cancellation/error handling and receipt-bound staging acceptance accounting, preserving no automatic paid retries and privacy-safe evidence.
+- Repairs offline synthetic-smoke replay from source archives using an explicit local history repository and cleanup on checkout failure.
+- Refreshes reviewed development tool minimums to the versions already exercised by main CI: Cloudflare Vitest plugin 1.4.8 and Wrangler 4.153.0; application/runtime dependency changes require separate evidence.
+- Documents cross-run nine-format staging acceptance for application source `88ee4a6`, while retaining the exact genuine Safari FAIL/WAIVED qualification. The historical 18 October production installation and the pending upgrade are distinct; this entry does not announce a new production deployment.
+
 ## 1.1.1 — candidate
 
 - Repairs the V1.1 partial deployment configuration deadlock: Access and registry helpers now validate only their own permitted post-certification edits; the final full deployment verifier runs only after both are configured.
