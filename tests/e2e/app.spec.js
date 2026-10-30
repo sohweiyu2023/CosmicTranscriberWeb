@@ -174,7 +174,7 @@ test('malformed saved preferences recover safely and diagnostics do not expose f
   expect(diagnostic).not.toContain('private-person-name.mp3');
   const parsed=JSON.parse(diagnostic);
   expect(parsed.schema).toBe('cosmic-web-diagnostics-2');
-  expect(parsed.diagnosticsRevision).toBe('privacy-safe-detail-2');
+  expect(parsed.diagnosticsRevision).toBe('typed-bounded-detail-3');
   expect(parsed.runtime.pageSessionId).toMatch(/^page-/);
   expect(Array.isArray(parsed.events)).toBe(true);
 });

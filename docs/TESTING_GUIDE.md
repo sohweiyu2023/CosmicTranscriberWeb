@@ -1,5 +1,19 @@
 # Testing Guide — Cosmic Transcriber Web 1.2.0
 
+## Logging failure-path coverage
+
+These offline regressions use synthetic values and mocked provider responses. They do not certify live-provider behavior or genuine Safari.
+
+| Boundary | Regression coverage |
+|---|---|
+| Provider response | `tests/node/logging-privacy.test.mjs`: known/unknown nested errors, malformed JSON, HTML, oversized/interrupted bodies, safe transport codes and correlation; unchanged billing ambiguity and one mock dispatch |
+| Worker sink/accounting | `tests/node/logging-worker-flow.test.mjs`: throwing sink at dispatch, success, rejection and failed result persistence; preserve HTTP result, one mock dispatch and accounting; correlated auth rejection without dispatch |
+| Typed privacy envelope | `logging-privacy.test.mjs`: secrets under allowed fields, reserved-key overwrite, getters, cyclic/deep arrays, finite enums, bounded retention and mutation/appending outside the ring; incomplete exports remain explicit |
+| Preference storage | Unit tests plus `tests/e2e/diagnostics-storage.spec.js`: denied reads, malformed saved JSON and quota failures; no stored prompt or raw exception message in downloads |
+| Existing guarantees | Existing retry, transport, checkpoint, Worker/integration, static/mutation and browser tests; logging cannot reset a durable receipt or authorize automatic replay |
+
+Unknown classifications, eviction and failed writes are incomplete evidence. Browser exports are page-local; Worker logs still depend on existing platform sampling, delivery and retention. Neither is a complete billing ledger. See [troubleshooting](TROUBLESHOOTING.md) for collection and disclosure limits.
+
 ## Evidence discipline
 
 Never call a release gate PASS unless it actually ran successfully on the named artifact. The editable 1.2.0 candidate is **not release-certified**. Historical 1.1.1 receipts listed 214 static safeguards, 109 Node/ffprobe tests and 308 mutations; those counts are historical, not the current source's results. Current run receipts must establish the Node 26.7.0 dependency-backed Worker, integration, browser, Windows release, macOS real-Safari and native fresh-ZIP gates independently.
