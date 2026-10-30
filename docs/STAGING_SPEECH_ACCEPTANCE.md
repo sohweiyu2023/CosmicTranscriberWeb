@@ -1,4 +1,4 @@
-# V1.2.0 staging nine-format speech acceptance — audit candidate
+# V1.2.0 staging nine-format speech acceptance - audit candidate
 
 This is a staging-only certification improvement. The existing `format.*` one-second
 440 Hz tone fixtures remain unchanged for browser/file-container ingestion tests.
@@ -121,7 +121,7 @@ One smoke plus a subsequent nine-request suite would total ten and requires
 changed request authorization. Existing full-acceptance gates are unchanged.
 Safari remains FAIL/WAIVED; genuine Mac Safari is unvalidated.
 
-## Approved single-MP3 artifact publication — 23 October 2026
+## Approved single-MP3 artifact publication - 23 October 2026
 
 The separate manual smoke uses `tests/fixtures/approved-single-mp3/staging-speech.mp3`,
 not the older nine-format speech MP3. It is exactly 194156 bytes, SHA-256
@@ -164,7 +164,7 @@ retries do not enable retries of paid transcription. Actual tool versions are
 preserved in provisioning output; runner image documentation alone is not proof
 that required codecs are present.
 
-## Remaining eight request candidate — 23 October 2026
+## Remaining eight request candidate - 23 October 2026
 
 Main CI 39974134871 attempt 2 and MP3 smoke 39979683866 passed on main
 `4c5fe43fa3ab0d61da021080a497146b122d0e56`. The smoke receipt records one
@@ -409,3 +409,22 @@ The final run's reservation artifact is `12694028647` (SHA-256 `12236c816772799e
 ## Offline replay from a source archive
 
 Source ZIPs exclude `.git`. Set `COSMIC_SMOKE_TEST_FIXTURE` to the preserved approved synthetic MP3 and `COSMIC_SMOKE_TEST_SOURCE_REPO` to an existing local Git repository containing the test's pinned historical commit. The test clones local objects only with `--no-hardlinks`, checks out the exact commit, and removes its temporary clone after success or setup failure. A missing history commit fails closed. These HTTP-mocked tests do not consume live provider slots or prove live staging acceptance; never substitute private audio or publish local paths.
+
+
+## Prepared new-source campaign - not admitted or executed (30 October 2026)
+
+Main `9a1eb484` and artifact `12982522359` have new logging code and CI-resolved jose 6.2.14. Historical appsource88 receipts remain compatibility evidence only. The prior ten provider slots are consumed; never reset or reuse them. A separate proposed nine-format campaign reserves at most USD0.216 additional, cumulative USD0.4365 and19 calls under the existing USD2 ceiling. All nine existing synthetic files are unchanged; no new content or private recording is needed. No automatic retry is permitted.
+
+`scripts/staging-source-admission.mjs` currently validates only the exact prior completed evidence, historical closure, fixture identities and a non-reserving budget proposal. `admitExecution` is deliberately blocked: actual new staging version/deployment receipt, fresh guard receipt, reviewed coordinator head/workflow identity and durable accounting integration are not yet verified or pinned. User-supplied ready/verified booleans cannot enable it. A local fsync/exclusive-write journal component is now included, but no runnable provider workflow or remote reservation was added. Local test journals and synthetic persistence witnesses are not live admission. No provider dispatch is possible from this candidate.
+
+Before execution, independently verify and pin actual staging evidence; integrate fresh official complete Actions history reads, all-attempt completeness and a shared non-cancelling `cosmic-approved-paid-staging` mutex for every eligible provider path (including the separate automatic CI paid job if retained). Verify current run attempt1/main/exact coordinator and no competing or previous campaign admission. Persist one immutable reservation/dispatch-intent receipt durably before each provider request; after uncertain execution retain its slot and stop. Do not treat a local proposal, forged guard JSON, stale API snapshot or runner test replay as an actual reservation. New workflow integration requires its own review and CI.
+
+No production deployment, credential/grant/policy change or paid call is authorized by this draft. Native Safari remains FAIL/WAIVED, not validated. The existing13 local prerequisite skips remain skips.
+
+### Durable journal integration component (review candidate only)
+
+`staging-source-journal.mjs` writes an exclusive ownership marker and fsyncs a full nine-slot reservation/intent batch. It requires the downloaded exact reservation artifact witness before returning any per-slot descriptor, then fsyncs each local dispatch intent before returning it. Every slot remains reserved if progress is lost. A denial, uncertain outcome, duplicate claim, interrupted write, changed receipt or exhausted slot fails closed; outcomes never automatically release budget or certify the release. The local component performs no network request.
+
+The workflow integration still must acquire the common non-cancelling paid mutex, authenticate fresh official history/metadata, upload and re-download the complete reservation before any provider call, and reject every later campaign run/attempt. A same-run local journal is not a cross-run global lock, and a caller-supplied artifact object is not proof of an authenticated GitHub API read. The separately gated `admitExecution` remains disabled until actual reviewed staging evidence exists. Current tests use only synthetic run/artifact witnesses and temporary files; no paid reservation is created.
+
+Independent review found and corrected two draft defects before publication: a parseable outcome could survive failed fsync/close and incorrectly allow the next slot; and the draft attempt ID did not match the existing diagnostic grammar. The journal now requires private in-process acknowledgments after write, fsync and close all return, serializes mutations, poisons ownership after persistence uncertainty, and never adopts files after a restart. Post-write sync/close failure and concurrent-claim regression cases cover this boundary. Attempt IDs use the existing attempt-plus-24-hex grammar. File fsync alone does not guarantee parent-directory-entry survival on every platform: the immutable remotely reserved full batch and prohibition on automatic process/journal adoption remain mandatory. This is not a restart-recoverable global ledger.
