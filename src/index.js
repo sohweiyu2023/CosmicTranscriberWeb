@@ -94,7 +94,7 @@ async function forgetKeyRoute(request, env, principal) {
   return setCookieHeader(jsonResponse({ ok: true, configured: false, note: "This browser cookie was cleared. If key compromise is suspected, revoke or rotate the OpenAI key at OpenAI." }), clearCredentialCookie());
 }
 
-async function testKeyRoute(request, env, principal) {
+async function testKeyRoute(request, env, principal, requestId) {
   method(request, "POST"); validateOrigin(request, env); await rateLimit(env, "RL_KEY_TEST", principal, "key-test");
   const body = await readSmallJson(request, 2048);
   for (const key of Object.keys(body)) if (key !== "confirmMinimalUsage") throw new ApiError(400, "invalid_json", "Request contains an unsupported field.");
@@ -106,9 +106,17 @@ async function testKeyRoute(request, env, principal) {
     attemptId: randomId("keytest-attempt"), declaredBytes: audio.byteLength, durationSeconds: 0.25, model: "gpt-transcribe",
     languages: [], keywords: [], prompt: "", requestKind: "key-test"
   });
-  const result = await dispatchTranscription({ requestBody: new Blob([audio], { type: "audio/mpeg" }).stream(), metadata, apiKey: session.apiKey });
-  const response = jsonResponse({ ok: true, permitted: true, diagnostics: result.diagnostics });
-  return setCookieHeader(response, session.renewal);
+  const started=Date.now();
+  const log={route:"/api/key/test",requestId,requestKind:"key-test",model:metadata.model,attemptId:metadata.attemptId};
+  safeOperationalLog({...log,category:"dispatch_start",elapsedMs:0});
+  try {
+    const result = await dispatchTranscription({ requestBody: new Blob([audio], { type: "audio/mpeg" }).stream(), metadata, apiKey: session.apiKey, signal:request.signal });
+    safeOperationalLog({...log,category:"success",status:200,openaiRequestId:result.diagnostics.openaiRequestId,elapsedMs:Date.now()-started});
+    return setCookieHeader(jsonResponse({ok:true,permitted:true,diagnostics:{...result.diagnostics,appRequestId:requestId}}),session.renewal);
+  }catch(error){
+    safeOperationalLog({...log,...(error instanceof ApiError?error.details:{}),category:"request_failed",code:error instanceof ApiError?error.code:"internal_error",status:error?.status||502,elapsedMs:Date.now()-started});
+    throw error;
+  }
 }
 
 const RESULT_ACCOUNTING_RETRY_DELAYS_MS = Object.freeze([0, 75, 250]);
@@ -161,7 +169,7 @@ async function transcribeRoute(request, env, principal, requestId, ctx) {
     return setCookieHeader(jsonResponse({ ok: true, result: result.result, diagnostics: { ...result.diagnostics, appRequestId: requestId } }), session.renewal);
   } catch (error) {
     const details = error instanceof ApiError ? error.details : undefined;
-    safeOperationalLog({ route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes, status: error?.status || 502, category: error?.code || "unknown", openaiRequestId: details?.openaiRequestId, elapsedMs: Date.now() - started });
+    safeOperationalLog({ route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes, status: error?.status || 502, category: "request_failed", code: error?.code, billingState: details?.billingState, causeCategory: details?.causeCategory, transportCode: details?.transportCode, errorName: details?.errorName, providerCode: details?.providerCode, providerType: details?.providerType, openaiRequestId: details?.openaiRequestId, elapsedMs: Date.now() - started });
     scheduleTranscriptionResult(ctx, env, principal, metadata, false, { route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes });
     throw error;
   }
@@ -204,6 +212,8 @@ export default {
   async fetch(request, env, ctx) {
     const requestId = randomId("req");
     const url = new URL(request.url);
+    const started=Date.now();
+
     try {
       const principal = await authenticateAccess(request, env);
       if (!url.pathname.startsWith("/api/")) return await authenticatedAssetResponse(request, env);
@@ -213,11 +223,12 @@ export default {
       if (url.pathname === "/api/key/forget") return await forgetKeyRoute(request, env, principal);
       requireActiveAccount(account);
       if (url.pathname === "/api/key/session") return await createKeyRoute(request, env, principal);
-      if (url.pathname === "/api/key/test") return await testKeyRoute(request, env, principal);
+      if (url.pathname === "/api/key/test") return await testKeyRoute(request, env, principal, requestId);
       if (url.pathname === "/api/transcribe") return await transcribeRoute(request, env, principal, requestId, ctx);
       throw new ApiError(404, "route_not_found", "API route not found.");
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 500;
+      safeOperationalLog({route:url.pathname,requestId,category:"request_failed",phase:error instanceof ApiError&&error.details?.billingState?"response":"preflight",code:error instanceof ApiError?error.code:"internal_error",status,elapsedMs:Date.now()-started,...(error instanceof ApiError?error.details:{})});
       const response = jsonResponse(errorToSafeJson(error, requestId), status);
       if (error instanceof ApiError && ["key_session_invalid", "key_session_expired"].includes(error.code)) return setCookieHeader(response, clearCredentialCookie());
       return response;

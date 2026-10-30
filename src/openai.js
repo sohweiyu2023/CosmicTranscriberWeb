@@ -1,7 +1,10 @@
 import { MAX_AUDIO_BYTES, MAX_UPSTREAM_RESPONSE_BYTES, MODELS, OPENAI_TRANSCRIPT_URL, UPSTREAM_TIMEOUT_MS } from "./config.js";
 import { ApiError } from "./errors.js";
 import { formatSpec } from "./audio-formats.js";
-import { decodeUtf8, randomId, safeLogValue, utf8 } from "./utils.js";
+import { decodeUtf8, utf8 } from "./utils.js";
+
+import { safeDiagnosticField } from "../public/js/diagnostic-policy.js";
+export { safeOperationalLog } from "./operational-log.js";
 
 // Only statuses that unambiguously represent an HTTP-level rejection are
 // treated as definitely unbilled. Timeout-like or unusual post-dispatch
@@ -14,6 +17,12 @@ function safeResponseHeader(response,name,max=160){
   const value=String(raw).trim();
   if(!value||/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/u.test(value))return null;
   return value.slice(0,max);
+}
+
+function safeTransportCause(error){
+  // At most one cause link; do not retain messages, stacks, URLs or arbitrary codes.
+  try{return {errorName:safeDiagnosticField("errorName",error?.name),transportCode:safeDiagnosticField("transportCode",error?.code??error?.cause?.code)}}
+  catch{return {errorName:"unknown",transportCode:"unknown"}}
 }
 
 function formField(name, value) {
@@ -124,6 +133,8 @@ export async function dispatchTranscription({ requestBody, metadata, apiKey, sig
   const timer = setTimeout(() => { timedOut = true; upstreamAbort.abort(new Error("UPSTREAM_TIMEOUT")); }, Math.max(1, timeoutMs));
   let response;
   let bytes;
+  let phase = "transport";
+  const context = causeCategory => ({openaiRequestId:safeResponseHeader(response,"x-request-id"),elapsedMs:Date.now()-started,causeCategory});
   try {
     response = await fetchImpl(OPENAI_TRANSCRIPT_URL, {
       method: "POST",
@@ -139,60 +150,47 @@ export async function dispatchTranscription({ requestBody, metadata, apiKey, sig
     });
     // CTW_WORKER_REDIRECT_FAIL_CLOSED
     if (response.status >= 300 && response.status <= 399) {
+      phase = "redirect";
       throw new Error("Unexpected OpenAI redirect blocked after dispatch.");
     }
     try {
+      phase = "body_read";
       bytes = await readBoundedResponse(response);
     } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new ApiError(502, "upstream_ambiguous", "OpenAI began responding, but the complete response was not received. Retrying could create a second transcription charge.", { billingState: "completed_or_ambiguous", openaiRequestId: safeResponseHeader(response,"x-request-id") });
+      if (error instanceof ApiError) { error.details={...error.details,...context("response_limit")}; throw error; }
+      throw new ApiError(502, "upstream_ambiguous", "OpenAI began responding, but the complete response was not received. Retrying could create a second transcription charge.", { billingState: "completed_or_ambiguous", ...context(timedOut?"timeout":signal?.aborted?"caller_abort":"body_read"), ...safeTransportCause(error) });
     }
   } catch (error) {
     if (error instanceof ApiError) throw error;
     const reason = String(error?.message || error || "");
     const localLimit = reason.includes("AUDIO_LIMIT_EXCEEDED") || reason.includes("AUDIO_SIZE_MISMATCH");
-    if (localLimit) throw new ApiError(413, "audio_stream_limit", "The streamed audio did not match the validated size limit.", { billingState: "ambiguous_after_dispatch" });
+    if (localLimit) throw new ApiError(413, "audio_stream_limit", "The streamed audio did not match the validated size limit.", { billingState: "ambiguous_after_dispatch", ...context("upload_size") });
     const message = timedOut ? "The OpenAI request timed out after dispatch and may have been processed. Retrying could create a second transcription charge." : "The OpenAI request may have been transmitted, but a definitive response was not received. Retrying could create a second transcription charge.";
-    throw new ApiError(timedOut ? 504 : 502, "upstream_ambiguous", message, { billingState: "ambiguous_after_dispatch" });
+    throw new ApiError(timedOut ? 504 : 502, "upstream_ambiguous", message, { billingState: "ambiguous_after_dispatch", ...context(timedOut?"timeout":signal?.aborted?"caller_abort":phase), ...safeTransportCause(error) });
   } finally {
     clearTimeout(timer);
     if (signal && onCallerAbort) signal.removeEventListener("abort", onCallerAbort);
   }
-  const requestId = safeResponseHeader(response,"x-request-id");
+  const requestId = context("unknown").openaiRequestId;
   const elapsedMs = Date.now() - started;
   let parsed = null; let text = "";
   try { text = decodeUtf8(bytes); parsed = text ? JSON.parse(text) : {}; } catch {
-    if (response.ok) throw new ApiError(502, "upstream_malformed", "OpenAI returned a malformed transcription response.", { billingState: "completed_or_ambiguous", openaiRequestId: requestId });
+    if (response.ok) throw new ApiError(502, "upstream_malformed", "OpenAI returned a malformed transcription response.", { billingState: "completed_or_ambiguous", openaiRequestId: requestId, elapsedMs, causeCategory: /^\s*</.test(text)?"html_response":"malformed_json" });
   }
   if (!response.ok) {
+    const providerCode=safeDiagnosticField("providerCode",parsed?.error?.code);
+    const providerType=safeDiagnosticField("providerType",parsed?.error?.type);
+    // Preserve the existing quota-vs-rate-limit classification; never retain
+    // the inspected provider message or body in diagnostics.
     const [code, message] = classifyOpenAiStatus(response.status, text);
     const explicitRejection = EXPLICIT_REJECTION_STATUSES.has(response.status);
     throw new ApiError(response.status, code, message, {
       billingState: explicitRejection ? "explicit_rejection" : "ambiguous_after_dispatch",
       openaiRequestId: requestId,
-      retryAfter: safeResponseHeader(response,"retry-after",120)
+      retryAfter: /^\d{1,6}$/.test(safeResponseHeader(response,"retry-after",120)||"")?safeResponseHeader(response,"retry-after",120):null,
+      providerCode, providerType, elapsedMs, causeCategory: parsed ? "provider_rejection" : /^\s*</.test(text)?"html_response":"malformed_json"
     });
   }
   return { result: parsed, diagnostics: { clientRequestId, openaiRequestId: requestId, status: response.status, elapsedMs } };
 }
 
-export function safeOperationalLog(event) {
-  const allowed = {
-    ts: new Date().toISOString(),
-    route: safeLogValue(event.route, 80),
-    requestId: safeLogValue(event.requestId, 100),
-    user: safeLogValue(event.user, 80),
-    jobId: safeLogValue(event.jobId, 80),
-    attemptId: safeLogValue(event.attemptId, 100),
-    requestKind: safeLogValue(event.requestKind, 40),
-    model: safeLogValue(event.model, 80),
-    chunkIndex: Number.isInteger(event.chunkIndex) ? event.chunkIndex : undefined,
-    chunkCount: Number.isInteger(event.chunkCount) ? event.chunkCount : undefined,
-    declaredBytes: Number.isInteger(event.declaredBytes) ? event.declaredBytes : undefined,
-    status: Number.isInteger(event.status) ? event.status : undefined,
-    category: safeLogValue(event.category, 80),
-    openaiRequestId: safeLogValue(event.openaiRequestId, 120),
-    elapsedMs: Number.isFinite(event.elapsedMs) ? Math.round(event.elapsedMs) : undefined
-  };
-  console.log(JSON.stringify(allowed));
-}
