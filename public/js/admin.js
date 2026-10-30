@@ -1,3 +1,7 @@
+import {diagnosticErrorFields} from './diagnostics.js';
+let reportDiagnostic=()=>{};
+export function configureAdminDiagnostics(report){reportDiagnostic=typeof report==='function'?report:()=>{}}
+function reportAdminFailure(operation,error){try{reportDiagnostic('admin_failure',{operation,...diagnosticErrorFields(error),appRequestId:error?.requestId})}catch{}}
 const $ = id => document.getElementById(id);
 const UI = {
   card: $('adminCard'),
@@ -32,7 +36,7 @@ function when(ts) { if(!Number.isFinite(Number(ts))||Number(ts)<=0)return '—';
 async function api(path, options={}) {
   const response = await fetch(path,{credentials:'same-origin',cache:'no-store',...options});
   let body=null; try{body=await response.json()}catch{body={ok:false,error:{code:'malformed_response',message:'The server returned a malformed response.'}}}
-  if(!response.ok||body?.ok===false){const e=new Error(body?.error?.message||`Request failed (${response.status}).`);e.code=body?.error?.code||`http_${response.status}`;e.status=response.status;throw e}
+  if(!response.ok||body?.ok===false){const e=new Error(body?.error?.message||`Request failed (${response.status}).`);e.code=body?.error?.code||`http_${response.status}`;e.status=response.status;e.requestId=body?.requestId||null;throw e}
   return body;
 }
 
@@ -88,7 +92,7 @@ function makeStatusControl(user) {
     try{
       await api(`/api/admin/users/${encodeURIComponent(String(user.id))}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:target})});
       await loadAdmin();
-    }catch(e){UI.error.textContent=safeText(e.message,500);select.value=user.status}
+    }catch(e){reportAdminFailure('write',e);UI.error.textContent=safeText(e.message,500);select.value=user.status}
     finally{setBusy(false)}
   });
   wrap.append(select,save);return wrap;
@@ -115,7 +119,7 @@ function renderUsers(data) {
 export async function refreshAdmin() {
   if(!currentAccount?.isAdmin || busy)return;
   setBusy(true);UI.error.textContent='';
-  try{await loadAdmin()}catch(e){UI.error.textContent=safeText(e.message,500)}
+  try{await loadAdmin()}catch(e){reportAdminFailure('read',e);UI.error.textContent=safeText(e.message,500)}
   finally{setBusy(false)}
 }
 
@@ -134,6 +138,6 @@ UI.registrationMode?.addEventListener('change',async()=>{
   if(!confirm(`Set Cosmic registration to ${mode.toUpperCase()}?\n\n${descriptions[mode]||''}`)){await refreshAdmin();return}
   setBusy(true);UI.error.textContent='';
   try{await api('/api/admin/settings/registration',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode})});await loadAdmin()}
-  catch(e){UI.error.textContent=safeText(e.message,500)}
+  catch(e){reportAdminFailure('write',e);UI.error.textContent=safeText(e.message,500)}
   finally{setBusy(false)}
 });

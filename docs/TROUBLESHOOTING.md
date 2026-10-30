@@ -8,6 +8,8 @@ Worker operational events use schema `cosmic-worker-operational-2`, finite route
 
 The sink is best effort: a console failure cannot turn a successful provider response into a failed transcription or prevent result accounting. `droppedBefore` counts failed writes since the previous successful write in the same Worker isolate, not a global or durable delivery receipt. Existing production Cloudflare sampling/retention settings still apply; a missing log is not proof of zero execution. Review the Cloudflare dashboard's actual retention for your account rather than assuming a fixed retention period. Browser export and server logs are complementary, not a complete audit ledger. Durable dispatch/result receipts remain authoritative for attempt accounting; diagnostic loss never resets them.
 
+Caught key-setup/forget, admin read/write and download/export failures also emit finite events. They retain an app request ID when supplied by the server, but no admin target, email, API-key input or raw exception message. A failing diagnostic callback cannot interrupt admin UI cleanup or change request behavior.
+
 If a report says unknown, incomplete, dropped or failed writes, preserve it and the relevant app/provider request IDs. Do not paste raw provider response bodies, recordings, transcripts, keys or cookies into a bug report. A secret deliberately disguised as a syntactically valid correlation identifier cannot be distinguished solely by its format: callers must continue using generated random IDs, not user content. Do not infer a resolved network cause or a safe retry from an unknown category.
 
 ## API key rejected
