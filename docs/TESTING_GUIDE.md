@@ -7,7 +7,7 @@ These offline regressions use synthetic values and mocked provider responses. Th
 | Boundary | Regression coverage |
 |---|---|
 | Provider response | `tests/node/logging-privacy.test.mjs`: known/unknown nested errors, malformed JSON, HTML, oversized/interrupted bodies, safe transport codes and correlation; unchanged billing ambiguity and one mock dispatch |
-| Worker sink/accounting | `tests/node/logging-worker-flow.test.mjs`: throwing sink at dispatch, success, rejection and failed result persistence; preserve HTTP result, one mock dispatch and accounting; correlated auth rejection without dispatch |
+| Worker sink/accounting | Mandatory dependency-backed `tests/integration/logging-worker-flow.test.js`: throwing sink at dispatch, success, rejection and failed result persistence; preserve HTTP result, one mock dispatch and accounting; correlated auth rejection without dispatch. Keep it out of the dependency-free pre-install archive suite because importing the Worker requires `jose`. No conditional skip is introduced. |
 | Typed privacy envelope | `logging-privacy.test.mjs`: secrets under allowed fields, reserved-key overwrite, getters, cyclic/deep arrays, finite enums, bounded retention and mutation/appending outside the ring; incomplete exports remain explicit |
 | Preference storage | Unit tests plus `tests/e2e/diagnostics-storage.spec.js`: denied reads, malformed saved JSON and quota failures; no stored prompt or raw exception message in downloads |
 | Caught UI errors | `diagnostics-storage.spec.js`: key setup/forget, admin failures and failed diagnostic export remain correlated without private messages, emails or API-key input |

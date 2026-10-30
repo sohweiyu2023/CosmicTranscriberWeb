@@ -54,7 +54,9 @@ export function browserIdentity(userAgent){
 export function makeDiagnosticExport({appVersion,runtime={},browser={},session={},settings={},queue=[],events=[]}){
   const queueRows=Array.isArray(queue)?queue.slice(0,500).map(row=>({
     ...diagnosticFields(row),
-    status:['preparing','ready','running','done','error','pending'].includes(row.status)?row.status:'unknown'
+    errorCode:row.errorCode==null?null:safeCode(row.errorCode),
+    completedModel:row.completedModel==null?null:safeDiagnosticField('completedModel',row.completedModel),
+    status:['inspecting','preparing','ready','running','done','error','pending'].includes(row.status)?row.status:'unknown'
   })):[];
   return {schema:DIAGNOSTICS_SCHEMA,diagnosticsRevision:DIAGNOSTICS_REVISION,
     appVersion:safeDiagnosticField('appVersion',appVersion)??'unknown',generatedAt:new Date().toISOString(),

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {makeDiagnosticEvent,pushDiagnostic,diagnosticCompleteness,diagnosticErrorFields,makeDiagnosticExport,preferenceFailure,browserIdentity} from '../../public/js/diagnostics.js';
 import {safeOperationalLog} from '../../src/operational-log.js';
 import {dispatchTranscription} from '../../src/openai.js';
+import {assertPreparedDiagnostic} from '../safari/native-file-contract.mjs';
 
 const secret='TEST_ONLY_PRIVATE_PROMPT@example.invalid';
 const meta={attemptId:'attempt-'+ 'a'.repeat(24),declaredBytes:4,model:'gpt-transcribe',languages:[],keywords:[],prompt:''};
@@ -51,7 +52,7 @@ test('export removes arbitrary browser/server strings and raw queue/checkpoint c
   assert.equal(forged.eventCompleteness.completeObservedStream,false);assert.equal(forged.eventCompleteness.tracked,false);
   assert.equal(forged.events[0].category,'unknown_event');
   assert.equal(diagnosticErrorFields({code:'user_cancelled',name:'AbortError'}).code,'user_cancelled');
-  assert.equal(makeDiagnosticExport({queue:[{status:'ready',errorCode:null,completedModel:null}]}).queue[0].errorCode,undefined);
+  assert.equal(makeDiagnosticExport({queue:[{status:'ready',errorCode:null,completedModel:null}]}).queue[0].errorCode,null);
   for(const mutate of [rows=>rows[0]={category:secret},rows=>rows.push(makeDiagnosticEvent('success')),rows=>rows.push({category:secret})]){
     const rows=[];pushDiagnostic(rows,makeDiagnosticEvent('success'));mutate(rows);
     const exported=makeDiagnosticExport({events:rows});assert.equal(exported.eventCompleteness.completeObservedStream,false);assert.equal(exported.eventCompleteness.integrity,false);assert.ok(!JSON.stringify(exported).includes(secret));
@@ -102,4 +103,16 @@ test('browser/server context retains only useful typed hints, never the raw user
   assert.deepEqual(browserIdentity(secret),{family:'unknown',major:null});
   const exported=makeDiagnosticExport({browser:{userAgent:'private Chrome/145.0.0.0 '+secret},session:{serverVersion:'1.2.0',accountStatus:'active',registrationMode:'open'}});
   assert.deepEqual(exported.browser.identityHint,{family:'Chromium',major:145});assert.equal(exported.session.serverVersion,'1.2.0');assert.equal(exported.session.accountStatus,'active');assert.ok(!JSON.stringify(exported).includes(secret));
+});
+
+test('export preserves fractional duration and nullable fields required by the existing native-file contract; synthetic only',()=>{
+  const ref='f-'+ 'a'.repeat(24),events=[];
+  pushDiagnostic(events,makeDiagnosticEvent('file_prepared',{fileRef:ref,size:4,chunks:1,duration:.75,audioFormat:'wav'}));
+  const report=makeDiagnosticExport({queue:[{ref,size:4,chunks:1,status:'ready',errorCode:null,completedModel:null,duration:.75}],events});
+  assert.equal(report.queue[0].duration,.75);assert.equal(report.events[0].duration,.75);assert.equal(report.queue[0].errorCode,null);
+  // The independent native acceptance contract intentionally excludes <0.5s
+  // oracles. Keep that threshold intact; this is a synthetic schema test only.
+  assertPreparedDiagnostic(report,{name:'synthetic.wav',format:'wav',before:{size:4},expectedDuration:.75});
+  assert.equal(makeDiagnosticExport({queue:[{status:'ready',duration:.25}]}).queue[0].duration,.25);
+  assert.equal(makeDiagnosticEvent('chunk_dispatch_started',{durationSeconds:.125}).durationSeconds,.125);
 });

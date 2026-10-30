@@ -43,6 +43,7 @@ export function safeDiagnosticField(key,value) {
   if(key==='openaiRequestId')return safeProviderId(value);
   if(['requestId','appRequestId','jobId','attemptId','runId','fileRef','ref','pageSessionId'].includes(key))return safeCorrelation(value);
   if(key==='status')return Number.isInteger(value)&&value>=100&&value<=599?value:undefined;
+  if(key==='duration'||key==='durationSeconds')return typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=2592000?value:undefined;
   if(key==='appVersion'||key==='serverVersion')return typeof value==='string'&&/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value)?value:undefined;
   if(NUMBERS.has(key))return safeInteger(value);
   if(DURATIONS.has(key))return safeDuration(value);
