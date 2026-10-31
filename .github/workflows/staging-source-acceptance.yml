@@ -1,0 +1,61 @@
+name: Bounded exact-source staging verification
+on:
+  workflow_dispatch:
+    inputs:
+      authorization:
+        description: PREPARATION ONLY - execution gate remains disabled; nine new-source slots within existing cumulative USD2 cap
+        required: true
+        type: choice
+        default: refuse
+        options: [refuse, nine-new-source-existing-approval]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: cosmic-approved-paid-staging
+  cancel-in-progress: false
+jobs:
+  source-verification:
+    if: ${{ github.ref == 'refs/heads/main' && github.run_attempt == '1' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+    env:
+      SOURCE_AUTHORIZATION: ${{ inputs.authorization }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Refuse execution until actual deployment and durable admission are reviewed
+        run: node scripts/staging-source-coordinator.mjs preflight
+      - name: Prepare full-batch escrow without provider credentials
+        run: node scripts/staging-source-coordinator.mjs prepare
+      - name: Durably preserve the exact full-batch reservation before provider access
+        id: escrow
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: source-verification-reservation-logging-main-2026-10-31
+          path: .cosmic-source-logging-main-2026-10-31-${{ github.run_id }}-producer/admission.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: One process owns the fixed provider journal, all claims and outcomes
+        env:
+          RESERVATION_ARTIFACT_ID: ${{ steps.escrow.outputs.artifact-id }}
+          STAGING_CF_AUTHORIZATION: ${{ secrets.STAGING_CF_AUTHORIZATION }}
+          STAGING_OPENAI_API_KEY: ${{ secrets.STAGING_OPENAI_API_KEY }}
+        run: node scripts/staging-source-coordinator.mjs execute
+      - name: Preserve sanitized diagnostics and journal outcomes
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: source-verification-evidence-logging-main-2026-10-31
+          path: |
+            source-preparation-support.json
+            .cosmic-source-logging-main-2026-10-31-${{ github.run_id }}-provider/*.json
+          if-no-files-found: warn
+          retention-days: 7

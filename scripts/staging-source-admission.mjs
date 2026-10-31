@@ -5,11 +5,11 @@ const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const fail=code=>{const error=new Error(code);error.code=code;throw error;};
 const requireTrue=(condition,code)=>{if(!condition)fail(code);};
 const freeze=value=>{if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;};
-export const PLAN=freeze({schema:'cosmic-new-source-staging-plan-1',campaign:'logging-main-2026-10-30',
- source:'9a1eb484af143a8d4b0168ae93da01d9c338367c',tree:'22e373cdc7f14e9aec114485e30d8b6e5dd60732',ci:41061569083,artifact:12982522359,
- outerSha256:'ed57d966362210c039e70f6307f211a79038c96efa652ac888e3cfadffceace7',
- innerSha256:'e5bbd776fc67ff511f7a24dce516c8ded77d0281672278f4d71cce1da136fb4c',
- lockSha256:'8bc4ebae4334aa4434041449a6292069cdbf9316c3e7d6a4a0c3a7ce9621377f',
+export const PLAN=freeze({schema:'cosmic-new-source-staging-plan-1',campaign:'logging-main-2026-10-31',
+ source:'d34edd9ef4cccf648d65c71a3b016d78fd76d7bf',tree:'b8934a8e9b3131a4fda613ac6dcdddb9f522df36',ci:41165444076,artifact:13029840169,
+ outerSha256:'191ff4bbd47aa072cad1e48591317ec4f34ddde7e24ae2ebb7ecb1478e82f4a8',
+ innerSha256:'65a57e43bbaac1369c187a86f3ac8679c4326233affda69228769fcd2f6e4bdd',
+ lockSha256:'775d8d63cc1a4a3f1bcd91baa58a19c208cb1c5b0d09e6f1030a71d3ab4fe362',
  origin:'https://transcriber-staging.awakeningtoreality.com',worker:'cosmic-transcriber-web-staging',
  previousRequests:10,previousReservedMicroUsd:220500,additionalRequests:9,additionalMicroUsd:216000,
  maximumRequests:19,maximumMicroUsd:436500,ownerCeilingMicroUsd:2000000,automaticRetries:0,

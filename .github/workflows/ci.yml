@@ -422,6 +422,9 @@ jobs:
           fi
 
   deploy-staging-certified:
+    concurrency:
+      group: cosmic-approved-paid-staging
+      cancel-in-progress: false
     name: Deploy exact staging-verified 1.2 ZIP to STAGING ONLY
     needs: [all-green, windows-release]
     if: ${{ github.event_name == 'push' && github.run_attempt == '1' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.all-green.result == 'success' }}
@@ -563,6 +566,9 @@ jobs:
           echo 'STAGING deployment only. Production remains blocked until live staging acceptance passes.'
 
   staging-live-nine-formats:
+    concurrency:
+      group: cosmic-approved-paid-staging
+      cancel-in-progress: false
     name: Actual authenticated STAGING paid nine-format acceptance
     needs: [deploy-staging-certified]
     if: ${{ github.event_name == 'push' && github.run_attempt == '1' && github.ref == 'refs/heads/ci/v1.2.0-production-readiness' && needs.deploy-staging-certified.result == 'success' }}

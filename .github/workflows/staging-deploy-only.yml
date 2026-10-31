@@ -16,7 +16,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: cosmic-transcriber-staging-deploy-only
+  group: cosmic-approved-paid-staging
   cancel-in-progress: false
 
 jobs:
@@ -46,8 +46,8 @@ jobs:
         run: node scripts/staging-deploy-only.mjs access
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: '12546575744'
-          run-id: '40056803923'
+          artifact-ids: '13029840169'
+          run-id: '41165444076'
           github-token: ${{ github.token }}
           merge-multiple: true
           path: certified
@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s  %s\n' 'eb50541cd16bc14b3d1aeb6b42e7ad6a9440cb09a60ef1370b9955cd8c4e3114' 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
+          printf '%s  %s\n' '65a57e43bbaac1369c187a86f3ac8679c4326233affda69228769fcd2f6e4bdd' 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
           root="$RUNNER_TEMP/pinned-staging-source"
           mkdir -p "$root"
           unzip -q certified/CosmicTranscriberWeb-1.2.0-source.zip -d "$root"
@@ -85,9 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           settings="$RUNNER_TEMP/current-staging-settings.json"
-          curl --fail-with-body --silent --show-error \
-            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${STAGING_WORKER_NAME}/settings" > "$settings"
+          SETTINGS_FILE="$settings" node scripts/staging-deploy-only.mjs settings
           SETTINGS_FILE="$settings" node --input-type=module <<'NODE'
           import {readFile, writeFile} from 'node:fs/promises';
           import path from 'node:path';
@@ -132,7 +130,7 @@ jobs:
           set -euo pipefail
           cd "$CANDIDATE"
           test "$(git -C "$GITHUB_WORKSPACE" ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA" || { echo 'Main advanced before deployment; refusing stale coordinator.' >&2; exit 1; }
-          npm run deploy:staging -- --message "Source88ee4a683c8c277885f0737db53226e658390fae CI40056803923 artifact12546575744"
+          npm run deploy:staging -- --message "Sourced34edd9ef4cccf648d65c71a3b016d78fd76d7bf CI41165444076 artifact13029840169"
       - name: Staging reachability smoke
         shell: bash
         run: |
@@ -147,7 +145,7 @@ jobs:
         run: |
           cd "$CANDIDATE"
           node scripts/wrangler-invoke.mjs deployments list --env staging --json > "$RUNNER_TEMP/staging-after-raw.json"
-          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id==='fdbfa10f-d2bb-4c22-bb32-90e6bb522ab7'||!String(x.annotations?.['workers/message']).includes('Source88ee4a683c8c277885f0737db53226e658390fae CI40056803923 artifact12546575744'))process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:'88ee4a683c8c277885f0737db53226e658390fae',fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json"
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const before=JSON.parse(fs.readFileSync(process.argv[3]));const oldVersion=before.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0].versions[0].version_id;const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id===oldVersion||!String(x.annotations?.['workers/message']).includes('Sourced34edd9ef4cccf648d65c71a3b016d78fd76d7bf CI41165444076 artifact13029840169'))process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:'d34edd9ef4cccf648d65c71a3b016d78fd76d7bf',fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json" "$GITHUB_WORKSPACE/staging-before.json"
       - name: Reassert release boundary
         shell: bash
         run: |
@@ -168,5 +166,6 @@ jobs:
             staging-certification-receipt.json
             staging-before.json
             staging-after.json
+            staging-tool-support.json
           if-no-files-found: warn
           retention-days: 7
