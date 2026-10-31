@@ -67,3 +67,9 @@ test('recognized failure is persisted safely before the child finishes or reconc
   await new Promise(resolve=>setTimeout(resolve,5));await log.flush();const before=await fs.readFile(path.join(directory,'operations-0.jsonl'),'utf8');assert.match(before,/authorization_rejected/);assert.match(before,/"httpStatus":401/);assert.equal(before.includes('synthetic-private-key-body'),false);owned.finish(1);const result=await pending;assert.equal(result.errorCategory,'authorization_rejected');assert.equal(result.renewalVerified,false);
  }finally{owned?.finish(1);if(pending)await pending;await log.flush();await fs.rm(directory,{recursive:true,force:true})}
 });
+
+
+test('installed Wrangler public DNS template is recognized without raw stderr or broad unable matching',async()=>{
+ for(const apostrophe of ["'",'’']){const c=createDeviceFlowCapture({now:()=>start});c.feed('stdout',handoff());c.feed('stderr',"\u001b[31mUnable to resolve Cloudflare"+apostrophe+"s API hostname (api.cloudflare.com or dash.cloudflare.com).\u001b[0m synthetic-private-token https://example.invalid/callback?code=private\n");assert.equal(c.takeHandoff(),null);const r=await c.finish({exitCode:1});assert.equal(r.errorCategory,'dns_failure');assert.equal(r.failureEvidence[0].cause,'dns_resolution');assert.equal(r.failureEvidenceComplete,true);assert.equal(r.phase,'failed-before-handoff');assert.equal(r.renewalVerified,false);assert.equal(r.automaticRetry,false);for(const secret of ['synthetic-private','https://','api.cloudflare.com','dash.cloudflare.com'])assert.equal(JSON.stringify(r).includes(secret),false)}
+ const other=createDeviceFlowCapture();other.feed('stderr','ERROR Unable to find a package manager.\n');const r=await other.finish({exitCode:1});assert.equal(r.errorCategory,'unknown');assert.equal(r.failureEvidenceComplete,false);
+});

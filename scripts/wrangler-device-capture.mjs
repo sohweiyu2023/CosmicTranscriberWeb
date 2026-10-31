@@ -10,7 +10,7 @@ const exceptions=new Set(['Error','TypeError','SyntaxError','AbortError','Timeou
 const templateWords=new Set('error failed failure unable cannot unknown invalid unsupported unexpected argument arguments command option request response endpoint server authorization authentication login device scope grant client malformed json parse parsing network connection connect refused reset timed out timeout dns certificate issuer tls ssl proxy tunnel keyring unavailable installed module dependency permission denied access blocked code internal fetch read write open secure storage'.split(' '));
 const causeRules=[
  ['unsupported_command','invocation_scope_rejected',/Unknown (?:argument|command)|Unrecognized (?:argument|option)|Unsupported (?:command|option)|Not enough non-option arguments/i],
- ['dns_resolution','dns_failure',/\b(?:ENOTFOUND|EAI_AGAIN|getaddrinfo)\b/],
+ ['dns_resolution','dns_failure',/\b(?:ENOTFOUND|EAI_AGAIN|getaddrinfo)\b|Unable to resolve Cloudflare['’]s API hostname/i],
  ['certificate_validation','tls_failure',/\b(?:CERT_HAS_EXPIRED|ERR_TLS_CERT_ALTNAME_INVALID|UNABLE_TO_VERIFY_LEAF_SIGNATURE|UNABLE_TO_GET_ISSUER_CERT_LOCALLY|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN)\b|certificate (?:verify|validation) failed/i],
  ['proxy_transport','network_failure',/\b(?:ERR_PROXY_CONNECTION_FAILED|ERR_TUNNEL_CONNECTION_FAILED|UND_ERR_PRX_TLS)\b|proxy.{0,30}(?:authentication|required|failed)|\bCONNECT\s+407\b/i],
  ['connection_transport','network_failure',/\b(?:ECONNRESET|ECONNREFUSED|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|UND_ERR_SOCKET)\b|fetch failed/i],
