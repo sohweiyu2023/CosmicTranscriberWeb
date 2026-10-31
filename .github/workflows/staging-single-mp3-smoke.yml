@@ -77,7 +77,7 @@ jobs:
       - name: Reconcile exact held unused tenth slot without increasing reservation
         run: node scripts/staging-final-mp3-preflight.mjs prepare
       - name: Persist reused held-slot declaration before any paid attempt
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: single-mp3-approved-reservation
           path: ${{ github.workspace }}/single-mp3-evidence/reservation.json
@@ -126,7 +126,7 @@ jobs:
         run: node scripts/staging-single-mp3-smoke.mjs "$RUNNER_TEMP/single-mp3-fixture/staging-speech.mp3" "$COSMIC_SMOKE_EVIDENCE/receipt.json" "$COSMIC_SMOKE_EVIDENCE/budget.json"
       - name: Preserve only redacted source, reservation and outcome records
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: single-mp3-redacted-evidence
           path: ${{ github.workspace }}/single-mp3-evidence/*.json
