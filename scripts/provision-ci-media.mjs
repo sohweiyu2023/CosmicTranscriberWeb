@@ -8,6 +8,15 @@ export const DECODER_GROUPS=[['mp3','mp3float'],['flac'],['aac','aac_fixed'],['v
 const aptOptions=['-o','Acquire::Retries=2','-o','Acquire::http::Timeout=20','-o','Acquire::https::Timeout=20','-o','DPkg::Lock::Timeout=30'];
 const MIRROR_FILE='/etc/apt/apt-mirrors.txt';
 const REVIEWED_MIRRORS=['http://azure.archive.ubuntu.com/ubuntu/','https://archive.ubuntu.com/ubuntu/','https://security.ubuntu.com/ubuntu/'];
+const failureDetails=new WeakMap();
+const phases=new Set(['platform','probe-existing','mirror-read','mirror-verify','mirror-write','apt-update','apt-install','probe-installed']);
+function failure(code,phase,{exitCode=null,systemCode=null}={}){
+ const e=Error('Media provisioning failed');failureDetails.set(e,Object.freeze({code,phase,exitCode:Number.isInteger(exitCode)&&Math.abs(exitCode)<=32768?exitCode:null,systemCode:['ENOENT','EACCES','EPERM','ETIMEDOUT','ENOBUFS'].includes(systemCode)?systemCode:null}));return e;
+}
+export function mediaFailureDiagnostic(error,{env=process.env,startedAt=Date.now()}={}){
+ const detail=failureDetails.get(error);
+ return Object.freeze({schema:'cosmic-ci-media-failure-1',atUtc:new Date().toISOString(),durationMs:Math.max(0,Math.min(1000000000,Date.now()-startedAt)),component:'ci-media',result:'FAIL',phase:detail&&phases.has(detail.phase)?detail.phase:'unknown',code:detail?.code||'media_unknown_failure',exitCode:detail?.exitCode??null,systemCode:detail?.systemCode??null,imageOS:typeof env.ImageOS==='string'&&/^ubuntu\d{2}$/.test(env.ImageOS)?env.ImageOS:null,imageVersion:typeof env.ImageVersion==='string'&&/^\d{8}\.\d{1,6}\.\d{1,6}$/.test(env.ImageVersion)?env.ImageVersion:null,provisioningVerified:false,validationGateSkipped:false,automaticRetry:false});
+}
 // GitHub's image already configures these official fallbacks. A slowly trickling
 // Azure transfer does not trip APT's idle timeout; prefer the existing archive.
 // Never edit sources, keyrings or trust options, or accept an unknown mirror list.
@@ -21,9 +30,10 @@ export function reviewedMirrorList(text){
 }
 export function preferOfficialMirror(run,{env=process.env,read=readFileSync}={}){
  if(env.GITHUB_ACTIONS!=='true'||env.RUNNER_ENVIRONMENT!=='github-hosted'||env.RUNNER_OS!=='Linux')return false;
- const before=read(MIRROR_FILE,'utf8'),after=reviewedMirrorList(before);
- if(before!==after){const r=run('sudo',['-n','tee',MIRROR_FILE],{input:after,encoding:'utf8',stdio:['pipe','ignore','pipe'],timeout:10000,killSignal:'SIGKILL',maxBuffer:4096});
-  assert.ok(!r.error&&r.status===0,'Could not prefer the reviewed official Ubuntu archive');}
+ let before,after;try{before=read(MIRROR_FILE,'utf8')}catch(error){throw failure(error?.code==='ENOENT'?'media_mirror_file_missing':'media_mirror_read_failed','mirror-read',{systemCode:error?.code})}
+ try{after=reviewedMirrorList(before)}catch{throw failure('media_mirror_list_unrecognized','mirror-verify')}
+ if(before!==after){let r;try{r=run('sudo',['-n','tee',MIRROR_FILE],{input:after,encoding:'utf8',stdio:['pipe','ignore','pipe'],timeout:10000,killSignal:'SIGKILL',maxBuffer:4096})}catch(error){throw failure('media_mirror_write_failed','mirror-write',{systemCode:error?.code})}
+  if(r.error||r.status!==0)throw failure('media_mirror_write_failed','mirror-write',{exitCode:r.status,systemCode:r.error?.code});}
  return true;
 }
 export function aptPlan(){return [
@@ -42,17 +52,22 @@ export function probe(run,log=()=>{}){
  if(verified)log(JSON.stringify({mediaToolchain:'verified',versions,requiredEncoders:ENCODERS,requiredDecoderGroups:DECODER_GROUPS}));return verified;
 }
 export function provision(run=spawnSync,platform=process.platform,log=console.log,options={}){
+ let phase='platform';try{
  assert.equal(platform,'linux','This provisioner is only for Linux CI');
+ phase='probe-existing';
  if(probe(run,log)){log('MEDIA_PROVISION existing tools and required codecs verified');return 'existing';}
  if(preferOfficialMirror(run,options))log('MEDIA_PROVISION official Ubuntu archive preferred on hosted Linux runner');
  log('MEDIA_PROVISION bounded APT installation required');
  for(const step of aptPlan()){
+  phase=step.args.includes('update')?'apt-update':'apt-install';
   const r=run(step.command,step.args,{stdio:'inherit',timeout:step.timeout,killSignal:'SIGKILL',env:{...process.env,DEBIAN_FRONTEND:'noninteractive'}});
-  assert.ok(!r.error&&r.status===0,'Bounded APT provisioning failed; validation remains required');
+  if(r.error||r.status!==0)throw failure('media_apt_failed',phase,{exitCode:r.status,systemCode:r.error?.code});
  }
+ phase='probe-installed';
  assert.ok(probe(run,log),'Installed ffmpeg/ffprobe codec checks failed');
  log('MEDIA_PROVISION installed tools and required codecs verified');return 'installed';
+ }catch(error){if(failureDetails.has(error))throw error;throw failure(phase==='platform'?'media_platform_rejected':phase==='probe-installed'?'media_codec_verification_failed':'media_unexpected_failure',phase,{systemCode:error?.code})}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- try{provision()}catch{console.error('MEDIA_PROVISION FAIL: bounded provisioning or codec verification failed; no validation gate skipped');process.exitCode=1}
+ const startedAt=Date.now();try{provision()}catch(error){try{console.error('MEDIA_PROVISION_FAILURE_JSON='+JSON.stringify(mediaFailureDiagnostic(error,{startedAt})))}catch{};process.exitCode=1}
 }

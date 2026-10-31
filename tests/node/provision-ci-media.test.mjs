@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {provision,probe,aptPlan,ENCODERS,DECODER_GROUPS,hasCapabilities,reviewedMirrorList,preferOfficialMirror} from '../../scripts/provision-ci-media.mjs';
+import {provision,probe,aptPlan,ENCODERS,DECODER_GROUPS,hasCapabilities,reviewedMirrorList,preferOfficialMirror,mediaFailureDiagnostic} from '../../scripts/provision-ci-media.mjs';
 const hosted={GITHUB_ACTIONS:'true',RUNNER_ENVIRONMENT:'github-hosted',RUNNER_OS:'Linux'};
 const originalMirrors='http://azure.archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://archive.ubuntu.com/ubuntu/\tpriority:2\nhttps://security.ubuntu.com/ubuntu/\tpriority:3\n';
 const noHost={env:{}};
@@ -50,4 +50,22 @@ test('mirror preference never reads or writes outside identified hosted Linux CI
 test('unknown mirrors and preference write failure stop before APT or validation',()=>{
  let commands=0;assert.throws(()=>provision(()=>{commands++;return {status:127}},'linux',()=>{},{env:hosted,read:()=>originalMirrors.replace('https://archive.ubuntu.com','https://unknown.example')}));assert.equal(commands,1);
  const calls=[];assert.throws(()=>provision((c)=>{calls.push(c);return {status:127}},'linux',()=>{},{env:hosted,read:()=>originalMirrors}));assert.deepEqual(calls,['ffmpeg','sudo']);
+});
+
+test('missing, unreadable and unrecognized mirror evidence has distinct safe causes and never reaches APT',()=>{
+ for(const [read,code,phase] of [[()=>{throw Object.assign(Error('synthetic-private-path'),{code:'ENOENT'})},'media_mirror_file_missing','mirror-read'],[()=>{throw Object.assign(Error('synthetic-private-path'),{code:'EACCES'})},'media_mirror_read_failed','mirror-read'],[()=>originalMirrors.replace('archive.ubuntu.com','synthetic-private-mirror.example'),'media_mirror_list_unrecognized','mirror-verify']]){
+  let apt=0;try{provision(c=>{if(c==='timeout')apt++;return {status:127}},'linux',()=>{},{env:hosted,read});assert.fail('must reject')}catch(error){const d=mediaFailureDiagnostic(error,{env:{ImageOS:'ubuntu26',ImageVersion:'20261018.50.1'}});assert.equal(d.code,code);assert.equal(d.phase,phase);assert.equal(d.imageVersion,'20261018.50.1');assert.equal(d.validationGateSkipped,false);assert.equal(d.automaticRetry,false);assert.equal(JSON.stringify(d).includes('synthetic-private'),false)}assert.equal(apt,0);
+ }
+});
+
+test('write, timeout, platform and codec failures remain fail-closed with bounded redacted metadata',()=>{
+ const scenarios=[{run:()=>({status:127}),platform:'linux',options:{env:hosted,read:()=>originalMirrors},code:'media_mirror_write_failed',phase:'mirror-write'}, {run:c=>c==='timeout'?{status:124,error:{code:'ETIMEDOUT',message:'synthetic-private-token'}}:{status:127},platform:'linux',options:noHost,code:'media_apt_failed',phase:'apt-update'},{run:()=>({status:0}),platform:'win32',options:noHost,code:'media_platform_rejected',phase:'platform'},{run:c=>c==='timeout'?{status:0}:{status:127},platform:'linux',options:noHost,code:'media_codec_verification_failed',phase:'probe-installed'}];
+ for(const s of scenarios){try{provision(s.run,s.platform,()=>{},s.options);assert.fail('must reject')}catch(e){const d=mediaFailureDiagnostic(e);assert.equal(d.code,s.code);assert.equal(d.phase,s.phase);assert.equal(d.provisioningVerified,false);assert.equal(JSON.stringify(d).includes('synthetic-private'),false)}}
+ const forged=mediaFailureDiagnostic({mediaCode:'synthetic-private-token',mediaPhase:'synthetic-private-path'},{env:{ImageOS:'synthetic-private',ImageVersion:'synthetic-private'}});assert.equal(forged.code,'media_unknown_failure');assert.equal(forged.imageOS,null);assert.equal(JSON.stringify(forged).includes('synthetic-private'),false);
+});
+
+test('mutating a minted Error cannot replace its private diagnostic payload',()=>{
+ let owned;try{preferOfficialMirror(()=>({status:0}),{env:hosted,read:()=>{throw Object.assign(Error('synthetic-private-path'),{code:'ENOENT'})}})}catch(error){owned=error}
+ assert.ok(owned);Object.assign(owned,{mediaCode:'synthetic-private-token',mediaPhase:'synthetic-private-path',exitCode:'synthetic-private-token',systemCode:'synthetic-private-token',message:'synthetic-private-token'});
+ const diagnostic=mediaFailureDiagnostic(owned);assert.equal(diagnostic.code,'media_mirror_file_missing');assert.equal(diagnostic.phase,'mirror-read');assert.equal(diagnostic.systemCode,'ENOENT');assert.equal(diagnostic.exitCode,null);assert.equal(JSON.stringify(diagnostic).includes('synthetic-private'),false);
 });
