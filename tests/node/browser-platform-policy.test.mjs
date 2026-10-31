@@ -26,11 +26,16 @@ test('unknown platforms fail closed and callers cannot mutate required gates', (
   assert.equal(browserGates('win32').length, 3);
 });
 
-test('Playwright E2E listener avoids default Windows ephemeral port range even in fresh ZIP revalidation', async () => {
-  const config=await readFile(new URL('../../playwright.config.js',import.meta.url),'utf8');
-  assert.match(config,/process\.env\.COSMIC_E2E_PORT \|\|= String\(randomInt\(20000,45000\)\)/);
-  assert.doesNotMatch(config,/randomInt\(20000,60000\)/);
-  assert.ok(45000<49152,'Random port upper limit must precede the observed Windows dynamic TCP start');
-  assert.match(config,/reuseExistingServer:false/);
-  assert.match(config,/const origin=`https:\/\/localhost:\$\{e2ePort\}`;/);
+test('Playwright uses a bounded owned TLS listener before runner and workers start', async () => {
+ const config=await readFile(new URL('../../playwright.config.js',import.meta.url),'utf8');
+ const launcher=await readFile(new URL('../../scripts/run-playwright.mjs',import.meta.url),'utf8');
+ assert.match(launcher,/randomInt\(20000,45000\)/);
+ assert.doesNotMatch(launcher,/randomInt\(20000,60000\)/);
+ assert.match(launcher,/fixed\?1:8/);
+ assert.match(launcher,/owned=await start\(\{env,signal\}\)/);
+ assert.match(config,/COSMIC_E2E_OWNED_SERVER/);
+ assert.doesNotMatch(config,/reuseExistingServer:true|webServer:/);
+ assert.match(config,/const origin=`https:\/\/localhost:\$\{e2ePort\}`;/);
+ const {scripts}=JSON.parse(await readFile(new URL('../../package.json',import.meta.url),'utf8'));
+ for(const [name,command] of Object.entries(scripts))if(name.startsWith('test:e2e'))assert.ok(command.includes('node scripts/run-playwright.mjs test'),name);
 });

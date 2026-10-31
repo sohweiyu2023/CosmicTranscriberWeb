@@ -4,6 +4,18 @@ import {readFile,stat} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+// Register before the first await so a lost parent can never leave a fork listening.
+const forkedTlsOptions=process.send?new Promise((resolve,reject)=>{
+ process.once('disconnect',()=>process.exit(1));
+ const timeout=setTimeout(()=>reject(new Error('Owned E2E TLS initialization timed out')),10000);
+ let initialized=false;
+ process.on('message',message=>{
+  if(initialized)return process.exit(1);
+  initialized=true;clearTimeout(timeout);
+  if(message?.type!=='tls-init'||typeof message.key!=='string'||typeof message.cert!=='string'||message.key.length>8192||message.cert.length>8192||!message.key.startsWith('-----BEGIN ')||!message.cert.startsWith('-----BEGIN CERTIFICATE-----'))return reject(new Error('Owned E2E TLS initialization rejected'));
+  resolve({key:message.key,cert:message.cert});
+ });
+}):null;
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..','dist','public');
 const ctwBuiltApp=await readFile(path.join(root,'js','app.js'),'utf8');
 if(!ctwBuiltApp.includes('// CTW_RESTORED_PROMPT_BOUND'))throw new Error('Built E2E app is missing the reviewed restored-prompt repair.');
@@ -26,7 +38,7 @@ function json(res,status,obj,headers={}){res.writeHead(status,{'Content-Type':ct
 function hasSession(req){return (req.headers.cookie||'').split(/;\s*/).includes(COOKIE)}
 // Public certificate is exported only in native acceptance mode. The helper
 // destroys its temporary private-key directory even when export is rejected.
-const tlsOptions=createEphemeralLocalhostTlsOptions({
+const tlsOptions=forkedTlsOptions?await forkedTlsOptions:createEphemeralLocalhostTlsOptions({
   nativeAcceptance,certificateOut:process.env.COSMIC_E2E_TLS_CERT_OUT
 });
 const requestHandler=async(req,res)=>{
@@ -98,4 +110,12 @@ const requestHandler=async(req,res)=>{
 // original HTTP/1.1 server unless the Playwright-only flag is set.
 const http2Enabled=process.env.COSMIC_E2E_HTTP2==='1';
 const server=createE2eTlsServer(tlsOptions,requestHandler,{multiplex:http2Enabled});
-server.listen(PORT,'127.0.0.1',()=>console.log(`Cosmic E2E mock server ${ORIGIN} (${http2Enabled?'h2+http1':'http1'})`));
+server.once('error',error=>{
+ const code=error.code==='EADDRINUSE'?'EADDRINUSE':'LISTEN_FAILED';
+ if(process.send)process.send({type:'startup-error',code},()=>process.exit(1));
+ else{console.error(`Cosmic E2E mock startup failed: ${code}`);process.exitCode=1}
+});
+server.listen(PORT,'127.0.0.1',()=>{
+ if(process.send)process.send({type:'ready',port:PORT,cert:String(tlsOptions.cert)});
+ console.log(`Cosmic E2E mock server ${ORIGIN} (${http2Enabled?'h2+http1':'http1'})`);
+});

@@ -1,21 +1,13 @@
 import {defineConfig,devices} from '@playwright/test';
-import {randomBytes,randomInt} from 'node:crypto';
-
-// Windows hosted runners reserve dynamic TCP ports starting at 49152 (observed by netsh in CI).
-// Keep random HTTPS E2E listener allocation below this range, including fresh-ZIP reruns.
-const e2ePort=Number(process.env.COSMIC_E2E_PORT ||= String(randomInt(20000,45000)));
-const e2eToken=process.env.COSMIC_E2E_TOKEN ||= randomBytes(16).toString('hex');
+// The launcher owns the bound TLS listener before Playwright starts.
+const e2ePort=Number(process.env.COSMIC_E2E_PORT);
+const e2eToken=String(process.env.COSMIC_E2E_TOKEN||'');
+if(!Number.isInteger(e2ePort)||e2ePort<1024||e2ePort>65535||!/^[0-9a-f]{32}$/.test(e2eToken)||!/^[1-9]\d*$/.test(process.env.COSMIC_E2E_OWNED_SERVER||''))throw new Error('Use the owned-server npm E2E launcher.');
 const origin=`https://localhost:${e2ePort}`;
 
 export default defineConfig({
  testDir:'./tests/e2e',fullyParallel:false,workers:process.env.CI?1:undefined,retries:process.env.CI?0:1,timeout:60000,expect:{timeout:10000},
  use:{baseURL:origin,ignoreHTTPSErrors:true,actionTimeout:15000,navigationTimeout:30000,trace:'retain-on-failure',screenshot:'only-on-failure'},
- webServer:{
-  command:'node tests/e2e/mock-server.mjs',
-  url:`${origin}/__cosmic_e2e_health?token=${e2eToken}`,
-  env:{...process.env,COSMIC_E2E_PORT:String(e2ePort),COSMIC_E2E_TOKEN:e2eToken,COSMIC_E2E_HTTP2:'1'},
-  reuseExistingServer:false,ignoreHTTPSErrors:true,timeout:30000,stdout:'pipe',stderr:'pipe'
- },
  projects:[
   {name:'chromium',use:{...devices['Desktop Chrome']}},
   {name:'firefox',use:{...devices['Desktop Firefox']}},
