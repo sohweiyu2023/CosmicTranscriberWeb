@@ -7,7 +7,6 @@ const ansi=/\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const exceptions=new Set(['Error','TypeError','SyntaxError','AbortError','TimeoutError']);
 // Fixed diagnostic grammar, not raw stderr passthrough. Unknown lexical values
 // are replaced; URLs, codes, paths, identifiers and numeric payloads never pass.
-const templateWords=new Set('error failed failure unable cannot unknown invalid unsupported unexpected argument arguments command option request response endpoint server authorization authentication login device scope grant client malformed json parse parsing network connection connect refused reset timed out timeout dns certificate issuer tls ssl proxy tunnel keyring unavailable installed module dependency permission denied access blocked code internal fetch read write open secure storage'.split(' '));
 const causeRules=[
  ['unsupported_command','invocation_scope_rejected',/Unknown (?:argument|command)|Unrecognized (?:argument|option)|Unsupported (?:command|option)|Not enough non-option arguments/i],
  ['dns_resolution','dns_failure',/\b(?:ENOTFOUND|EAI_AGAIN|getaddrinfo)\b|Unable to resolve Cloudflare['’]s API hostname/i],
@@ -23,18 +22,17 @@ const causeRules=[
 ];
 function describeFailure(text,stream){
  const matched=causeRules.find(([, ,pattern])=>pattern.test(text));
- // Replace whole URLs and code-like words first, then admit fixed vocabulary.
- const scrubbed=text.replace(/https?:\/\/\S+|\b[A-Za-z0-9_-]*[0-9_][A-Za-z0-9_-]*\b|\b[A-Z][A-Z0-9_-]{2,}\b/g,' [redacted] ');
- const words=scrubbed.toLowerCase().match(/[a-z]+/g)||[],tokens=[];
- for(const word of words){const token=templateWords.has(word)?word:'[redacted]';if(token==='[redacted]'&&tokens.at(-1)===token)continue;tokens.push(token);if(tokens.length===24)break}
- return Object.freeze({stream,cause:matched?.[0]||'unclassified',category:matched?.[1]||'unknown',messageTemplate:tokens.join(' ')||'[redacted]',rawTextRetained:false});
+ // Fixed source-owned templates contain no projected subprocess words. A valid
+ // mixed-case/lowercase device code can itself be an ordinary vocabulary word.
+ return Object.freeze({stream,cause:matched?.[0]||'unclassified',category:matched?.[1]||'unknown',messageTemplate:matched?`classified ${matched[0]} failure`:'unclassified failure',rawTextRetained:false});
 }
 export function createDeviceFlowCapture({diagnostics,now=Date.now}={}){
  const log=diagnostics||createToolDiagnostics({component:'wrangler-auth'});
  const emittedCategories=new Set();
  const streams={stdout:{tail:'',bytes:0,truncated:false,discardUntilNewline:false,categories:new Set()},stderr:{tail:'',bytes:0,truncated:false,discardUntilNewline:false,categories:new Set()}};
  let phase='bootstrap',uri=null,code=null,deadline=null,handedOff=false,terminal=false,httpStatus=null,errorLines=0,unclassifiedErrors=0,successMessage=false,handoffBlocked=false;
- const failureEvidence=[];let droppedFailureEvidence=0;
+ const failureEvidence=[];let droppedFailureEvidence=0,handoffRejection=null;
+ const rejectHandoff=reason=>{if(handoffRejection===null){handoffRejection=reason;record({phase:'preflight',result:'blocked',errorCategory:'malformed_response'})}streams.stdout.categories.add('malformed_response');handoffBlocked=true;clear();phase='invalid-handoff'};
  const safeNow=()=>{try{const value=now();return Number.isSafeInteger(value)&&value>0?value:null}catch{return null}};
  const record=fields=>{try{log.record({operation:'wrangler-device-login',reconciliationRequired:true,...fields})}catch{}};
  record({phase:'start',result:'started',errorCategory:'none'});
@@ -60,14 +58,14 @@ export function createDeviceFlowCapture({diagnostics,now=Date.now}={}){
   if(/^To authorize wrangler, please visit:$/i.test(cleaned)){clear();phase='awaiting-url';return}
   if(!cleaned)return;
   if(phase==='awaiting-url'){
-   try{const u=new URL(cleaned);if(u.origin!=='https://dash.cloudflare.com'||u.pathname!=='/oauth2/device/verify'||u.username||u.password||u.search||u.hash)throw Error();uri=u.href;phase='awaiting-code-label'}
-   catch{out.categories.add('malformed_response');clear();phase='invalid-handoff'}return;
+   try{const u=new URL(cleaned);if(u.origin!=='https://dash.cloudflare.com'||u.pathname!=='/oauth2/device'||u.username||u.password||u.search||u.hash)throw Error();uri=u.href;phase='awaiting-code-label'}
+   catch{rejectHandoff('verification_url_rejected')}return;
   }
   if(phase==='awaiting-code-label'){
-   if(/^and enter the code:$/i.test(cleaned))phase='awaiting-code';else{out.categories.add('malformed_response');clear();phase='invalid-handoff'}return;
+   if(/^and enter the code:$/i.test(cleaned))phase='awaiting-code';else{rejectHandoff('code_label_rejected')}return;
   }
   if(phase==='awaiting-code'){
-   if(/^[A-Z0-9][A-Z0-9-]{3,31}$/.test(cleaned)){code=cleaned;phase='awaiting-window'}else{out.categories.add('malformed_response');clear();phase='invalid-handoff'}return;
+   if(/^[A-Za-z0-9][A-Za-z0-9-]{3,31}$/.test(cleaned)){code=cleaned;phase='awaiting-window'}else{rejectHandoff('code_format_rejected')}return;
   }
   if(phase==='awaiting-window'){
    const match=cleaned.match(/^You have (\d+(?:\.\d+)?) (seconds?|minutes?)(?: and (\d+(?:\.\d+)?) seconds?)? to approve this request\.$/);
@@ -75,7 +73,7 @@ export function createDeviceFlowCapture({diagnostics,now=Date.now}={}){
    // Wrangler rounds some displayed periods upward. This is intentionally
    // conservative, not an assertion of exact server expiry or grant lifetime.
    if(at!==null&&seconds>5&&seconds<=300){deadline=at+(seconds-5)*1000;phase='handoff-ready';record({phase:'handoff',result:'running',errorCategory:'auth_pending'})}
-   else{out.categories.add('malformed_response');clear();phase='invalid-handoff'}
+   else{rejectHandoff('approval_window_rejected')}
   }
  }
  function feed(stream,chunk){
@@ -103,7 +101,7 @@ export function createDeviceFlowCapture({diagnostics,now=Date.now}={}){
   const summary=out=>({bytes:out.bytes,truncated:out.truncated,categories:[...out.categories]});
   record({phase:'finish',result:status,errorCategory:category,exitCode,exceptionType:exceptions.has(spawnError?.name)?spawnError.name:'unknown',httpStatus,stdout:summary(streams.stdout),stderr:summary(streams.stderr)});
   let support;try{support=await log.exportSupport()}catch{support={schema:'cosmic-tool-support-unavailable-1',complete:false}}
-  return {schema:'cosmic-device-capture-1',status,exitCode:Number.isInteger(exitCode)?exitCode:null,errorCategory:category,phase,handedOff,errorLines,unclassifiedErrors,failureEvidence:Object.freeze([...failureEvidence]),droppedFailureEvidence,failureEvidenceComplete:(failureEvidence.length>0||status==='success'&&category==='none')&&unclassifiedErrors===0&&failureEvidence.every(e=>e.cause!=='unclassified')&&droppedFailureEvidence===0&&!streams.stdout.truncated&&!streams.stderr.truncated,successMessage,renewalVerified:false,requiresReconciliation:true,automaticRetry:false,exactServerExpiryVerified:false,support};
+  return {schema:'cosmic-device-capture-1',status,exitCode:Number.isInteger(exitCode)?exitCode:null,errorCategory:category,phase,handoffRejection,handedOff,errorLines,unclassifiedErrors,failureEvidence:Object.freeze([...failureEvidence]),droppedFailureEvidence,failureEvidenceComplete:(failureEvidence.length>0||status==='success'&&category==='none')&&unclassifiedErrors===0&&failureEvidence.every(e=>e.cause!=='unclassified')&&droppedFailureEvidence===0&&!streams.stdout.truncated&&!streams.stderr.truncated,successMessage,renewalVerified:false,requiresReconciliation:true,automaticRetry:false,exactServerExpiryVerified:false,support};
  }
  return Object.freeze({feed,takeHandoff,finish});
 }
