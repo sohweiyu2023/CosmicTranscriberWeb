@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",
-    "jose": "^6.2.13"
+    "jose": "^6.2.14"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.8",
