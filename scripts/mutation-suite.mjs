@@ -315,8 +315,8 @@ const mutations = [
   ["restore CI E2E retries -> Playwright CI fails fast without retry masking and bounds browser actions", "playwright.config.js", /retries:process\.env\.CI\?0:1/, "retries:1"],
   ["drop retained reviewed workerd install-script approval -> reviewed workerd lifecycle approvals are exact-version pinned to 1.20260801.1 and 1.20260811.1", "package.json", /"workerd@1\.20260801\.1": true/, "\"workerd@1.20260801.1\": false"],
   ["drop newest reviewed workerd install-script approval -> reviewed workerd lifecycle approvals are exact-version pinned to 1.20260801.1 and 1.20260811.1", "package.json", /"workerd@1\.20260811\.1": true/, "\"workerd@1.20260811.1\": false"],
-  ["disable dev dependency registry-latest mapping -> new-release CI refreshes every direct dependency to registry latest before sharing one reviewed graph", "scripts/deps-latest.mjs", /const dev = Object\.keys\(pkg\.devDependencies \|\| \{\}\)\.map\(name => `\$\{name\}@latest`\);/, "const dev = Object.keys(pkg.devDependencies || {}).map(name => name);"],
-  ["stop new-release CI from invoking registry-latest refresh -> new-release CI refreshes every direct dependency to registry latest before sharing one reviewed graph", ".github/workflows/ci.yml", /run: node scripts\/deps-latest\.mjs/, "run: npm install --ignore-scripts --no-audit --no-fund"],
+  ["disable dev dependency registry-latest mapping -> maintenance refreshes direct dependencies explicitly while CI pins the committed graph and preserves freshness", "scripts/deps-latest.mjs", /const dev = Object\.keys\(pkg\.devDependencies \|\| \{\}\)\.map\(name => `\$\{name\}@latest`\);/, "const dev = Object.keys(pkg.devDependencies || {}).map(name => name);"],
+  ["restore automatic registry-latest graph mutation in CI", ".github/workflows/ci.yml", /run: npm ci --ignore-scripts/, "run: node scripts/deps-latest.mjs"],
   ["let already-aborted retry wait sleep -> retry backoff rejects already-aborted signals and rechecks cancellation after checkpoint persistence", "public/js/app.js", /if\(signal\?\.aborted\)\{rej\(new DOMException\('Aborted','AbortError'\)\);return\}/, "void signal;"],
   ["remove post-checkpoint cancellation classification -> retry backoff rejects already-aborted signals and distinguishes cancellation after checkpoint persistence", "public/js/app.js", /if\(userCancelled\)throw e;/, "void userCancelled;"],
   ["stop waiting for explicit 429 response before cancel -> E2E 429 cancellation waits for the rejection response and proves resumable Ready state", "tests/e2e/app.spec.js", /await firstResponse;/, "void firstResponse;"],
@@ -394,6 +394,18 @@ const mutations = [
   ["allow orphan usage outcomes without dispatch match", "src/user-registry.js", /  if \(!dispatched\) throw new ApiError\(409, 'usage_attempt_dispatch_missing'[^\n]+/, ""],
   ["allow Wrangler D1 create to mutate config", "scripts/configure-registry.mjs", /,'--update-config=false','--experimental-auto-create=false','--experimental-provision=false'/g, ""],
   ["remove mutation-suite baseline guard", "scripts/mutation-suite.mjs", /const baselineFailures = safeguards\(files\)\.filter\(\(\[, fn\]\) => !fn\(\)\)\.map\(\(\[guard\]\) => guard\);/, "const baselineFailures = [];"],
+
+  ["remove package hash binding from dependency snapshot", "scripts/verify-reviewed-dependency-graph.mjs", /digest\(packageBytes\)!==snapshot\.packageSha256/g, "false"],
+  ["remove lock hash binding from dependency snapshot", "scripts/verify-reviewed-dependency-graph.mjs", /digest\(lockBytes\)!==snapshot\.lockSha256/g, "false"],
+  ["let a replaced artifact bless its own snapshot", "scripts/verify-reviewed-dependency-graph.mjs", /if\(ci\)verifyCommittedSnapshot\(\{sourceRoot,commit:process\.env\.GITHUB_SHA,snapshotBytes\}\);/, "void 0;"],
+  ["permit a mismatched Workerd in a rehashed graph", "scripts/verify-reviewed-dependency-graph.mjs", /entry\.version!==snapshot\.workerdVersion/g, "false"],
+  ["remove dependency snapshot check from release certification", "scripts/release-verify.mjs", /  \['run','deps:graph:verify'\],\n/, ""],
+  ["permit a nonpublic registry in the dependency snapshot", "scripts/verify-reviewed-dependency-graph.mjs", /url\.hostname!=='registry\.npmjs\.org'/g, "false"],
+
+
+  ["run archive-owned dependency verifier during CI", ".github/workflows/ci.yml", /node "\$\{\{ github\.workspace \}\}\/scripts\/verify-reviewed-dependency-graph\.mjs"/g, "node scripts/verify-reviewed-dependency-graph.mjs"],
+  ["trust archive Git metadata instead of the source checkout", "scripts/verify-reviewed-dependency-graph.mjs", /if\(ci\)verifyCommittedSnapshot\(\{sourceRoot,commit:process\.env\.GITHUB_SHA,snapshotBytes\}\);/, "if(ci)verifyCommittedSnapshot({sourceRoot:targetRoot,commit:process.env.GITHUB_SHA,snapshotBytes});"],
+
 ];
 
 const baselineFailures = safeguards(files).filter(([, fn]) => !fn()).map(([guard]) => guard);
