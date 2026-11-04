@@ -29,15 +29,15 @@ test('closing pending key setup prevents duplicate submissions and retains a vis
 
 test('completed transcript exports survive a real isolated browser close and reopen without resending audio',async({browserName},testInfo)=>{
  const profile=await mkdtemp(path.join(tmpdir(),'cosmic-journey-profile-'));const type={chromium,firefox,webkit}[browserName];let context,requests=0;
- const deviceOptions=Object.fromEntries(['viewport','deviceScaleFactor','isMobile','hasTouch','userAgent'].filter(key=>testInfo.project.use[key]!==undefined).map(key=>[key,testInfo.project.use[key]]));
+ const deviceOptions=Object.fromEntries(['viewport','deviceScaleFactor','isMobile','hasTouch','userAgent','channel'].filter(key=>testInfo.project.use[key]!==undefined).map(key=>[key,testInfo.project.use[key]]));
  const assertDevice=async page=>{
-  expect(page.viewportSize()).toEqual(deviceOptions.viewport);const actual=await page.evaluate(()=>({userAgent:navigator.userAgent,deviceScaleFactor:devicePixelRatio,maxTouchPoints:navigator.maxTouchPoints}));expect(actual.userAgent).toBe(deviceOptions.userAgent);expect(actual.deviceScaleFactor).toBe(deviceOptions.deviceScaleFactor);expect(Number.isInteger(actual.maxTouchPoints)&&actual.maxTouchPoints>=0).toBe(true);
+  expect(deviceOptions.channel).toBe(testInfo.project.use.channel);const browserVersion=page.context().browser().version();expect(browserVersion).toMatch(/^\d+\./);expect(page.viewportSize()).toEqual(deviceOptions.viewport);const actual=await page.evaluate(()=>({userAgent:navigator.userAgent,deviceScaleFactor:devicePixelRatio,maxTouchPoints:navigator.maxTouchPoints}));expect(actual.userAgent).toBe(deviceOptions.userAgent);expect(actual.deviceScaleFactor).toBe(deviceOptions.deviceScaleFactor);expect(Number.isInteger(actual.maxTouchPoints)&&actual.maxTouchPoints>=0).toBe(true);
   let touch=null;if(deviceOptions.hasTouch){
    expect(await page.evaluate(()=>!document.elementFromPoint(1,1)?.closest('a,button,input,select,textarea,[role="button"],summary'))).toBe(true);
    await page.evaluate(()=>{window.__journeyTrustedTouch=null;document.addEventListener('touchstart',event=>{const point=event.touches[0];window.__journeyTrustedTouch={isTrusted:event.isTrusted,touches:event.touches.length,changedTouches:event.changedTouches.length,x:point?.clientX,y:point?.clientY}},{once:true,capture:true})});
    await page.touchscreen.tap(1,1);await expect.poll(()=>page.evaluate(()=>window.__journeyTrustedTouch),{timeout:3000}).toEqual({isTrusted:true,touches:1,changedTouches:1,x:1,y:1});touch=await page.evaluate(()=>window.__journeyTrustedTouch);
   }
-  await testInfo.attach('persistent-device-observation',{body:Buffer.from(JSON.stringify({configured:deviceOptions,observed:actual,touch})),contentType:'application/json'});
+  await testInfo.attach('persistent-device-observation',{body:Buffer.from(JSON.stringify({configured:deviceOptions,browserVersion,observed:actual,touch})),contentType:'application/json'});
  };
  await testInfo.attach('persistent-context-device-contract',{body:Buffer.from(JSON.stringify(deviceOptions)),contentType:'application/json'});
  const open=async()=>{const c=await type.launchPersistentContext(profile,{...deviceOptions,headless:true,ignoreHTTPSErrors:true});await localOnly(c);await c.route('**/api/transcribe',route=>{requests++;return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,result:{text:transcript},diagnostics:{appRequestId:'mock-journey',openaiRequestId:'mock-only'}})})});return c};
