@@ -1,7 +1,7 @@
 import {readFile,realpath,lstat,readdir,writeFile,appendFile,mkdtemp} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath} from 'node:url';
 import {isDeepStrictEqual} from 'node:util';
 import {spawnSync} from 'node:child_process';
 import {createStoredZip,crc32} from './zip-utils.mjs';
@@ -109,7 +109,8 @@ export async function restoreReviewedInputBundle({sourceRoot,commit,zipPath,expe
   return {fixtureCount:targets.length,metadataCopied:false,sha256:expectedSha256};
 }
 const invokedEntry=process.argv[1]?await realpath(process.argv[1]).catch(()=>null):null;
-if(invokedEntry&&import.meta.url===pathToFileURL(invokedEntry).href){
+const moduleEntry=await realpath(fileURLToPath(import.meta.url));
+if(invokedEntry&&invokedEntry===moduleEntry){
   const started=performance.now();let operation='verify-dependency-graph';
   try{
     const args=process.argv.slice(2),ci=args[0]==='--ci';
