@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to transcription controls</a>
+  <a class="skip-link" href="#main" tabindex="0">Skip to transcription controls</a>
   <header class="topbar">
     <div class="brand-wrap">
       <div class="logo" aria-hidden="true">✦</div>
@@ -21,7 +21,7 @@
     </div>
   </header>
 
-  <main id="main" class="shell">
+  <main id="main" class="shell" tabindex="-1">
     <section class="notice" aria-label="Browser lifecycle notice">
       <strong>Keep this tab open while transcribing.</strong>
       V1 checkpoints completed work locally, but active OpenAI calls do not continue after the browser is closed.
@@ -35,7 +35,7 @@
         <li><strong>Check the queue, then start.</strong> Fix any “Needs attention” message before retrying that file. Keep the tab open. Cancel stops further work, but a request already sent to OpenAI may still be charged; an uncertain retry can incur another charge.</li>
         <li><strong>Save the result.</strong> After completion, click a TXT or Markdown download button. Files go to your browser’s configured download folder, usually Downloads, or to the location you choose in its save dialog. Download your transcript before clearing the queue or closing the tab.</li>
       </ol>
-      <p class="fineprint">Completed transcript checkpoints and non-secret settings are stored in this browser profile. After a reload, add the same source file again to resume matching completed chunks. Prompt and glossary text also save locally; avoid sensitive text on a shared device.</p>
+      <p class="fineprint">Completed transcript checkpoints and non-secret settings are stored in this browser profile. After reopening this browser profile, verify your access and key session, add the same source file, keep matching settings and choose Start to restore matching completed chunks and their downloads without resending them. An interrupted request with an uncertain outcome requires confirmation before another attempt. Prompt and glossary text also save locally; avoid sensitive text on a shared device.</p>
     </details>
 
     <section class="key-card card" aria-labelledby="keyHeading">
@@ -57,6 +57,8 @@
         <p class="eyebrow">COSMIC ACCOUNT</p>
         <h2 id="accountHeading">Access status</h2>
         <p id="accountMessage" class="muted">Checking Cosmic registration…</p>
+        <button id="refreshSessionBtn" class="ghost" type="button" aria-describedby="sessionRecoveryHint" disabled>Refresh access status</button>
+        <p id="sessionRecoveryHint" class="fineprint">Refresh after a session expires, an account check fails or approval changes. This does not send audio or call OpenAI.</p>
       </div>
       <div class="account-meta">
         <span class="label">Signed in</span><strong id="accountEmail">—</strong>
@@ -156,6 +158,7 @@
       <label>OpenAI API key <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" maxlength="512" required></label>
       <p class="fineprint">The plaintext key is posted once over HTTPS to this site's Worker. It is never stored in localStorage, sessionStorage or IndexedDB, and the encrypted credential cookie is HttpOnly.</p>
       <div id="keyDialogError" class="error-text" role="alert"></div>
+      <p id="keyDialogProgress" class="muted" role="status" aria-live="polite" hidden></p>
       <div class="dialog-actions"><button class="ghost" value="cancel" type="button" id="cancelKeyBtn">Cancel</button><button id="createKeyBtn" class="primary" type="button">Create secure session</button></div>
     </form>
   </dialog>
