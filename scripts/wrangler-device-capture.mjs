@@ -58,7 +58,7 @@ export function createDeviceFlowCapture({diagnostics,now=Date.now}={}){
   if(/^To authorize wrangler, please visit:$/i.test(cleaned)){clear();phase='awaiting-url';return}
   if(!cleaned)return;
   if(phase==='awaiting-url'){
-   try{const u=new URL(cleaned);if(u.origin!=='https://dash.cloudflare.com'||u.pathname!=='/oauth2/device'||u.username||u.password||u.search||u.hash)throw Error();uri=u.href;phase='awaiting-code-label'}
+   try{const u=new URL(cleaned);if(u.origin!=='https://dash.cloudflare.com'||u.pathname!=='/oauth2/device/verify'||u.username||u.password||u.search||u.hash)throw Error();uri=u.href;phase='awaiting-code-label'}
    catch{rejectHandoff('verification_url_rejected')}return;
   }
   if(phase==='awaiting-code-label'){
