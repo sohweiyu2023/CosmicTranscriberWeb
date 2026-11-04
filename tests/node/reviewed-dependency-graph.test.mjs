@@ -142,3 +142,11 @@ test('producer and consumer CLI exchange the trusted output SHA without copying 
 test('new generated paths must be declared and tracked instead of silently omitted',async()=>bundleFixture(async x=>{
  const snapshot={...x.input.snapshot,fixturePaths:[...x.input.snapshot.fixturePaths,'tests/fixtures/new-generated.wav'],generatedFixturePaths:[...x.input.snapshot.generatedFixturePaths,'tests/fixtures/new-generated.wav']};await writeFile(path.join(x.source,'DEPENDENCY_GRAPH.json'),JSON.stringify(snapshot)+'\n');x.git(['add','DEPENDENCY_GRAPH.json']);x.git(['commit','-m','Synthetic explicit new output policy']);const commit=x.git(['rev-parse','HEAD']);const temp=path.join(x.directory,'new-producer');await mkdir(temp);await assert.rejects(prepareReviewedInputBundle({sourceRoot:x.source,commit,tempRoot:temp}),error=>error.safeDetails?.cause==='fixture_policy_not_tracked')
 }));
+
+test('CLI invoked through a directory alias still runs all source and malformed-input guards',async()=>bundleFixture(async x=>{
+ await writeFile(path.join(x.source,'scripts/verify-reviewed-dependency-graph.mjs'),await readFile(path.join(root,'scripts/verify-reviewed-dependency-graph.mjs')));await copyFile(path.join(root,'scripts/zip-utils.mjs'),path.join(x.source,'scripts/zip-utils.mjs'));
+ const alias=path.join(x.directory,'checkout-alias');await symlink(x.source,alias,process.platform==='win32'?'junction':'dir');
+ const script=path.join(alias,'scripts/verify-reviewed-dependency-graph.mjs');const env={...process.env,GITHUB_WORKSPACE:alias,GITHUB_SHA:x.commit};
+ let result=spawnSync(process.execPath,[script,'--ci'],{cwd:alias,env,encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(result.status,0,result.stderr);assert.ok(result.stdout.trim(),'Alias invocation must execute verification, not exit silently');assert.equal(JSON.parse(result.stdout).status,'PASS');
+ await writeFile(path.join(x.source,'DEPENDENCY_GRAPH.json'),'{ PRIVATE_SYNTHETIC_ALIAS_CANARY');result=spawnSync(process.execPath,[script],{cwd:alias,env,encoding:'utf8',timeout:10000,windowsHide:true});assert.equal(result.status,1);assert.equal(JSON.parse(result.stderr).code,'dependency_snapshot_invalid');assert.equal(result.stderr.includes('PRIVATE_SYNTHETIC_ALIAS_CANARY'),false);
+}));

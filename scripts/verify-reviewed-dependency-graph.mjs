@@ -108,7 +108,8 @@ export async function restoreReviewedInputBundle({sourceRoot,commit,zipPath,expe
   let copied=0;try{for(const [file,bytes] of targets){await writeFile(file,bytes);copied++}}catch(error){fail('dependency_input_bundle_copy_failed',{stage:'fixture_restore',cause:['EACCES','EPERM','ENOSPC','EIO','ENOENT'].includes(error?.code)?error.code:'unknown',copiedFixtures:copied,metadataCopied:false,automaticRetry:false})}
   return {fixtureCount:targets.length,metadataCopied:false,sha256:expectedSha256};
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+const invokedEntry=process.argv[1]?await realpath(process.argv[1]).catch(()=>null):null;
+if(invokedEntry&&import.meta.url===pathToFileURL(invokedEntry).href){
   const started=performance.now();let operation='verify-dependency-graph';
   try{
     const args=process.argv.slice(2),ci=args[0]==='--ci';
