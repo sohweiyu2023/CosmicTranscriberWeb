@@ -135,3 +135,20 @@ Certification must additionally prove:
 - admin UI and status controls work in Chromium, Firefox/WebKit/mobile coverage, branded Windows browsers and real Safari smoke where applicable;
 - registry schema and diagnostics/logging contain no OpenAI keys, raw audio, transcript bodies, prompt text, filenames or fingerprints;
 - mutation tests detect removal of registry/admin authorization and environment-isolation controls.
+
+
+## Native-file timestamp precision in automated WebKit tests
+
+The test oracle predicts exact whole-second disk-backed `File.lastModified`
+values for WebKit on Linux and Windows. Windows was independently compared
+using Playwright 1.64.1/WebKit revision2370 and 1.65.0/revision2388 against the
+same unchanged fixture with millisecond precision and a nonzero sub-second component: both reported the exact floor
+second, while Chromium retained milliseconds. Name, size and full SHA256
+matched on both versions. This is a measured existing precision limit, not
+permission to round fixture timestamps or accept arbitrary timestamp drift.
+
+Equality remains exact; other engines and Darwin WebKit retain millisecond
+checks. Full-file and slice hashes, MIME/name/size, duration, preparation and
+mock dispatch identities remain mandatory. Unknown hosts/engines fail closed.
+Mobile WebKit here is emulation, not genuine Safari. The separate native
+Safari contract and documented FAIL/WAIVED qualification are unchanged.

@@ -65,3 +65,16 @@ test('ephemeral HTTPS cleans up even when OpenSSL fails before creating certific
     await assertNoPrivateKeyArtifacts(dir);
   });
 });
+
+
+test('missing TLS generator preserves a finite actionable cause without private output',async()=>{
+  await withIsolatedTemporaryRoot(async dir=>{
+    let error;
+    try{createEphemeralLocalhostTlsOptions({temporaryRoot:dir,opensslExecutable:path.join(dir,'missing-synthetic-generator')})}catch(e){error=e}
+    assert.equal(error?.code,'tls_generator_missing');
+    assert.deepEqual(error.safeDetails,{stage:'tls_generation',cause:'ENOENT',exitCode:null,rawOutputOmitted:true});
+    assert.equal(JSON.stringify(error).includes(dir),false);
+    assert.equal(error.message.includes(dir),false);
+    await assertNoPrivateKeyArtifacts(dir);
+  });
+});

@@ -9,18 +9,20 @@ const observed=()=>({isFile:true,name:fixture.name,size:96078,type:'audio/wav',l
 const prepared=()=>({schema:'cosmic-web-diagnostics-2',queue:[{ref:'file-ref',size:96078,status:'ready',chunks:1,errorCode:null,duration:1}],events:[{category:'file_prepared',fileRef:'file-ref',audioFormat:'wav',duration:1}]});
 const dispatched=()=>({bytes:96078,sha256:hash,contentType:'audio/wav',metadata:{v:2,audioFormat:'wav',chunkIndex:1,chunkCount:1,model:'gpt-transcribe',requestKind:'transcription',declaredBytes:96078,durationSeconds:1,attemptId:`attempt-${'a'.repeat(24)}`,jobId:`run-${'b'.repeat(24)}`,fileId:`file-${'c'.repeat(24)}`}});
 
-test('Linux WebKit native timestamp requires the exact whole-second value, not a tolerance',()=>{
-  const host={browserName:'webkit',platform:'linux'};
-  assert.equal(expectedNativeLastModified(1791698653912,host),1791698653000);
-  assert.equal(expectedNativeLastModified(1791698653999.75,host),1791698653000);
-  assert.equal(expectedNativeLastModified(1791698654000,host),1791698654000);
-  const expected=expectedNativeLastModified(1791698653912,host);
-  for(const wrong of [1791698652999,1791698653001,1791698653912,1791698654000])assert.throws(()=>assert.equal(wrong,expected));
+test('Linux and Windows WebKit native timestamps require exact whole seconds, not a tolerance',()=>{
+  for(const platform of ['linux','win32']){
+    const host={browserName:'webkit',platform};
+    assert.equal(expectedNativeLastModified(1791698653912,host),1791698653000);
+    assert.equal(expectedNativeLastModified(1791698653999.75,host),1791698653000);
+    assert.equal(expectedNativeLastModified(1791698654000,host),1791698654000);
+    const expected=expectedNativeLastModified(1791698653912,host);
+    for(const wrong of [1791698652999,1791698653001,1791698653912,1791698654000])assert.throws(()=>assert.equal(wrong,expected));
+  }
 });
 
-test('native timestamp seconds precision applies only to Linux WebKit, independent of project labels',()=>{
+test('seconds precision is restricted to measured Linux/Windows WebKit, independent of project labels',()=>{
   for(const platform of ['linux','darwin','win32'])for(const browserName of ['chromium','firefox','webkit']){
-    if(platform==='linux'&&browserName==='webkit')continue;
+    if(['linux','win32'].includes(platform)&&browserName==='webkit')continue;
     assert.equal(expectedNativeLastModified(1791698653912.75,{browserName,platform}),1791698653912,`${browserName} on ${platform}`);
   }
 });
