@@ -17,20 +17,22 @@ const safeIdentity=x=>x&&typeof x==='object'?{
 }:null;
 
 const read=(value,key)=>{try{return value?.[key]}catch{return undefined}};
-const failureKinds=new Set(['none','timeout','interrupted','command-missing','execution-denied','output-limit','apple-events-denied','assistive-access-denied','process-failed','foreground-unverified','native-window-unverified','native-panel-unverified','cleanup-unverified','cleanup-blocked','unknown']);
+const failureKinds=new Set(['none','timeout','interrupted','command-missing','execution-denied','output-limit','output-read-failed','output-write-failed','apple-events-denied','assistive-access-denied','process-failed','foreground-unverified','native-window-unverified','native-panel-unverified','cleanup-unverified','cleanup-blocked','outcome-uncertain','unknown']);
 const signals=new Set(['SIGTERM','SIGKILL','SIGABRT','SIGSEGV','SIGINT']);
 const detailsStates=new Set(['none','recognized-template','status-only','unrecognized-output-omitted']);
 export const ordinaryErrorCategory=value=>{try{return safeError(value)}catch{return 'UnclassifiedError'}};
 export function safeMacProcessFacts(value){
  if(!value||typeof value!=='object')return null;
+ const duration=read(value,'durationMs');
  const status=read(value,'exitStatus'),signal=read(value,'signal'),kind=read(value,'failureKind'),state=read(value,'detailsState'),inspected=read(value,'stderrCharsInspected');
- return {exitStatus:safeExit(status),signal:signals.has(signal)?signal:null,failureKind:failureKinds.has(kind)?kind:'unknown',detailsState:detailsStates.has(state)?state:'unrecognized-output-omitted',stderrPresent:read(value,'stderrPresent')===true,stderrCharsInspected:Number.isSafeInteger(inspected)&&inspected>=0&&inspected<=8192?inspected:null,stderrTruncated:read(value,'stderrTruncated')===true,rawOutput:'omitted'};
+ return {durationMs:Number.isSafeInteger(duration)&&duration>=0?duration:null,outcomeUncertain:read(value,'outcomeUncertain')===true,outputTruncated:read(value,'outputTruncated')===true,exitStatus:safeExit(status),signal:signals.has(signal)?signal:null,failureKind:failureKinds.has(kind)?kind:'unknown',detailsState:detailsStates.has(state)?state:'unrecognized-output-omitted',stderrPresent:read(value,'stderrPresent')===true,stderrCharsInspected:Number.isSafeInteger(inspected)&&inspected>=0&&inspected<=8192?inspected:null,stderrTruncated:read(value,'stderrTruncated')===true,rawOutput:'omitted'};
 }
 export function macProcessFacts(result){
  const status=read(result,'status'),signal=read(result,'signal'),error=read(result,'error'),code=read(error,'code'),raw=read(result,'stderr');
  const text=typeof raw==='string'?raw.slice(0,8192):'';
  let kind='unknown',detailsState=text?'unrecognized-output-omitted':'status-only';
- if(code==='ETIMEDOUT')kind='timeout';else if(code==='ENOENT')kind='command-missing';else if(code==='EACCES'||code==='EPERM')kind='execution-denied';else if(code==='ENOBUFS')kind='output-limit';
+ if(code==='EUNCERTAIN')kind='outcome-uncertain';else if(code==='ABORT_ERR')kind='interrupted';else if(code==='ETIMEDOUT')kind='timeout';else if(code==='ENOENT')kind='command-missing';else if(code==='EACCES'||code==='EPERM')kind='execution-denied';else if(code==='ENOBUFS')kind='output-limit';else if(code==='EIO')kind='output-read-failed';
+ else if(/could not write.*(?:image|file)|could not save.*(?:image|file)/i.test(text)){kind='output-write-failed';detailsState='recognized-template'}
  else if(/CTW_SAFARI_CLEANUP_BLOCKED/.test(text)){kind='cleanup-blocked';detailsState='recognized-template'}
  else if(/CTW_SAFARI_CLEANUP_UNVERIFIED/.test(text)){kind='cleanup-unverified';detailsState='recognized-template'}
  else if(/CTW_SAFARI_NOT_FOREGROUND/.test(text)){kind='foreground-unverified';detailsState='recognized-template'}
@@ -39,7 +41,7 @@ export function macProcessFacts(result){
  else if(/not authorized to send Apple events/i.test(text)){kind='apple-events-denied';detailsState='recognized-template'}
  else if(/not allowed assistive access|not trusted for accessibility/i.test(text)){kind='assistive-access-denied';detailsState='recognized-template'}
  else if(signals.has(signal))kind='interrupted';else if(status===0&&!error){kind='none';detailsState='none'}else if(Number.isInteger(status)&&status!==0)kind='process-failed';
- return safeMacProcessFacts({exitStatus:status,signal,failureKind:kind,detailsState,stderrPresent:typeof raw==='string'&&raw.length>0,stderrCharsInspected:text.length,stderrTruncated:typeof raw==='string'&&raw.length>8192});
+ return safeMacProcessFacts({durationMs:read(result,'elapsedMs'),outcomeUncertain:read(result,'outcomeUncertain'),outputTruncated:read(result,'outputTruncated'),exitStatus:status,signal,failureKind:kind,detailsState,stderrPresent:typeof raw==='string'&&raw.length>0,stderrCharsInspected:text.length,stderrTruncated:typeof raw==='string'&&raw.length>8192});
 }
 
 // Read-only ownership checks precede every native action. Never send keys to
@@ -103,7 +105,7 @@ tell application "Safari"
 end tell`;
 }
 export async function runOrdinaryCleanup(operation,report){
- try{await operation()}catch(error){report.status='FAIL';report.cleanupErrorCode=ordinaryErrorCategory(error)}
+ try{await operation()}catch(error){report.status='FAIL';report.failurePhase??='cleanup';report.cleanupErrorCode=ordinaryErrorCategory(error)}
 }
 
 const safeStage=x=>{const stage=read(x,'stage');return {
@@ -122,7 +124,7 @@ const safeNative=x=>x&&typeof x==='object'?{
 }:null;
 export function sanitizeOrdinarySafariReport(raw){
  const r=raw&&typeof raw==='object'?raw:{};
- const status=read(r,'status'),browserVersion=read(r,'browserVersion'),architecture=read(r,'architecture');
+ const status=read(r,'status'),browserVersion=read(r,'browserVersion'),architecture=read(r,'architecture'),failurePhase=read(r,'failurePhase'),readiness=read(r,'pageReadiness');
  return {
   schema:'cosmic-ordinary-safari-file-probe-1',
   role:'diagnostic-only-not-release-or-SafariDriver-certification',
@@ -133,7 +135,11 @@ export function sanitizeOrdinarySafariReport(raw){
   architecture:['arm64','x64'].includes(architecture)?architecture:'UNKNOWN',
   fixturesPreserved:r.fixturesPreserved===true,sourceAfter:safeIdentity(r.sourceAfter),selectedAfter:safeIdentity(r.selectedAfter),
   processes:Object.fromEntries(['browserMetadata','fixtureCopy','browserOpen','browserClose','failureScreenshot'].map(key=>[key,safeMacProcessFacts(r.processes?.[key])])),
-  source:safeIdentity(r.source),
+  source:safeIdentity(r.source),selectedExpected:safeIdentity(r.selectedExpected),
+  fixtureMaterialization:r.fixtureMaterialization==='certified-mp3-1980-mtime'?'certified-mp3-1980-mtime':null,
+  failurePhase:['setup','page-readiness','native-picker','cleanup'].includes(failurePhase)?failurePhase:null,
+  uiOutcomeUncertain:r.uiOutcomeUncertain===true,fixtureCleanupState:r.fixtureCleanupState==='preserved-for-uncertain-ui-outcome'?'preserved-for-uncertain-ui-outcome':null,cleanupState:r.cleanupState==='skipped-uncertain-ui-outcome'?'skipped-uncertain-ui-outcome':null,
+  pageReadiness:readiness?Object.fromEntries([...['homeRequests','homeResponsesFinished','readyCallbacks','invalidReadyBodies','resultCallbacks','otherRequests','elapsedMs'].map(key=>[key,safeNum(read(readiness,key))]),...['acknowledged','titleMatches','inputPresent','secureContext','cryptoSubtlePresent'].map(key=>[key,read(readiness,key)===true])]):null,
   origin:r.origin==='loopback-http-test-only'?'loopback-http-test-only':null,
   guiPicker:r.guiPicker?{
    method:r.guiPicker.method==='genuine-System-Events-mouse-click-and-open-panel'?'genuine-System-Events-mouse-click-and-open-panel':'OTHER',

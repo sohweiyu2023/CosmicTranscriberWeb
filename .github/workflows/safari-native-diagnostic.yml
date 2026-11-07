@@ -101,9 +101,10 @@ jobs:
           # 91c5a4b1cf405c6c01836541c8b06b173f1f8b6fe7085b11fa266cec39c4f74f.
           # Probe/report changes add reviewed diagnostics only, not certification.
           cat > "$RUNNER_TEMP/ordinary-safari-reviewed.sha256" <<'REVIEWED'
-          05689d0c91fee1ecca88f93dfb166797e5565eaad15ccc4da4fb796d6121a67c  tests/safari/ordinary-native-gui-probe.mjs
+          18cc2a716bb9a323ad7fc661cc6331a0bd10b19d8c4b2feea1be712de0cee670  tests/safari/ordinary-native-gui-probe.mjs
+          b7d1e9ba9d70c08f02f227ce712c1b41f9c196cb1963baf33d470720198a9fc8  tests/safari/ordinary-native-runtime.mjs
           8bb15551acf7c20bf46466436e10e40b073443bb17836946ed9f4d96fcf2ee32  tests/safari/ordinary-native-file-contract.mjs
-          bb0024ae3734f5e06aba8fe9b1591e6c14e5a3caacdaeb48e81b7670a95b6756  tests/safari/ordinary-native-report-sanitize.mjs
+          34c46f4fd1d0ec6cef2a424958a613f7fd8340b753a1e4be26d9bcc9f351c0fd  tests/safari/ordinary-native-report-sanitize.mjs
           76538cb6310f56cfd50c80843842d611f5140769f761db4ebb5d9d3aa3dd944b  tests/safari/disk-access-probe-contract.mjs
           e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55  tests/fixtures/format.mp3
           REVIEWED

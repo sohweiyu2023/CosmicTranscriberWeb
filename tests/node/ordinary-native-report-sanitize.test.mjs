@@ -70,7 +70,7 @@ test('ordinary diagnostic is bounded, default driver-free, read-only and source 
  assert.match(workflow,/native-safari-diagnostic:\s*if: \$\{\{ github.event_name == 'push' \|\| inputs.include_driver == true \}\}/);
  assert.match(workflow,/permissions:\s+contents: read\s+jobs:/);
  const ordinary=workflow.split('  ordinary-safari-gui-diagnostic:')[1];assert.ok(ordinary);assert.equal(ordinary.includes('npm '),false);assert.equal(ordinary.includes('safaridriver'),false);assert.equal(ordinary.includes('sudo '),false);assert.match(ordinary,/timeout-minutes: 4/);assert.match(ordinary,/COSMIC_ORDINARY_SAFARI_EXPECTED_VERSION: '27.2'/);
- const expected=['tests/safari/ordinary-native-gui-probe.mjs','tests/safari/ordinary-native-file-contract.mjs','tests/safari/ordinary-native-report-sanitize.mjs','tests/safari/disk-access-probe-contract.mjs','tests/fixtures/format.mp3'];
+ const expected=['tests/safari/ordinary-native-gui-probe.mjs','tests/safari/ordinary-native-runtime.mjs','tests/safari/ordinary-native-file-contract.mjs','tests/safari/ordinary-native-report-sanitize.mjs','tests/safari/disk-access-probe-contract.mjs','tests/fixtures/format.mp3'];
  const listed=Array.from(ordinary.matchAll(/^\s+([0-9a-f]{64})  (tests\/[^\r\n]+)$/gm));assert.equal(listed.length,expected.length);assert.deepEqual(listed.map(x=>x[2]),expected);
  for(const [,hash,file] of listed){const bytes=await readFile(new URL('../../'+file,import.meta.url));assert.equal(createHash('sha256').update(bytes).digest('hex'),hash,file)}
 });
@@ -90,4 +90,9 @@ test('ordinary native input requires verified Safari window then native panel ow
 test('ordinary cleanup closes only the positively owned unblocked page and fails terminally on disk errors',async()=>{
  const script=ordinarySafariCleanupScript('http://127.0.0.1:34567/');assert.match(script,/URL of current tab/);assert.match(script,/count of sheets/);assert.match(script,/close ownedWindow/);assert.equal(script.includes('to quit'),false);assert.throws(()=>ordinarySafariCleanupScript('https://private.invalid/'));assert.throws(()=>ordinarySafariCleanupScript('http://127.0.0.1:34567/?token=private'));
  const report={status:'PASS'};await runOrdinaryCleanup(async()=>{throw Object.assign(new Error(secret),{code:'EPERM'})},report);assert.equal(report.status,'FAIL');assert.equal(report.cleanupErrorCode,'PermissionDenied');assert.equal(JSON.stringify(report).includes(secret),false);
+});
+
+test('ordinary readiness and uncertainty evidence is bounded and secret-free',()=>{
+ const safe=sanitizeOrdinarySafariReport({...base,failurePhase:'page-readiness',uiOutcomeUncertain:true,cleanupState:'skipped-uncertain-ui-outcome',selectedExpected:base.source,fixtureMaterialization:'certified-mp3-1980-mtime',pageReadiness:{homeRequests:1,homeResponsesFinished:1,readyCallbacks:0,acknowledged:false,extra:secret},processes:{browserOpen:macProcessFacts({status:null,error:{code:'ETIMEDOUT'},outcomeUncertain:true,elapsedMs:100,stderr:secret})}});
+ assert.equal(safe.failurePhase,'page-readiness');assert.equal(safe.uiOutcomeUncertain,true);assert.equal(safe.pageReadiness.homeRequests,1);assert.equal(safe.pageReadiness.acknowledged,false);assert.equal(safe.processes.browserOpen.durationMs,100);assert.equal(safe.processes.browserOpen.outcomeUncertain,true);assert.equal(JSON.stringify(safe).includes(secret),false);
 });
