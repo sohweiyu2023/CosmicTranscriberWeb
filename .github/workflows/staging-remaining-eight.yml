@@ -52,7 +52,7 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT,'source='+pin.source+'\n');
           NODE
       - name: Read only the pinned successful MP3 evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           artifact-ids: '12512662440'
           run-id: '39979683866'
@@ -60,7 +60,7 @@ jobs:
           merge-multiple: true
           path: ${{ runner.temp }}/prior-mp3
       - name: Read only exact zero-attempt evidence for the existing held reservation
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           artifact-ids: '12586114319'
           run-id: '40161696792'
@@ -77,7 +77,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Download only the reviewed synthetic eight-format artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           artifact-ids: ${{ inputs.fixture_artifact_id }}
           run-id: ${{ inputs.fixture_run_id }}
