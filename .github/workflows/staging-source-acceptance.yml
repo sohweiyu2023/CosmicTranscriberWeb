@@ -37,7 +37,7 @@ jobs:
         run: node scripts/staging-source-coordinator.mjs prepare
       - name: Durably preserve the exact full-batch reservation before provider access
         id: escrow
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: source-verification-reservation-logging-main-2026-10-31
           path: .cosmic-source-logging-main-2026-10-31-${{ github.run_id }}-producer/admission.json
@@ -51,7 +51,7 @@ jobs:
         run: node scripts/staging-source-coordinator.mjs execute
       - name: Preserve sanitized diagnostics and journal outcomes
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: source-verification-evidence-logging-main-2026-10-31
           path: |
