@@ -4,6 +4,7 @@ import { clearCredentialCookie, createCredentialSession, readCredentialSession }
 import { COOKIE_NAME, MODEL_ALLOWLIST_REVISION, MODELS, PRICING_LAST_VERIFIED } from "./config.js";
 import { ApiError, errorToSafeJson } from "./errors.js";
 import { dispatchTranscription, safeOperationalLog } from "./openai.js";
+import {providerFailureFor} from './provider-failure.js';
 import { readAndValidateAudioBody, looksLikeMpegLayer3 } from "./audio-formats.js";
 import { rateLimit } from "./rate-limit.js";
 import { getKeyTestMp3 } from "./test-audio.js";
@@ -114,7 +115,7 @@ async function testKeyRoute(request, env, principal, requestId) {
     safeOperationalLog({...log,category:"success",status:200,openaiRequestId:result.diagnostics.openaiRequestId,elapsedMs:Date.now()-started});
     return setCookieHeader(jsonResponse({ok:true,permitted:true,diagnostics:{...result.diagnostics,appRequestId:requestId}}),session.renewal);
   }catch(error){
-    safeOperationalLog({...log,...(error instanceof ApiError?error.details:{}),category:"request_failed",code:error instanceof ApiError?error.code:"internal_error",status:error?.status||502,elapsedMs:Date.now()-started});
+    safeOperationalLog({...log,...(error instanceof ApiError?error.details:{}),providerExplanation:providerFailureFor(error),category:"request_failed",code:error instanceof ApiError?error.code:"internal_error",status:error?.status||502,elapsedMs:Date.now()-started});
     throw error;
   }
 }
@@ -122,21 +123,19 @@ async function testKeyRoute(request, env, principal, requestId) {
 const RESULT_ACCOUNTING_RETRY_DELAYS_MS = Object.freeze([0, 75, 250]);
 
 async function persistTranscriptionResultWithRetry(env, principal, metadata, success, logContext) {
-  let lastError;
   for (const delayMs of RESULT_ACCOUNTING_RETRY_DELAYS_MS) {
     if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
     try {
       await recordTranscriptionResult(env, principal, metadata, { success });
       return;
-    } catch (error) {
-      lastError = error;
-    }
+    } catch { /* The raw database cause may contain private bound values. */ }
   }
   safeOperationalLog({ ...logContext, status: 500, category: "usage_result_persist_failed" });
   // Keep this background accounting failure isolated from the already-classified
   // paid transcription response. Throwing here makes waitUntil surface the task
   // failure to Workers observability without changing the client response.
-  throw lastError;
+  // Do not hand a raw database exception/cause to platform exception logging.
+  throw new ApiError(500, "usage_result_persist_failed", "Usage-result accounting failed after three attempts; its outcome remains unconfirmed.", { rawCauseOmitted: true, accountingAttempts: 3 });
 }
 
 function scheduleTranscriptionResult(ctx, env, principal, metadata, success, logContext) {
@@ -169,7 +168,7 @@ async function transcribeRoute(request, env, principal, requestId, ctx) {
     return setCookieHeader(jsonResponse({ ok: true, result: result.result, diagnostics: { ...result.diagnostics, appRequestId: requestId } }), session.renewal);
   } catch (error) {
     const details = error instanceof ApiError ? error.details : undefined;
-    safeOperationalLog({ route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes, status: error?.status || 502, category: "request_failed", code: error?.code, billingState: details?.billingState, causeCategory: details?.causeCategory, transportCode: details?.transportCode, errorName: details?.errorName, providerCode: details?.providerCode, providerType: details?.providerType, openaiRequestId: details?.openaiRequestId, elapsedMs: Date.now() - started });
+    safeOperationalLog({ route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes, status: error?.status || 502, category: "request_failed", code: error?.code, billingState: details?.billingState, causeCategory: details?.causeCategory, transportCode: details?.transportCode, errorName: details?.errorName, providerCode: details?.providerCode, providerType: details?.providerType, providerExplanation:providerFailureFor(error),openaiRequestId: details?.openaiRequestId, elapsedMs: Date.now() - started });
     scheduleTranscriptionResult(ctx, env, principal, metadata, false, { route: "/api/transcribe", requestId, user, jobId: metadata.jobId, attemptId: metadata.attemptId, requestKind: metadata.requestKind, model: metadata.model, chunkIndex: metadata.chunkIndex, chunkCount: metadata.chunkCount, declaredBytes: metadata.declaredBytes });
     throw error;
   }
@@ -228,7 +227,7 @@ export default {
       throw new ApiError(404, "route_not_found", "API route not found.");
     } catch (error) {
       const status = error instanceof ApiError ? error.status : 500;
-      safeOperationalLog({route:url.pathname,requestId,category:"request_failed",phase:error instanceof ApiError&&error.details?.billingState?"response":"preflight",code:error instanceof ApiError?error.code:"internal_error",status,elapsedMs:Date.now()-started,...(error instanceof ApiError?error.details:{})});
+      safeOperationalLog({route:url.pathname,requestId,category:"request_failed",phase:error instanceof ApiError&&error.details?.billingState?"response":"preflight",code:error instanceof ApiError?error.code:"internal_error",status,elapsedMs:Date.now()-started,...(error instanceof ApiError?error.details:{}),providerExplanation:providerFailureFor(error)});
       const response = jsonResponse(errorToSafeJson(error, requestId), status);
       if (error instanceof ApiError && ["key_session_invalid", "key_session_expired"].includes(error.code)) return setCookieHeader(response, clearCredentialCookie());
       return response;
