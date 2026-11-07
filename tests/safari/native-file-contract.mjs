@@ -25,10 +25,13 @@ export function expectedNativeLastModified(mtimeMs,{browserName,platform}){
   assert.ok(Number.isFinite(mtimeMs)&&mtimeMs>=0&&Number.isSafeInteger(Math.trunc(mtimeMs)),'Invalid on-disk modification time');
   assert.ok(['chromium','firefox','webkit'].includes(browserName),'Unknown browser engine');
   assert.ok(['linux','darwin','win32'].includes(platform),'Unknown browser host platform');
-  // Linux WebKit exposes whole seconds for disk-backed File timestamps:
+  // Linux WebKit seconds precision is documented by upstream Playwright.
+  // Windows WebKit was independently measured with Playwright 1.64.1 and
+  // 1.65.0: exact floor-seconds, while Chromium preserved milliseconds.
   // https://github.com/microsoft/playwright/blob/main/tests/page/page-set-input-files.spec.ts
-  // This predicts that exact value; it does not alter the file or accept a tolerance.
-  return browserName==='webkit'&&platform==='linux'?Math.floor(mtimeMs/1000)*1000:Math.trunc(mtimeMs);
+  // Predict an exact value, never a tolerance or fixture timestamp mutation.
+  // Darwin WebKit/genuine Safari and all other engines retain exact milliseconds.
+  return browserName==='webkit'&&['linux','win32'].includes(platform)?Math.floor(mtimeMs/1000)*1000:Math.trunc(mtimeMs);
 }
 
 export function assertDuration(actual,expected,label){

@@ -1,13 +1,13 @@
 {
   "schema": "cosmic-dependency-snapshot-1",
-  "packageSha256": "b7f0cdd3e20b17ecc1d28f377e546ac2f0f6568985911a26e2165a8937d8d237",
-  "lockSha256": "701525420d9038f3eb8d8f09044aca3a07c78c6fc67d704750b3bd9a621d009c",
+  "packageSha256": "f46db5b10f4ec6d0db70d63d1396d4ddd624fac4f2f7636de0f1a85a1b943634",
+  "lockSha256": "2be3d70ba08c4d9e4a8e3cb1bc4063946b0eee47b80747721f93f97bc214acb4",
   "nodeVersion": "26.7.0",
   "npmVersion": "12.0.2",
   "registry": "https://registry.npmjs.org/",
-  "workerdVersion": "1.20261103.1",
+  "workerdVersion": "1.20261104.1",
   "fixturePaths": [
-    "tests/fixtures/ID3 Unicode 東京.mp3",
+    "tests/fixtures/ID3 Unicode \u6771\u4eac.mp3",
     "tests/fixtures/approved-remaining-eight/README.md",
     "tests/fixtures/approved-remaining-eight/staging-speech.flac",
     "tests/fixtures/approved-remaining-eight/staging-speech.m4a",
@@ -47,7 +47,7 @@
     "tests/fixtures/zero-byte.mp3"
   ],
   "generatedFixturePaths": [
-    "tests/fixtures/ID3 Unicode 東京.mp3",
+    "tests/fixtures/ID3 Unicode \u6771\u4eac.mp3",
     "tests/fixtures/cbr-128k-370s.mp3",
     "tests/fixtures/corrupt.mp3",
     "tests/fixtures/format.flac",
