@@ -6,7 +6,7 @@ import {chmod,mkdir,mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {isOrdinarySafariGenuineFile} from './ordinary-native-file-contract.mjs';
-import {sanitizeOrdinarySafariReport} from './ordinary-native-report-sanitize.mjs';
+import {sanitizeOrdinarySafariReport,macProcessFacts,ordinaryErrorCategory,ordinarySafariGuardScript,ordinarySafariCleanupScript,runOrdinaryCleanup} from './ordinary-native-report-sanitize.mjs';
 
 // Never start or connect to SafariDriver here. This isolated macOS runner
 // operates an ordinary Safari window and its genuine macOS file chooser.
@@ -15,7 +15,7 @@ const root=path.resolve(import.meta.dirname,'../..');
 const source=path.join(root,'tests/fixtures/format.mp3');
 const output=path.join(root,'test-results/ordinary-safari-native-picker.json');
 const screenshot=path.join(root,'test-results/ordinary-safari-native-picker.png');
-const report={schema:'cosmic-ordinary-safari-file-probe-1',role:'diagnostic-only-not-release-or-SafariDriver-certification',platform:process.platform,startedAt:new Date().toISOString(),status:'RUNNING'};
+const report={schema:'cosmic-ordinary-safari-file-probe-1',role:'diagnostic-only-not-release-or-SafariDriver-certification',platform:process.platform,startedAt:new Date().toISOString(),status:'RUNNING',architecture:process.arch,processes:{}};
 const hash=buffer=>createHash('sha256').update(buffer).digest('hex');
 async function identity(file){const [bytes,s]=await Promise.all([readFile(file),stat(file,{bigint:true})]);return {size:bytes.length,sha256:hash(bytes),sliceSha256:hash(bytes.subarray(0,Math.min(1024,bytes.length))),mtimeNs:String(s.mtimeNs)}}
 const run=(cmd,args,timeout=16000)=>spawnSync(cmd,args,{encoding:'utf8',timeout,windowsHide:true});
@@ -26,37 +26,36 @@ const run=(cmd,args,timeout=16000)=>spawnSync(cmd,args,{encoding:'utf8',timeout,
 // are obtained by Node after each action, so no AppleScript child process can
 // silently omit an intermediate GUI screenshot.
 function pickerSteps(dir,name){return [
-  {name:'native-mouse-click',pause:1400,script:`tell application "Safari" to activate
-  delay 0.35
-  tell application "System Events" to tell process "Safari"
-    set frontmost to true
+  {name:'native-mouse-click',guard:'page',pause:1400,script:`tell application "System Events" to tell process "Safari"
     click at {210, 100}
   end tell`},
-  {name:'go-to-folder-sheet',pause:1000,script:`tell application "System Events"
+  {name:'go-to-folder-sheet',guard:'chooser',pause:1000,script:`tell application "System Events"
     keystroke "g" using {command down, shift down}
   end tell`},
-  {name:'native-parent-directory',pause:1400,script:`tell application "System Events"
+  {name:'native-parent-directory',guard:'go-to-folder',pause:600,script:`tell application "System Events"
     keystroke ${JSON.stringify(dir)}
-    delay 0.6
+  end tell`},
+  {name:'native-parent-confirm',guard:'go-to-folder',pause:1400,script:`tell application "System Events"
     key code 36
   end tell`},
-  {name:'native-filename',pause:900,script:`tell application "System Events"
+  {name:'native-filename',guard:'chooser',pause:900,script:`tell application "System Events"
     keystroke ${JSON.stringify(name)}
   end tell`},
-  {name:'native-open',pause:1100,script:`tell application "System Events"
+  {name:'native-open',guard:'chooser',pause:1100,script:`tell application "System Events"
     key code 36
   end tell`},
 ]}
 async function performOrdinaryNativePicker(dir,name){
   const stages=[];
   for(const stage of pickerSteps(dir,name)){
-    const command=run('/usr/bin/osascript',['-e',stage.script],12000);
+    const guardedScript=ordinarySafariGuardScript(stage.guard)+'\n'+stage.script;
+    const command=run('/usr/bin/osascript',['-e',guardedScript],12000);
     await delay(stage.pause);
     const dest=path.join(root,'test-results',`ordinary-safari-stage-${stage.name}.png`);
     const screen=run('/usr/sbin/screencapture',['-x',dest],8000);
     let imageBytes=0;try{imageBytes=(await stat(dest)).size}catch{}
     const recorded={stage:stage.name,osascriptStatus:command.status,
-      osascriptErrorCode:command.status===0?null:(command.error?.name||'UnclassifiedError'),
+      osascriptErrorCode:command.status===0?null:(command.error?.name||'UnclassifiedError'),osascriptDiagnostic:macProcessFacts(command),screenshotDiagnostic:macProcessFacts(screen),
       screenshotStatus:screen.status,screenshotBytes:imageBytes};
     stages.push(recorded);
     // Failure is never reported as success or hidden by later file-dialog keys.
@@ -91,12 +90,15 @@ document.getElementById('diskFile').addEventListener('change',async event=>{
   document.getElementById('status').textContent=result.error||'Browser-file access completed';
 },{once:true});
 </script>`}
-let folder,server,fulfill;
+let folder,server,fulfill,expected,selectedFile,browserUrl,browserOpened=false;
 try{
  if(process.platform!=='darwin')throw Error('Requires genuine macOS Safari, not simulated WebKit');
- const expected=await identity(source);assert.ok(expected.size>1000,'Real MP3 fixture missing');report.source=expected;
+ const version=run('/usr/bin/defaults',['read','/Applications/Safari.app/Contents/Info','CFBundleShortVersionString'],5000);report.processes.browserMetadata=macProcessFacts(version);
+ assert.equal(version.status,0,'Safari version metadata must be readable');report.browserVersion=String(version.stdout||'').trim();
+ if(process.env.COSMIC_ORDINARY_SAFARI_EXPECTED_VERSION){assert.equal(process.env.COSMIC_ORDINARY_SAFARI_EXPECTED_VERSION,'27.2');assert.equal(report.browserVersion,'27.2','Diagnostic target changed; do not equate versions')}
+ expected=await identity(source);assert.ok(expected.size>1000,'Real MP3 fixture missing');report.source=expected;
  folder=await mkdtemp('/Users/Shared/ctw-ordinary-safari-');await chmod(folder,0o755);
- const file=path.join(folder,'format.mp3');const cp=run('/bin/cp',['-p',source,file],10000);assert.equal(cp.status,0,'Native cp -p failed');await chmod(file,0o644);
+ const file=path.join(folder,'format.mp3');selectedFile=file;const cp=run('/bin/cp',['-p',source,file],10000);report.processes.fixtureCopy=macProcessFacts(cp);assert.equal(cp.status,0,'Native cp -p failed');await chmod(file,0o644);
  assert.deepEqual(await identity(file),expected,'Native file must preserve bytes and nanosecond mtime');
  const token=randomBytes(16).toString('hex');
  let notified=false;const answer=new Promise(resolve=>{fulfill=resolve});
@@ -106,22 +108,23 @@ try{
   res.writeHead(404);res.end('not found');
  });
  await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});
- const url=`http://127.0.0.1:${server.address().port}/`;report.origin='loopback-http-test-only';
- const browser=run('/usr/bin/open',['-a','Safari',url],10000);assert.equal(browser.status,0,'Could not open ordinary Safari');
+ const url=`http://127.0.0.1:${server.address().port}/`;browserUrl=url;report.origin='loopback-http-test-only';
+ const browser=run('/usr/bin/open',['-a','Safari',url],10000);report.processes.browserOpen=macProcessFacts(browser);assert.equal(browser.status,0,'Could not open ordinary Safari');browserOpened=true;
  await delay(3500);
  report.guiPicker={method:'genuine-System-Events-mouse-click-and-open-panel',stages:[]};
  try{report.guiPicker.stages=await performOrdinaryNativePicker(folder,'format.mp3')}catch(error){if(error?.stages)report.guiPicker.stages=error.stages;throw error}
  const native=await Promise.race([answer,delay(23000).then(()=>({error:'Real native picker callback timeout'}))]);
  report.native=native;report.status=isOrdinarySafariGenuineFile(native,expected)?'PASS':'FAIL';
  if(report.status!=='PASS')throw Error('Ordinary Safari native File identity/bytes/duration not verified: '+String(native.error||'mismatch'));
-}catch(error){report.status='FAIL';report.errorCode=error?.name||'UnclassifiedError';
+}catch(error){report.status='FAIL';report.errorCode=ordinaryErrorCategory(error);
  if(process.platform==='darwin'){
-  try{await mkdir(path.dirname(screenshot),{recursive:true});const shot=run('/usr/sbin/screencapture',['-x',screenshot],8000);report.failureScreenshot=shot.status===0?path.basename(screenshot):null;report.screenshotErrorCode=shot.status===0?null:(shot.error?.name||'UnclassifiedError')}catch(e){report.failureScreenshot=null;report.screenshotErrorCode=e?.name||'UnclassifiedError'}
+  try{await mkdir(path.dirname(screenshot),{recursive:true});const shot=run('/usr/sbin/screencapture',['-x',screenshot],8000);report.processes.failureScreenshot=macProcessFacts(shot);report.failureScreenshot=shot.status===0?path.basename(screenshot):null;report.screenshotErrorCode=shot.status===0?null:(shot.error?.name||'UnclassifiedError')}catch(e){report.failureScreenshot=null;report.screenshotErrorCode=e?.name||'UnclassifiedError'}
  }
 }finally{
- if(process.platform==='darwin')run('/usr/bin/osascript',['-e','tell application "Safari" to quit'],9000);
+ if(expected){try{report.sourceAfter=await identity(source);assert.deepEqual(report.sourceAfter,expected);if(selectedFile){report.selectedAfter=await identity(selectedFile);assert.deepEqual(report.selectedAfter,expected)}report.fixturesPreserved=true}catch(error){report.fixturesPreserved=false;report.integrityErrorCode=ordinaryErrorCategory(error);report.status='FAIL'}}
+ if(browserOpened){const quit=run('/usr/bin/osascript',['-e',ordinarySafariCleanupScript(browserUrl)],9000);report.processes.browserClose=macProcessFacts(quit);if(quit.status!==0){report.cleanupErrorCode=ordinaryErrorCategory(quit.error||'Safari process cleanup failed');report.status='FAIL'}}
  if(server)await new Promise(resolve=>server.close(resolve));
- if(folder)await rm(folder,{recursive:true,force:true}).catch(e=>{report.cleanupErrorCode=e?.name||'UnclassifiedError'});
+ if(folder)await runOrdinaryCleanup(()=>rm(folder,{recursive:true,force:true}),report);
  report.finishedAt=new Date().toISOString();
  const publicReport=sanitizeOrdinarySafariReport(report);
  await mkdir(path.dirname(output),{recursive:true});await writeFile(output,JSON.stringify(publicReport,null,2)+'\n');

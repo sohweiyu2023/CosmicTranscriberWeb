@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
+import {safeRequestDiagnostics,safeProcessDiagnostics} from '../tests/safari/local-request-diagnostics.mjs';
 import {verifyNarrowSafari26StagingWaiver,SAFARI26_WAIVER_ID} from './safari-staging-waiver.mjs';
 
 // Owner accepted on 2026-10-22 for the 1.2.0 release only. This recognizes a
@@ -14,9 +15,9 @@ const FIXTURE_IDENTITY={
   mtimeNs:'315532800000000000'
 };
 
-function requireKeys(value,keys,label){
+function requireKeys(value,keys,label,additionalKeys=[]){
   assert.ok(value&&typeof value==='object'&&!Array.isArray(value),`${label} must be an object`);
-  assert.deepEqual(Object.keys(value).sort(),[...keys].sort(),`${label} contains missing or unreviewed fields`);
+  assert.deepEqual(Object.keys(value).sort(),[...keys,...additionalKeys].sort(),`${label} contains missing or unreviewed fields`);
 }
 
 export function verifyNarrowSafari26ReleaseException(report,{packageVersion}={}){
@@ -25,7 +26,31 @@ export function verifyNarrowSafari26ReleaseException(report,{packageVersion}={})
   assert.equal(verifyNarrowSafari26StagingWaiver(report),SAFARI_RELEASE_EXCEPTION_ID);
   // The sanitized report must contain only the reviewed fields. In particular,
   // server/driver/integrity/cleanup errors (even null or empty) cannot be waived.
-  requireKeys(report,['schema','status','platform','startedAt','finishedAt','providerCalls','fixturesPreserved','capabilities','checks','fixtures','requestCount','requests','safariDiagnosticSummary','errorCode'],'Native Safari report');
+  const diagnosticKeys=['requestDiagnostics','failurePhase','processDiagnostics'];
+  const hasDiagnostics=diagnosticKeys.some(key=>Object.hasOwn(report,key));
+  requireKeys(report,['schema','status','platform','startedAt','finishedAt','providerCalls','fixturesPreserved','capabilities','checks','fixtures','requestCount','requests','safariDiagnosticSummary','errorCode'],'Native Safari report',hasDiagnostics?diagnosticKeys:[]);
+  if(hasDiagnostics){
+    // Accept only the complete canonical diagnostic envelope; never ignore an
+    // unrelated command/cleanup failure or unknown fields to obtain a waiver.
+    assert.equal(report.failurePhase,'workflows');
+    const facts=report.requestDiagnostics;
+    assert.deepEqual(facts,safeRequestDiagnostics(facts),'Diagnostic facts must be bounded and canonical');
+    assert.equal(facts.phase,'cleanup');
+    assert.ok(Number.isSafeInteger(facts.requestCount)&&facts.requestCount>0);
+    assert.equal(facts.firstFailure,null,'No additional HTTP/WebDriver failure may be waived');
+    assert.ok(facts.last,'The cleanup command must be recorded');
+    assert.equal(facts.last.phase,'cleanup');assert.equal(facts.last.command,'driver_session_delete');
+    assert.equal(facts.last.httpStatus,200);assert.equal(facts.last.protocolError,'unavailable');assert.equal(facts.last.errorType,'unknown');
+    assert.ok(Number.isSafeInteger(facts.last.elapsedMs)&&facts.last.elapsedMs>=0);
+    if(facts.lastReadinessFailure){
+      const ready=facts.lastReadinessFailure;
+      assert.ok((ready.phase==='driver_startup'&&ready.command==='driver_status')||(ready.phase==='mock_startup'&&ready.command==='mock_health'));
+    }
+    const processes=report.processDiagnostics;
+    assert.deepEqual(processes,safeProcessDiagnostics(processes),'Process facts must be bounded and canonical');
+    assert.equal(processes.driverExitCode,0,'Driver cleanup must complete successfully');
+    assert.ok(processes.serverExitCode===null||processes.serverExitCode===0,'No failed server exit may be waived');
+  }
   assert.equal(report.errorCode,'NotReadableError','Only the native disk-read failure is covered');
   assert.equal(report.fixturesPreserved,true,'Every original native fixture must remain unchanged');
   assert.equal(report.requestCount,0,'No transcription request may have been dispatched');

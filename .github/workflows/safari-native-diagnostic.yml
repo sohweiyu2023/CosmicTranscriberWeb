@@ -13,12 +13,19 @@ on:
       - 'public/js/**'
       - 'scripts/generate-test-fixtures.mjs'
   workflow_dispatch:
+    inputs:
+      include_driver:
+        description: Also run the separate SafariDriver diagnostic (not needed for ordinary picker investigation)
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
 
 jobs:
   native-safari-diagnostic:
+    if: ${{ github.event_name == 'push' || inputs.include_driver == true }}
     name: Real SafariDriver diagnostics (not release certification)
     runs-on: macos-26
     timeout-minutes: 40
@@ -77,13 +84,34 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: '26.7.0'
           package-manager-cache: false
-      - name: Verify exact checked-in disk fixture and test sources
-        run: sha256sum -c SHA256SUMS.txt
+      - name: Verify reviewed diagnostic sources and exact certified disk fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_OS" = macOS
+          test "$(uname -m)" = arm64
+          # Original fixture/oracles match certified source4ec47b1f, ZIP SHA256
+          # 91c5a4b1cf405c6c01836541c8b06b173f1f8b6fe7085b11fa266cec39c4f74f.
+          # Probe/report changes add reviewed diagnostics only, not certification.
+          cat > "$RUNNER_TEMP/ordinary-safari-reviewed.sha256" <<'REVIEWED'
+          05689d0c91fee1ecca88f93dfb166797e5565eaad15ccc4da4fb796d6121a67c  tests/safari/ordinary-native-gui-probe.mjs
+          8bb15551acf7c20bf46466436e10e40b073443bb17836946ed9f4d96fcf2ee32  tests/safari/ordinary-native-file-contract.mjs
+          bb0024ae3734f5e06aba8fe9b1591e6c14e5a3caacdaeb48e81b7670a95b6756  tests/safari/ordinary-native-report-sanitize.mjs
+          76538cb6310f56cfd50c80843842d611f5140769f761db4ebb5d9d3aa3dd944b  tests/safari/disk-access-probe-contract.mjs
+          e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55  tests/fixtures/format.mp3
+          REVIEWED
+          sha256sum -c "$RUNNER_TEMP/ordinary-safari-reviewed.sha256"
       - name: Use ordinary Safari and genuine native macOS file chooser (not WebDriver)
+        timeout-minutes: 4
+        env:
+          COSMIC_ORDINARY_SAFARI_EXPECTED_VERSION: '27.2'
         run: node tests/safari/ordinary-native-gui-probe.mjs
       - name: Preserve ordinary Safari native picker evidence even on failure
         if: ${{ always() }}
