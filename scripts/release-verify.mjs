@@ -12,9 +12,9 @@ if(!nodeCurrentEnough){
 const npmVersionResult=invokeNpm(['--version'],{stdio:'pipe'});
 const npmVersionText=npmVersionResult.status===0?String(npmVersionResult.stdout||'').trim():'';
 const npmMatch=/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(npmVersionText);
-const npmCurrentEnough=!!npmMatch && Number(npmMatch[1])===12 && (Number(npmMatch[2])>0 || Number(npmMatch[3])>=2);
+const npmCurrentEnough=npmVersionText==='12.0.2';
 if(!npmCurrentEnough){
-  console.error(`Release verification requires npm >=12.0.2 <13 (current reviewed stable major); current npm is ${npmVersionText||'unavailable'}.`);
+  console.error(`Release verification requires exact reviewed npm 12.0.2; current npm is ${npmVersionText||'unavailable'}.`);
   process.exit(1);
 }
 if(requireWindows && process.platform!=='win32'){
@@ -25,6 +25,7 @@ if(requireWindows && process.platform!=='win32'){
 const steps=[
   ['run','validate:version'],
   ['run','deps:lock:verify'],
+  ['run','deps:graph:verify'],
   ['ls','--all'],
   ['run','deps:check'],
   ['run','deps:install-scripts:verify'],
@@ -48,3 +49,4 @@ for(const args of steps){
   }
 }
 console.log(`Release verification PASS for ${process.platform} under ${BROWSER_POLICY_REVISION}. Other platform and live acceptance gates remain separate.`);
+

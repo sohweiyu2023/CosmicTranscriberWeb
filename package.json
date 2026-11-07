@@ -67,18 +67,19 @@
     "configure:registry:staging": "node scripts/configure-registry.mjs staging",
     "configure:registry:production": "node scripts/configure-registry.mjs production",
     "registry:migrate:staging": "node scripts/apply-registry-migrations.mjs staging",
-    "registry:migrate:production": "node scripts/apply-registry-migrations.mjs production"
+    "registry:migrate:production": "node scripts/apply-registry-migrations.mjs production",
+    "deps:graph:verify": "node scripts/verify-reviewed-dependency-graph.mjs"
   },
   "dependencies": {
-    "@noble/hashes": "^2.4.0",
-    "jose": "^6.2.13"
+    "@noble/hashes": "2.4.0",
+    "jose": "6.2.15"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.4.8",
-    "@playwright/test": "^1.64.1",
-    "msw": "^3.0.3",
-    "vitest": "^5.0.5",
-    "wrangler": "^4.153.0"
+    "@cloudflare/vitest-plugin": "1.5.1",
+    "@playwright/test": "1.64.1",
+    "msw": "3.0.3",
+    "vitest": "5.1.0",
+    "wrangler": "4.157.0"
   },
   "overrides": {
     "miniflare": {
@@ -102,7 +103,8 @@
     "workerd@1.20261012.1": true,
     "workerd@1.20261019.1": true,
     "workerd@1.20261023.1": true,
-    "workerd@1.20261102.1": true
+    "workerd@1.20261102.1": true,
+    "workerd@1.20261103.1": true
   },
   "packageExtensions": {
     "vitest@5.0.3": {

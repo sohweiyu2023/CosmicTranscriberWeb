@@ -14,6 +14,8 @@ jobs:
     name: Resolve one reviewed dependency graph
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      reviewed_inputs_sha256: ${{ steps.reviewed-input-bundle.outputs.reviewed_inputs_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -27,8 +29,12 @@ jobs:
           node --version
           test "$(node --version)" = "v26.7.0"
           test "$(npm --version)" = "12.0.2"
-      - name: Refresh all direct dependencies to registry latest and resolve one graph
-        run: node scripts/deps-latest.mjs
+      - name: Verify the committed dependency snapshot before installation
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+      - name: Install the exact committed graph without lifecycle execution
+        run: npm ci --ignore-scripts
+      - name: Verify package metadata and lock remain unchanged
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
       - name: Verify reviewed install-script policy
         run: npm run deps:install-scripts:verify
       - name: Verify complete installed dependency tree
@@ -44,6 +50,8 @@ jobs:
         run: node scripts/generate-test-fixtures.mjs
       - name: Full dependency-free adversarial gate
         run: npm run validate
+      - name: Verify committed inputs after validation
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
       - name: Verify exact approved single MP3 bytes (no provider calls)
         run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
       - name: Preserve only the approved MP3 for the manual smoke workflow
@@ -62,14 +70,14 @@ jobs:
           path: ${{ runner.temp }}/approved-eight/files/*
           if-no-files-found: error
           retention-days: 7
+      - name: Bind exact reviewed inputs and fixture bytes
+        id: reviewed-input-bundle
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --prepare-input-bundle
       - name: Upload reviewed lock and fixtures
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: reviewed-release-inputs
-          path: |
-            package.json
-            package-lock.json
-            tests/fixtures/
+          path: ${{ runner.temp }}/cosmic-reviewed-inputs.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -86,9 +94,18 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: reviewed-release-inputs
-          path: .
+          path: ${{ runner.temp }}/cosmic-reviewed-inputs-download
+      - name: Verify isolated reviewed input bundle before restoring fixture data
+        env:
+          REVIEWED_INPUTS_SHA256: ${{ needs.resolve-lock.outputs.reviewed_inputs_sha256 }}
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --restore-input-bundle
       - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify the shared exact dependency snapshot before lifecycle execution
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+      - run: npm run deps:install-scripts:verify
       - run: npm ci
+      - name: Verify installation preserved the reviewed graph
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
       - run: npm audit
@@ -101,6 +118,8 @@ jobs:
       - run: npm run browsers:install:ci
       - run: npm run test:e2e:core
       - run: npm run build:inspect
+      - name: Verify committed inputs after Linux certification
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
 
   macos-safari:
     name: macOS native ZIP + WebKit/mobile + Chrome + real Safari
@@ -159,7 +178,12 @@ jobs:
               print(f'Untouched native archive verified: {source.name}; SHA256={os.environ["SOURCE_SHA256"]}')
           PY
       - run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify the shared exact dependency snapshot before lifecycle execution
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}"
+      - run: npm run deps:install-scripts:verify
       - run: npm ci
+      - name: Verify installation preserved the reviewed graph
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}"
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
       - run: npm audit
@@ -191,6 +215,8 @@ jobs:
         id: safari-release-exception
         if: ${{ steps.real-safari.outcome == 'failure' }}
         run: node scripts/safari-release-exception.mjs test-results/safari-native-acceptance.json
+      - name: Verify committed inputs after macOS certification
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}"
       - name: Preserve macOS browser evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -218,11 +244,20 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: reviewed-release-inputs
-          path: .
+          path: ${{ runner.temp }}/cosmic-reviewed-inputs-download
+      - name: Verify isolated reviewed input bundle before restoring fixture data
+        env:
+          REVIEWED_INPUTS_SHA256: ${{ needs.resolve-lock.outputs.reviewed_inputs_sha256 }}
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --restore-input-bundle
       - name: Activate reviewed npm for shared-lock preflight
         shell: pwsh
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+      - name: Verify the shared exact dependency snapshot before lifecycle execution
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+      - run: npm run deps:install-scripts:verify
       - run: npm ci
+      - name: Verify installation preserved the reviewed graph
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
       - run: npm audit
@@ -320,6 +355,8 @@ jobs:
           Write-Output ('artifact-name=' + $rootName + '-staging-certified') >> $env:GITHUB_OUTPUT
           Write-Output ('source-file=' + $sourceFile) >> $env:GITHUB_OUTPUT
           Write-Output ('source-sha256=' + $sourceHash) >> $env:GITHUB_OUTPUT
+      - name: Verify committed inputs before certified artifact publication
+        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
       - name: Upload staging-certified candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:

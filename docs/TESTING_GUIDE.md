@@ -1,5 +1,32 @@
 # Testing Guide — Cosmic Transcriber Web 1.2.0
 
+## Complete user journeys and visible controls (2026-11-04)
+
+Run these locally on the final editable source before requesting hosted certification:
+
+```powershell
+npm run build
+node scripts/run-playwright.mjs test tests/e2e/user-journeys.spec.js --project=chromium --project=firefox --project=webkit --project=mobile-safari --workers=1 --retries=0
+```
+
+The added journeys use only the owned localhost TLS mock and synthetic fixtures. An explicit context-level network fence rejects non-local HTTP(S) traffic. They cover:
+
+- first-run account-check failure, visible manual recovery and a bounded status-check timeout;
+- pending key setup, closing its dialog, visible completion/failure, duplicate suppression and an uncertain timeout requiring a read-only status check before another setup, including malformed HTTP-success bodies and interrupted body reads after response headers;
+- an isolated persistent browser process close/reopen with inherited project viewport, user agent, touch/mobile and device-scale settings verified after both launches, re-adding the identical file with matching settings, restoring completed TXT/Markdown output and proving no second mock dispatch;
+- interrupted work after reload, the possible-charge confirmation and declining without another request;
+- expired session recovery while preserving completed downloads;
+- keyboard skip navigation, modal entry/Escape/focus return, keyboard file selection/Start/download, narrow layouts and minimum primary-control target sizes;
+- permission-test dismissal/acceptance, forgetting the key, diarization-specific controls, speaker-labelled export and removing completed output;
+- actual downloaded diagnostics containing a classified timeout and excluding the synthetic key, transcript and source filename.
+
+The existing full browser suite remains required for cancellation, changed-settings reruns, combined exports, queue limits, malformed responses, admin flows and storage/error diagnostics. A focused journey suite supplements it; it does not replace it. Disabled controls must have a visible prerequisite or recovery explanation. Tests must wait for those prerequisites, not send a key to a disabled element or substitute fixed sleeps.
+
+A browser port or mobile viewport is not a physical device, real Access sign-in, real BYOK/provider acceptance or genuine macOS Safari. Physical OS file-picker interaction, assistive-technology use and live session expiry remain separate evidence. The exact documented native Safari FAIL/WAIVED exception is unchanged. Hosted CI and prior live receipts for another source revision cannot certify later UI edits.
+
+Lessons from this audit: component-green results missed the absence of in-page session recovery, hidden failures after closing a pending setup dialog, small footer hit targets and cross-engine focus differences. Test the complete outcome, including exported bytes and reopen/recovery, before asking the user to test. A configured label is not sufficient readiness: wait for the enabled control and completed setup. Return focus on explicit dialog closure without an asynchronous listener that can steal a later focus target. Preserve failed reports and bind each final run to source/build hashes; do not weaken assertions or replay a provider request to obtain better diagnostics.
+
+
 ## Logging failure-path coverage
 
 These offline regressions use synthetic values and mocked provider responses. They do not certify live-provider behavior or genuine Safari.
