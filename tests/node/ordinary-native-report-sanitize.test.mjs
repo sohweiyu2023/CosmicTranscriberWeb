@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {sanitizeOrdinarySafariReport,macProcessFacts,safeMacProcessFacts,ordinaryErrorCategory,ordinarySafariGuardScript,ordinarySafariCleanupScript,runOrdinaryCleanup} from '../safari/ordinary-native-report-sanitize.mjs';
+import {sanitizeOrdinarySafariReport,macProcessFacts,safeMacProcessFacts,ordinaryErrorCategory,ordinarySafariGuardScript,ordinarySafariCleanupScript,runOrdinaryCleanup,ordinarySafariInspectionScript,parseOrdinaryInspection} from '../safari/ordinary-native-report-sanitize.mjs';
 
 const secret='Bearer PRIVATE_TOKEN /Users/runner/private/secret.mp3 https://private.invalid/?token=secret';
 const hash='a'.repeat(64);
@@ -95,4 +95,18 @@ test('ordinary cleanup closes only the positively owned unblocked page and fails
 test('ordinary readiness and uncertainty evidence is bounded and secret-free',()=>{
  const safe=sanitizeOrdinarySafariReport({...base,failurePhase:'page-readiness',uiOutcomeUncertain:true,cleanupState:'skipped-uncertain-ui-outcome',selectedExpected:base.source,fixtureMaterialization:'certified-mp3-1980-mtime',pageReadiness:{homeRequests:1,homeResponsesFinished:1,readyCallbacks:0,acknowledged:false,extra:secret},processes:{browserOpen:macProcessFacts({status:null,error:{code:'ETIMEDOUT'},outcomeUncertain:true,elapsedMs:100,stderr:secret})}});
  assert.equal(safe.failurePhase,'page-readiness');assert.equal(safe.uiOutcomeUncertain,true);assert.equal(safe.pageReadiness.homeRequests,1);assert.equal(safe.pageReadiness.acknowledged,false);assert.equal(safe.processes.browserOpen.durationMs,100);assert.equal(safe.processes.browserOpen.outcomeUncertain,true);assert.equal(JSON.stringify(safe).includes(secret),false);
+});
+
+test('read-only inspection emits only bounded counters and cannot issue native input',()=>{
+ const script=ordinarySafariInspectionScript();assert.equal(/keystroke|key code|click at|activate|close ownedWindow/.test(script),false);assert.match(script,/ctwInspected >= 500/);assert.match(script,/return "1\|"/);
+ const parsed=parseOrdinaryInspection('1|true|1|1|0|1|5|1|0|0|0|30|false\n');assert.equal(parsed.frontSafari,true);assert.equal(parsed.fileInputIdMatches,1);assert.throws(()=>parseOrdinaryInspection(secret));assert.throws(()=>parseOrdinaryInspection('1|true|9999|1|0|1|5|1|0|0|0|30|false'));
+});
+test('AppleScript errors retain finite vendor code while arbitrary explanations remain omitted',()=>{
+ for(const code of [-2740,-2741,-2753,-1719]){const facts=macProcessFacts({status:1,stderr:'private path '+secret+' ('+code+')'});assert.equal(facts.appleScriptCode,code);assert.equal(JSON.stringify(facts).includes(secret),false)}
+ assert.equal(macProcessFacts({status:1,stderr:'opaque(-123456)'}).appleScriptCode,null);
+ const report=sanitizeOrdinarySafariReport({...base,status:'NOT RUN',executionMode:'inspect',inspectionComplete:true,nativeInputAttempted:false,cleanupState:'deferred-to-ephemeral-host',inspection:parseOrdinaryInspection('1|true|1|1|0|1|5|1|0|0|0|30|false')});assert.equal(report.status,'NOT RUN');assert.equal(report.nativeInputAttempted,false);assert.equal(report.inspectionComplete,true);assert.equal(report.cleanupState,'deferred-to-ephemeral-host');
+ let reads=0;const malicious={get name(){return ++reads===1?'inspection':secret}};const safe=sanitizeOrdinarySafariReport({...base,scriptCompilation:[malicious]});assert.equal(safe.scriptCompilation[0].name,'inspection');assert.equal(JSON.stringify(safe).includes(secret),false);
+});
+test('hosted inspection is selected explicitly and never claims native PASS',async()=>{
+ const source=await readFile(new URL('../safari/ordinary-native-gui-probe.mjs',import.meta.url),'utf8'),workflow=await readFile(new URL('../../.github/workflows/safari-native-diagnostic.yml',import.meta.url),'utf8');assert.match(workflow,/COSMIC_ORDINARY_SAFARI_MODE: 'inspect'/);assert.match(source,/RUNNER_ENVIRONMENT,'github-hosted'/);assert.ok(source.indexOf('await compileOrdinaryScripts')<source.indexOf("const browser=await run"));assert.match(source,/if\(mode==='inspect'\)\{report.status='NOT RUN'\}else/);assert.match(source,/mode==='inspect'&&browserOpened/);
 });

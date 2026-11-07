@@ -3,10 +3,10 @@ import {randomBytes} from 'node:crypto';
 import {createServer} from 'node:http';
 import {chmod,mkdir,mkdtemp,rm,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {createOrdinaryRunner,materializeOrdinaryFixture,ordinaryFileIdentity,waitOrdinaryReady} from './ordinary-native-runtime.mjs';
+import {runOrdinaryProcess,createOrdinaryRunner,materializeOrdinaryFixture,ordinaryFileIdentity,waitOrdinaryReady,compileOrdinaryScripts,LEGACY_3070_CHOOSER_SCRIPT} from './ordinary-native-runtime.mjs';
 import {setTimeout as delay} from 'node:timers/promises';
 import {isOrdinarySafariGenuineFile} from './ordinary-native-file-contract.mjs';
-import {sanitizeOrdinarySafariReport,macProcessFacts,ordinaryErrorCategory,ordinarySafariGuardScript,ordinarySafariCleanupScript,runOrdinaryCleanup} from './ordinary-native-report-sanitize.mjs';
+import {sanitizeOrdinarySafariReport,macProcessFacts,ordinaryErrorCategory,ordinarySafariGuardScript,ordinarySafariCleanupScript,runOrdinaryCleanup,ordinarySafariInspectionScript,parseOrdinaryInspection} from './ordinary-native-report-sanitize.mjs';
 
 // Never start or connect to SafariDriver here. This isolated macOS runner
 // operates an ordinary Safari window and its genuine macOS file chooser.
@@ -15,7 +15,8 @@ const root=path.resolve(import.meta.dirname,'../..');
 const source=path.join(root,'tests/fixtures/format.mp3');
 const output=path.join(root,'test-results/ordinary-safari-native-picker.json');
 const screenshot=path.join(root,'test-results/ordinary-safari-native-picker.png');
-const report={schema:'cosmic-ordinary-safari-file-probe-1',role:'diagnostic-only-not-release-or-SafariDriver-certification',platform:process.platform,startedAt:new Date().toISOString(),status:'RUNNING',architecture:process.arch,processes:{}};
+const mode=process.env.COSMIC_ORDINARY_SAFARI_MODE||'inspect';
+const report={executionMode:mode,nativeInputAttempted:false,inspectionComplete:false,schema:'cosmic-ordinary-safari-file-probe-1',role:'diagnostic-only-not-release-or-SafariDriver-certification',platform:process.platform,startedAt:new Date().toISOString(),status:'RUNNING',architecture:process.arch,processes:{}};
 const identity=ordinaryFileIdentity;
 const run=createOrdinaryRunner(report);
 // Apple documents System Events UI scripting of the actual process. The
@@ -65,10 +66,10 @@ async function performOrdinaryNativePicker(dir,name){
 }
 function page(token){return `<!doctype html><meta charset="utf-8"><title>Genuine ordinary Safari file picker</title>
 <label for="diskFile">Choose genuine disk MP3</label>
-<input id="diskFile" type="file" accept=".mp3,audio/mpeg" autofocus>
+<style>body{background:rgb(231,242,255)}</style><input id="diskFile" aria-label="Choose genuine disk MP3" type="file" accept=".mp3,audio/mpeg" autofocus>
 <p id="status">Awaiting real macOS file selection</p>
 <script>
-window.addEventListener('load',()=>{const input=document.getElementById('diskFile');input?.focus();fetch('/ready/${token}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({titleMatches:document.title==='Genuine ordinary Safari file picker',inputPresent:input?.type==='file',secureContext:window.isSecureContext,cryptoSubtlePresent:!!window.crypto?.subtle})}).catch(()=>{})});
+window.addEventListener('load',()=>{const input=document.getElementById('diskFile');input?.focus();fetch('/ready/${token}',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({titleMatches:document.title==='Genuine ordinary Safari file picker',inputPresent:input?.type==='file',secureContext:window.isSecureContext,cryptoSubtlePresent:!!window.crypto?.subtle,visibilityState:document.visibilityState,documentFocused:document.hasFocus(),backgroundMatches:getComputedStyle(document.body).backgroundColor==='rgb(231, 242, 255)'})}).catch(()=>{})});
 document.getElementById('diskFile').addEventListener('change',async event=>{
   const file=event.currentTarget.files[0];
   const result={isTrusted:event.isTrusted,name:file?.name,type:file?.type,size:file?.size,lastModified:file?.lastModified};
@@ -95,6 +96,8 @@ report.pageReadiness={homeRequests:0,homeResponsesFinished:0,readyCallbacks:0,in
 report.phase='setup';
 try{
  if(process.platform!=='darwin')throw Error('Requires genuine macOS Safari, not simulated WebKit');
+ assert.ok(['inspect','native'].includes(mode),'Explicit diagnostic mode required');
+ assert.equal(process.env.RUNNER_ENVIRONMENT,'github-hosted','UI inspection is confined to the disposable hosted runner');report.hostedRunnerVerified=true;
  await mkdir(path.dirname(output),{recursive:true});
  const version=await run('/usr/bin/defaults',['read','/Applications/Safari.app/Contents/Info','CFBundleShortVersionString'],5000);report.processes.browserMetadata=macProcessFacts(version);
  assert.ok(version.status===0&&!version.error&&!version.outcomeUncertain,'Safari version metadata must be readable');report.browserVersion=String(version.stdout||'').trim();
@@ -104,11 +107,19 @@ try{
  const staged=await materializeOrdinaryFixture(source,folder);assert.deepEqual(staged.source,sourceExpected);
  selectedFile=staged.file;expected=staged.selected;report.selectedExpected=expected;report.fixtureMaterialization='certified-mp3-1980-mtime';
  const file=selectedFile;
+ report.phase='script-compilation';
+ const inspectionScript=ordinarySafariInspectionScript();
+ const scripts=[{name:'legacy-3070-chooser',required:false,script:LEGACY_3070_CHOOSER_SCRIPT},...pickerSteps(folder,'format.mp3').map(stage=>({name:stage.name,required:true,script:ordinarySafariGuardScript(stage.guard)+'\n'+stage.script})),{name:'cleanup',required:true,script:ordinarySafariCleanupScript('http://127.0.0.1:12345/')},{name:'inspection',required:true,script:inspectionScript}];
+ const compiled=await compileOrdinaryScripts(scripts);
+ report.scriptCompilation=compiled.results.map(item=>({name:item.name,required:item.required,compiled:item.compiled,scriptSha256:item.scriptSha256,outputBytes:item.outputBytes,process:macProcessFacts(item.process)}));
+ report.inspectionOutcomeUncertain=compiled.uncertain;
+ if(compiled.cleanupError)report.cleanupErrorCode=ordinaryErrorCategory(compiled.cleanupError);
+ assert.ok(compiled.success&&!compiled.uncertain,'Current native scripts must compile before any UI operation');
  const token=randomBytes(16).toString('hex');
  let notified=false;const answer=new Promise(resolve=>{fulfill=resolve});
  server=createServer((req,res)=>{
   if(req.method==='GET'&&req.url==='/'){report.pageReadiness.homeRequests++;res.once('finish',()=>{report.pageReadiness.homeResponsesFinished++});res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store'});res.end(page(token));return}
-  if(req.method==='POST'&&req.url===`/ready/${token}`){let body='';req.on('data',b=>{body+=b.toString();if(body.length>1024)req.destroy()});req.on('end',()=>{report.pageReadiness.readyCallbacks++;try{const raw=JSON.parse(body);const flags={titleMatches:raw.titleMatches===true,inputPresent:raw.inputPresent===true,secureContext:raw.secureContext===true,cryptoSubtlePresent:raw.cryptoSubtlePresent===true};Object.assign(report.pageReadiness,flags);report.pageReadiness.acknowledged=true;fulfillReady(flags)}catch{report.pageReadiness.invalidReadyBodies++}res.writeHead(200,{'content-type':'text/plain'});res.end('ack')});return}
+  if(req.method==='POST'&&req.url===`/ready/${token}`){let body='';req.on('data',b=>{body+=b.toString();if(body.length>1024)req.destroy()});req.on('end',()=>{report.pageReadiness.readyCallbacks++;try{const raw=JSON.parse(body);const flags={titleMatches:raw.titleMatches===true,inputPresent:raw.inputPresent===true,secureContext:raw.secureContext===true,cryptoSubtlePresent:raw.cryptoSubtlePresent===true};Object.assign(report.pageReadiness,flags,{visibilityState:['visible','hidden','prerender'].includes(raw.visibilityState)?raw.visibilityState:'OTHER',documentFocused:raw.documentFocused===true,backgroundMatches:raw.backgroundMatches===true});report.pageReadiness.acknowledged=true;fulfillReady(flags)}catch{report.pageReadiness.invalidReadyBodies++}res.writeHead(200,{'content-type':'text/plain'});res.end('ack')});return}
   if(req.method==='POST'&&req.url===`/result/${token}`){report.pageReadiness.resultCallbacks++;let body='';req.on('data',b=>{body+=b.toString();if(body.length>8192)req.destroy()});req.on('end',()=>{if(!notified){notified=true;try{fulfill(JSON.parse(body))}catch(error){fulfill({error:String(error)})}}res.writeHead(200,{'content-type':'text/plain'});res.end('ack')});return}
   report.pageReadiness.otherRequests++;res.writeHead(404);res.end('not found');
  });
@@ -118,12 +129,21 @@ try{
  const browser=await run('/usr/bin/open',['-a','Safari',url],10000);report.processes.browserOpen=macProcessFacts(browser);assert.ok(browser.status===0&&!browser.error&&!browser.outcomeUncertain,'Could not open ordinary Safari');browserOpened=true;
  let flags;try{flags=await waitOrdinaryReady(ready)}finally{report.pageReadiness.elapsedMs=Math.round(performance.now()-readinessStarted)}
  assert.ok(Object.values(flags).every(value=>value===true),'Owned page, native input and secure hashing must acknowledge readiness');
- report.phase='native-picker';
+ report.phase='inspection';
+ const prePath=path.join(root,'test-results','ordinary-safari-stage-pre-input.png');
+ const pre=await run('/usr/sbin/screencapture',['-x',prePath],8000);report.processes.preInputScreenshot=macProcessFacts(pre);
+ assert.ok(pre.status===0&&!pre.error&&!pre.outcomeUncertain&&(await stat(prePath)).size>=1000,'Pre-input screenshot required');report.preInputScreenshot='ordinary-safari-stage-pre-input.png';
+ const census=await runOrdinaryProcess('/usr/bin/osascript',['-e',inspectionScript],{timeoutMs:5000});report.processes.inspection=macProcessFacts(census);report.inspectionOutcomeUncertain=census.outcomeUncertain;
+ assert.ok(census.status===0&&!census.error&&!census.outcomeUncertain,'Read-only accessibility inspection must complete');
+ report.inspection=parseOrdinaryInspection(census.stdout);report.inspectionComplete=true;
+ if(mode==='inspect'){report.status='NOT RUN'}else{
+ report.phase='native-picker';report.nativeInputAttempted=true;
  report.guiPicker={method:'genuine-System-Events-mouse-click-and-open-panel',stages:[]};
  try{report.guiPicker.stages=await performOrdinaryNativePicker(folder,'format.mp3')}catch(error){if(error?.stages)report.guiPicker.stages=error.stages;throw error}
  const native=await Promise.race([answer,delay(23000).then(()=>({error:'Real native picker callback timeout'}))]);
  report.native=native;report.status=isOrdinarySafariGenuineFile(native,expected)?'PASS':'FAIL';
  if(report.status!=='PASS')throw Error('Ordinary Safari native File identity/bytes/duration not verified: '+String(native.error||'mismatch'));
+ }
 }catch(error){report.failurePhase=report.phase;report.status='FAIL';report.errorCode=ordinaryErrorCategory(error);
  if(process.platform==='darwin'){
   try{await mkdir(path.dirname(screenshot),{recursive:true});const shot=await run('/usr/sbin/screencapture',['-x',screenshot],8000);report.processes.failureScreenshot=macProcessFacts(shot);report.failureScreenshot=shot.status===0?path.basename(screenshot):null;report.screenshotErrorCode=shot.status===0?null:(shot.error?.name||'UnclassifiedError')}catch(e){report.failureScreenshot=null;report.screenshotErrorCode=e?.name||'UnclassifiedError'}
@@ -131,7 +151,8 @@ try{
 }finally{
  report.phase='cleanup';
  if(expected){try{report.sourceAfter=await identity(source);assert.deepEqual(report.sourceAfter,sourceExpected);if(selectedFile){report.selectedAfter=await identity(selectedFile);assert.deepEqual(report.selectedAfter,expected)}report.fixturesPreserved=true}catch(error){report.fixturesPreserved=false;report.failurePhase??='cleanup';report.integrityErrorCode=ordinaryErrorCategory(error);report.status='FAIL'}}
- if(browserOpened&&!report.uiOutcomeUncertain){const quit=await run('/usr/bin/osascript',['-e',ordinarySafariCleanupScript(browserUrl)],9000);report.processes.browserClose=macProcessFacts(quit);if(quit.status!==0||quit.error||quit.outcomeUncertain){report.failurePhase??='cleanup';report.cleanupErrorCode=ordinaryErrorCategory(quit.error||'Safari process cleanup failed');report.status='FAIL'}}
+ if(mode==='native'&&browserOpened&&!report.uiOutcomeUncertain&&!report.inspectionOutcomeUncertain){const quit=await run('/usr/bin/osascript',['-e',ordinarySafariCleanupScript(browserUrl)],9000);report.processes.browserClose=macProcessFacts(quit);if(quit.status!==0||quit.error||quit.outcomeUncertain){report.failurePhase??='cleanup';report.cleanupErrorCode=ordinaryErrorCategory(quit.error||'Safari process cleanup failed');report.status='FAIL'}}
+ if(mode==='inspect'&&browserOpened&&!report.uiOutcomeUncertain)report.cleanupState='deferred-to-ephemeral-host';
  if(report.uiOutcomeUncertain){report.failurePhase??='cleanup';report.status='FAIL';report.cleanupState='skipped-uncertain-ui-outcome'}
  if(server?.listening){server.closeAllConnections();await new Promise(resolve=>server.close(resolve))}
  if(folder&&!report.uiOutcomeUncertain)await runOrdinaryCleanup(()=>rm(folder,{recursive:true,force:true}),report);else if(folder)report.fixtureCleanupState='preserved-for-uncertain-ui-outcome';
@@ -139,5 +160,5 @@ try{
  const publicReport=sanitizeOrdinarySafariReport(report);
  await mkdir(path.dirname(output),{recursive:true});await writeFile(output,JSON.stringify(publicReport,null,2)+'\n');
  console.log(`ORDINARY_SAFARI_NATIVE_FILE_REPORT=${JSON.stringify(publicReport)}`);
- if(report.status!=='PASS')process.exitCode=1;
+ if(report.status!=='PASS'&&!(mode==='inspect'&&report.status==='NOT RUN'&&report.inspectionComplete))process.exitCode=1;
 }

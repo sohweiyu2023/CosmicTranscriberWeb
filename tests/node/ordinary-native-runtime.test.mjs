@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
-import {runOrdinaryProcess,materializeOrdinaryFixture,ordinaryFileIdentity,CERTIFIED_ORDINARY_MP3,waitOrdinaryReady,createOrdinaryRunner} from '../safari/ordinary-native-runtime.mjs';
+import {runOrdinaryProcess,materializeOrdinaryFixture,ordinaryFileIdentity,CERTIFIED_ORDINARY_MP3,waitOrdinaryReady,createOrdinaryRunner,compileOrdinaryScripts,LEGACY_3070_CHOOSER_SCRIPT} from '../safari/ordinary-native-runtime.mjs';
 import {macProcessFacts,sanitizeOrdinarySafariReport} from '../safari/ordinary-native-report-sanitize.mjs';
 const secret='PRIVATE-SYNTHETIC-UNQUOTED-CANARY';
 test('synchronous UI-style subprocess can starve same-process HTTP; async process keeps server responsive',async()=>{
@@ -44,4 +44,11 @@ test('page readiness waits for the real acknowledgement and times out explicitly
 test('an uncertain native action blocks every further UI command while retaining read-only evidence',async()=>{
  const report={},calls=[];const run=createOrdinaryRunner(report,{capture:async(cmd)=>{calls.push(cmd);return calls.length===1?{status:null,error:{code:'ETIMEDOUT'},outcomeUncertain:true}:{status:0,outcomeUncertain:false}}});
  await run('/usr/bin/osascript',[],100);assert.equal(report.uiOutcomeUncertain,true);const blocked=await run('/usr/bin/osascript',[],100);assert.equal(blocked.error.code,'EUNCERTAIN');await run('/usr/bin/open',[],100);assert.equal(calls.length,1);await run('/usr/sbin/screencapture',[],100);assert.equal(calls.length,2);assert.equal(macProcessFacts(blocked).failureKind,'outcome-uncertain');
+});
+
+test('native scripts are compiled, never executed, and required compiler failure stops before UI',async()=>{
+ const seen=[];const scripts=[{name:'legacy-3070-chooser',script:LEGACY_3070_CHOOSER_SCRIPT,required:false},{name:'inspection',script:'return 1',required:true}];
+ const result=await compileOrdinaryScripts(scripts,{capture:async(cmd,args)=>{seen.push({cmd,args});if(seen.length===1)return {status:1,stderr:'syntax error (-2741)',stdout:'',outcomeUncertain:false};await writeFile(args[1],'compiled-synthetic-output');return {status:0,error:null,stderr:'',stdout:'',outcomeUncertain:false}}});
+ assert.equal(result.success,true);assert.equal(result.results[0].compiled,false);assert.equal(result.results[1].compiled,true);assert.ok(seen.every(x=>x.cmd==='/usr/bin/osacompile'));assert.ok(seen.every(x=>x.args.includes('-e')&&x.args.includes('-o')));
+ let calls=0;const rejected=await compileOrdinaryScripts([{name:'inspection',required:true,script:'bad'},{name:'cleanup',required:true,script:'later'}],{capture:async()=>{calls++;return {status:1,stderr:'compile failed (-2741)',outcomeUncertain:false}}});assert.equal(rejected.success,false);assert.equal(calls,1);
 });

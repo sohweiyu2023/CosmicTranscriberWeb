@@ -5,7 +5,8 @@
 import {safariProbeErrorCategory} from './disk-access-probe-contract.mjs';
 
 const stages=new Set(['native-mouse-click','go-to-folder-sheet','native-parent-directory','native-parent-confirm','native-filename','native-open']);
-const statuses=new Set(['RUNNING','PASS','FAIL']);
+const compilationNames=new Set(['legacy-3070-chooser','native-mouse-click','go-to-folder-sheet','native-parent-directory','native-parent-confirm','native-filename','native-open','cleanup','inspection']);
+const statuses=new Set(['RUNNING','PASS','FAIL','NOT RUN']);
 const safeNum=x=>typeof x==='number'&&Number.isFinite(x)&&x>=0?x:null;
 const safeExit=x=>Number.isInteger(x)&&x>=0&&x<=255?x:null;
 const safeHash=x=>typeof x==='string'&&/^[a-f0-9]{64}$/i.test(x)?x.toLowerCase():null;
@@ -17,21 +18,25 @@ const safeIdentity=x=>x&&typeof x==='object'?{
 }:null;
 
 const read=(value,key)=>{try{return value?.[key]}catch{return undefined}};
-const failureKinds=new Set(['none','timeout','interrupted','command-missing','execution-denied','output-limit','output-read-failed','output-write-failed','apple-events-denied','assistive-access-denied','process-failed','foreground-unverified','native-window-unverified','native-panel-unverified','cleanup-unverified','cleanup-blocked','outcome-uncertain','unknown']);
+const failureKinds=new Set(['none','timeout','interrupted','command-missing','execution-denied','output-limit','output-read-failed','output-write-failed','apple-events-denied','assistive-access-denied','process-failed','script-syntax','script-variable-undefined','foreground-unverified','native-window-unverified','native-panel-unverified','cleanup-unverified','cleanup-blocked','outcome-uncertain','unknown']);
 const signals=new Set(['SIGTERM','SIGKILL','SIGABRT','SIGSEGV','SIGINT']);
-const detailsStates=new Set(['none','recognized-template','status-only','unrecognized-output-omitted']);
+const appleScriptCodes=new Set([-2700,-2740,-2741,-2753,-1700,-1708,-1712,-1713,-1719,-1728,-1743,-600,-609,-10004,-10005]);
+const detailsStates=new Set(['none','recognized-template','recognized-code','status-only','unrecognized-output-omitted']);
 export const ordinaryErrorCategory=value=>{try{return safeError(value)}catch{return 'UnclassifiedError'}};
 export function safeMacProcessFacts(value){
  if(!value||typeof value!=='object')return null;
- const duration=read(value,'durationMs');
+ const duration=read(value,'durationMs'),appleScriptCode=read(value,'appleScriptCode');
  const status=read(value,'exitStatus'),signal=read(value,'signal'),kind=read(value,'failureKind'),state=read(value,'detailsState'),inspected=read(value,'stderrCharsInspected');
- return {durationMs:Number.isSafeInteger(duration)&&duration>=0?duration:null,outcomeUncertain:read(value,'outcomeUncertain')===true,outputTruncated:read(value,'outputTruncated')===true,exitStatus:safeExit(status),signal:signals.has(signal)?signal:null,failureKind:failureKinds.has(kind)?kind:'unknown',detailsState:detailsStates.has(state)?state:'unrecognized-output-omitted',stderrPresent:read(value,'stderrPresent')===true,stderrCharsInspected:Number.isSafeInteger(inspected)&&inspected>=0&&inspected<=8192?inspected:null,stderrTruncated:read(value,'stderrTruncated')===true,rawOutput:'omitted'};
+ return {appleScriptCode:appleScriptCodes.has(appleScriptCode)?appleScriptCode:null,durationMs:Number.isSafeInteger(duration)&&duration>=0?duration:null,outcomeUncertain:read(value,'outcomeUncertain')===true,outputTruncated:read(value,'outputTruncated')===true,exitStatus:safeExit(status),signal:signals.has(signal)?signal:null,failureKind:failureKinds.has(kind)?kind:'unknown',detailsState:detailsStates.has(state)?state:'unrecognized-output-omitted',stderrPresent:read(value,'stderrPresent')===true,stderrCharsInspected:Number.isSafeInteger(inspected)&&inspected>=0&&inspected<=8192?inspected:null,stderrTruncated:read(value,'stderrTruncated')===true,rawOutput:'omitted'};
 }
 export function macProcessFacts(result){
  const status=read(result,'status'),signal=read(result,'signal'),error=read(result,'error'),code=read(error,'code'),raw=read(result,'stderr');
  const text=typeof raw==='string'?raw.slice(0,8192):'';
+ const match=text.match(/\((-?\d{1,6})\)\s*$/),candidate=match?Number(match[1]):null,appleScriptCode=appleScriptCodes.has(candidate)?candidate:null;
  let kind='unknown',detailsState=text?'unrecognized-output-omitted':'status-only';
  if(code==='EUNCERTAIN')kind='outcome-uncertain';else if(code==='ABORT_ERR')kind='interrupted';else if(code==='ETIMEDOUT')kind='timeout';else if(code==='ENOENT')kind='command-missing';else if(code==='EACCES'||code==='EPERM')kind='execution-denied';else if(code==='ENOBUFS')kind='output-limit';else if(code==='EIO')kind='output-read-failed';
+ else if(appleScriptCode===-2740||appleScriptCode===-2741){kind='script-syntax';detailsState='recognized-code'}
+ else if(appleScriptCode===-2753){kind='script-variable-undefined';detailsState='recognized-code'}
  else if(/could not write.*(?:image|file)|could not save.*(?:image|file)/i.test(text)){kind='output-write-failed';detailsState='recognized-template'}
  else if(/CTW_SAFARI_CLEANUP_BLOCKED/.test(text)){kind='cleanup-blocked';detailsState='recognized-template'}
  else if(/CTW_SAFARI_CLEANUP_UNVERIFIED/.test(text)){kind='cleanup-unverified';detailsState='recognized-template'}
@@ -41,7 +46,7 @@ export function macProcessFacts(result){
  else if(/not authorized to send Apple events/i.test(text)){kind='apple-events-denied';detailsState='recognized-template'}
  else if(/not allowed assistive access|not trusted for accessibility/i.test(text)){kind='assistive-access-denied';detailsState='recognized-template'}
  else if(signals.has(signal))kind='interrupted';else if(status===0&&!error){kind='none';detailsState='none'}else if(Number.isInteger(status)&&status!==0)kind='process-failed';
- return safeMacProcessFacts({durationMs:read(result,'elapsedMs'),outcomeUncertain:read(result,'outcomeUncertain'),outputTruncated:read(result,'outputTruncated'),exitStatus:status,signal,failureKind:kind,detailsState,stderrPresent:typeof raw==='string'&&raw.length>0,stderrCharsInspected:text.length,stderrTruncated:typeof raw==='string'&&raw.length>8192});
+ return safeMacProcessFacts({appleScriptCode,durationMs:read(result,'elapsedMs'),outcomeUncertain:read(result,'outcomeUncertain'),outputTruncated:read(result,'outputTruncated'),exitStatus:status,signal,failureKind:kind,detailsState,stderrPresent:typeof raw==='string'&&raw.length>0,stderrCharsInspected:text.length,stderrTruncated:typeof raw==='string'&&raw.length>8192});
 }
 
 // Read-only ownership checks precede every native action. Never send keys to
@@ -56,29 +61,31 @@ export function ordinarySafariGuardScript(mode){
     if name of window 1 does not contain "Genuine ordinary Safari file picker" then error "CTW_SAFARI_NATIVE_WINDOW_UNVERIFIED"
     ${mode==='page'?'if (count of sheets of window 1) is not 0 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"':`if (count of sheets of window 1) is not 1 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
     set filePanel to sheet 1 of window 1
-    set controls to entire contents of filePanel
-    if (count of controls) > 2000 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
+    set ctwNodes to entire contents of filePanel
+    if (count of ctwNodes) > 2000 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
     set hasOpen to false
     set hasCancel to false
     set hasFiles to false
-    repeat with control in controls
+    repeat with ctwRef in ctwNodes
+      set ctwNode to contents of ctwRef
       try
-        if role of control is "AXButton" and name of control is "Open" then set hasOpen to true
-        if role of control is "AXButton" and name of control is "Cancel" then set hasCancel to true
-        if role of control is in {"AXBrowser", "AXOutline", "AXTable"} then set hasFiles to true
+        if role of ctwNode is "AXButton" and name of ctwNode is "Open" then set hasOpen to true
+        if role of ctwNode is "AXButton" and name of ctwNode is "Cancel" then set hasCancel to true
+        if role of ctwNode is in {"AXBrowser", "AXOutline", "AXTable"} then set hasFiles to true
       end try
     end repeat
     if not (hasOpen and hasCancel and hasFiles) then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
     ${mode==='chooser'?'if (count of sheets of filePanel) is not 0 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"':`if (count of sheets of filePanel) is not 1 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
     set folderPanel to sheet 1 of filePanel
-    set controls to entire contents of folderPanel
-    if (count of controls) > 500 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
+    set ctwNodes to entire contents of folderPanel
+    if (count of ctwNodes) > 500 then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"
     set hasGo to false
     set hasFolderField to false
-    repeat with control in controls
+    repeat with ctwRef in ctwNodes
+      set ctwNode to contents of ctwRef
       try
-        if role of control is "AXButton" and name of control is "Go" then set hasGo to true
-        if role of control is in {"AXTextField", "AXComboBox"} then set hasFolderField to true
+        if role of ctwNode is "AXButton" and name of ctwNode is "Go" then set hasGo to true
+        if role of ctwNode is in {"AXTextField", "AXComboBox"} then set hasFolderField to true
       end try
     end repeat
     if not (hasGo and hasFolderField) then error "CTW_SAFARI_NATIVE_PANEL_UNVERIFIED"`}`}
@@ -104,6 +111,68 @@ tell application "Safari"
   close ownedWindow
 end tell`;
 }
+export function ordinarySafariInspectionScript(){return `tell application "System Events"
+ set ctwFront to false
+ set ctwWindowCount to 0
+ set ctwOwned to 0
+ set ctwSheets to 0
+ set ctwWebAreas to 0
+ set ctwButtons to 0
+ set ctwInputs to 0
+ set ctwOpen to 0
+ set ctwCancel to 0
+ set ctwGo to 0
+ set ctwInspected to 0
+ set ctwTruncated to false
+ if exists process "Safari" then
+  set ctwFront to (name of first application process whose frontmost is true) is "Safari"
+  tell process "Safari"
+   set ctwWindowCount to count of windows
+   set ctwOwned to count of (windows whose name contains "Genuine ordinary Safari file picker")
+   if ctwWindowCount > 0 then
+    set ctwSheets to count of sheets of window 1
+    set ctwNodes to entire contents of window 1
+    repeat with ctwRef in ctwNodes
+     if ctwInspected >= 500 then
+      set ctwTruncated to true
+      exit repeat
+     end if
+     set ctwInspected to ctwInspected + 1
+     set ctwNode to contents of ctwRef
+     try
+      set ctwRole to role of ctwNode
+      if ctwRole is "AXWebArea" then set ctwWebAreas to ctwWebAreas + 1
+      if ctwRole is "AXButton" then set ctwButtons to ctwButtons + 1
+      if ctwRole is "AXButton" and name of ctwNode is "Open" then set ctwOpen to ctwOpen + 1
+      if ctwRole is "AXButton" and name of ctwNode is "Cancel" then set ctwCancel to ctwCancel + 1
+      if ctwRole is "AXButton" and name of ctwNode is "Go" then set ctwGo to ctwGo + 1
+     end try
+     try
+      if value of attribute "AXDOMIdentifier" of ctwNode is "diskFile" then set ctwInputs to ctwInputs + 1
+     end try
+    end repeat
+   end if
+  end tell
+ end if
+ return "1|" & (ctwFront as text) & "|" & ctwWindowCount & "|" & ctwOwned & "|" & ctwSheets & "|" & ctwWebAreas & "|" & ctwButtons & "|" & ctwInputs & "|" & ctwOpen & "|" & ctwCancel & "|" & ctwGo & "|" & ctwInspected & "|" & (ctwTruncated as text)
+end tell`}
+const inspectionCounts=['windowCount','ownedWindowCount','frontSheetCount','webAreaCount','buttonCount','fileInputIdMatches','openButtons','cancelButtons','goButtons','inspectedNodes'];
+export function safeOrdinaryInspection(raw){
+ const result={schema:1,frontSafari:read(raw,'frontSafari')===true,treeTruncated:read(raw,'treeTruncated')===true};
+ for(const key of inspectionCounts){const value=read(raw,key);result[key]=Number.isSafeInteger(value)&&value>=0&&value<=2000?value:null}
+ return result;
+}
+
+export function parseOrdinaryInspection(text){
+ if(typeof text!=='string'||text.length>256)throw new TypeError('Invalid bounded inspection protocol');
+ const parts=text.trim().split('|');
+ if(parts.length!==13||parts[0]!=='1'||!['true','false'].includes(parts[1])||!['true','false'].includes(parts[12]))throw new TypeError('Invalid bounded inspection protocol');
+ const result={schema:1,frontSafari:parts[1]==='true',treeTruncated:parts[12]==='true'};
+ for(let i=0;i<inspectionCounts.length;i++){const value=parts[i+2];if(!/^\d{1,4}$/.test(value)||Number(value)>2000)throw new TypeError('Invalid bounded inspection counter');result[inspectionCounts[i]]=Number(value)}
+ if(result.inspectedNodes>500)throw new TypeError('Inspection tree exceeds bound');
+ return result;
+}
+
 export async function runOrdinaryCleanup(operation,report){
  try{await operation()}catch(error){report.status='FAIL';report.failurePhase??='cleanup';report.cleanupErrorCode=ordinaryErrorCategory(error)}
 }
@@ -122,9 +191,11 @@ const safeNative=x=>x&&typeof x==='object'?{
  sha256:safeHash(x.sha256),sliceSha256:safeHash(x.sliceSha256),duration:safeNum(x.duration),
  errorCode:safeError(x.error)
 }:null;
+const safeCompilation=x=>{const name=read(x,'name');return {name:compilationNames.has(name)?name:'OTHER',required:read(x,'required')===true,compiled:read(x,'compiled')===true,scriptSha256:safeHash(read(x,'scriptSha256')),outputBytes:safeNum(read(x,'outputBytes')),process:safeMacProcessFacts(read(x,'process'))}};
 export function sanitizeOrdinarySafariReport(raw){
  const r=raw&&typeof raw==='object'?raw:{};
- const status=read(r,'status'),browserVersion=read(r,'browserVersion'),architecture=read(r,'architecture'),failurePhase=read(r,'failurePhase'),readiness=read(r,'pageReadiness');
+ const status=read(r,'status'),browserVersion=read(r,'browserVersion'),architecture=read(r,'architecture'),failurePhase=read(r,'failurePhase'),readiness=read(r,'pageReadiness'),compilation=read(r,'scriptCompilation'),cleanupState=read(r,'cleanupState');
+ const visibility=read(readiness,'visibilityState');
  return {
   schema:'cosmic-ordinary-safari-file-probe-1',
   role:'diagnostic-only-not-release-or-SafariDriver-certification',
@@ -134,12 +205,18 @@ export function sanitizeOrdinarySafariReport(raw){
   browserVersion:typeof browserVersion==='string'&&/^\d+(?:\.\d+){0,3}$/.test(browserVersion)?browserVersion:'UNKNOWN',
   architecture:['arm64','x64'].includes(architecture)?architecture:'UNKNOWN',
   fixturesPreserved:r.fixturesPreserved===true,sourceAfter:safeIdentity(r.sourceAfter),selectedAfter:safeIdentity(r.selectedAfter),
-  processes:Object.fromEntries(['browserMetadata','fixtureCopy','browserOpen','browserClose','failureScreenshot'].map(key=>[key,safeMacProcessFacts(r.processes?.[key])])),
+  processes:Object.fromEntries(['browserMetadata','fixtureCopy','browserOpen','browserClose','preInputScreenshot','inspection','failureScreenshot'].map(key=>[key,safeMacProcessFacts(r.processes?.[key])])),
+  executionMode:r.executionMode==='inspect'?'inspect':r.executionMode==='native'?'native':'OTHER',hostedRunnerVerified:r.hostedRunnerVerified===true,
+  inspectionComplete:r.inspectionComplete===true,nativeInputAttempted:r.nativeInputAttempted===true,inspectionOutcomeUncertain:r.inspectionOutcomeUncertain===true,
+  preInputScreenshot:r.preInputScreenshot==='ordinary-safari-stage-pre-input.png'?'ordinary-safari-stage-pre-input.png':null,
+  inspection:r.inspection?safeOrdinaryInspection(r.inspection):null,
+  scriptCompilation:Array.isArray(compilation)?compilation.slice(0,9).map(safeCompilation):[],
   source:safeIdentity(r.source),selectedExpected:safeIdentity(r.selectedExpected),
   fixtureMaterialization:r.fixtureMaterialization==='certified-mp3-1980-mtime'?'certified-mp3-1980-mtime':null,
-  failurePhase:['setup','page-readiness','native-picker','cleanup'].includes(failurePhase)?failurePhase:null,
-  uiOutcomeUncertain:r.uiOutcomeUncertain===true,fixtureCleanupState:r.fixtureCleanupState==='preserved-for-uncertain-ui-outcome'?'preserved-for-uncertain-ui-outcome':null,cleanupState:r.cleanupState==='skipped-uncertain-ui-outcome'?'skipped-uncertain-ui-outcome':null,
-  pageReadiness:readiness?Object.fromEntries([...['homeRequests','homeResponsesFinished','readyCallbacks','invalidReadyBodies','resultCallbacks','otherRequests','elapsedMs'].map(key=>[key,safeNum(read(readiness,key))]),...['acknowledged','titleMatches','inputPresent','secureContext','cryptoSubtlePresent'].map(key=>[key,read(readiness,key)===true])]):null,
+  failurePhase:['setup','script-compilation','page-readiness','inspection','native-picker','cleanup'].includes(failurePhase)?failurePhase:null,
+  uiOutcomeUncertain:r.uiOutcomeUncertain===true,fixtureCleanupState:r.fixtureCleanupState==='preserved-for-uncertain-ui-outcome'?'preserved-for-uncertain-ui-outcome':null,cleanupState:['skipped-uncertain-ui-outcome','deferred-to-ephemeral-host'].includes(cleanupState)?cleanupState:null,
+  pageReadiness:readiness?Object.fromEntries([...['homeRequests','homeResponsesFinished','readyCallbacks','invalidReadyBodies','resultCallbacks','otherRequests','elapsedMs'].map(key=>[key,safeNum(read(readiness,key))]),...['acknowledged','titleMatches','inputPresent','secureContext','cryptoSubtlePresent','documentFocused','backgroundMatches'].map(key=>[key,read(readiness,key)===true])]):null,
+  pageVisibility:['visible','hidden','prerender'].includes(visibility)?visibility:'OTHER',
   origin:r.origin==='loopback-http-test-only'?'loopback-http-test-only':null,
   guiPicker:r.guiPicker?{
    method:r.guiPicker.method==='genuine-System-Events-mouse-click-and-open-panel'?'genuine-System-Events-mouse-click-and-open-panel':'OTHER',

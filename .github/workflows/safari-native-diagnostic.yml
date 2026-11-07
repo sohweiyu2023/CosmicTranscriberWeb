@@ -79,7 +79,7 @@ jobs:
           retention-days: 7
 
   ordinary-safari-gui-diagnostic:
-    name: Real ordinary Safari file picker (no WebDriver; diagnostic only)
+    name: Read-only ordinary Safari page and accessibility investigation
     runs-on: macos-26
     timeout-minutes: 15
     steps:
@@ -101,18 +101,19 @@ jobs:
           # 91c5a4b1cf405c6c01836541c8b06b173f1f8b6fe7085b11fa266cec39c4f74f.
           # Probe/report changes add reviewed diagnostics only, not certification.
           cat > "$RUNNER_TEMP/ordinary-safari-reviewed.sha256" <<'REVIEWED'
-          18cc2a716bb9a323ad7fc661cc6331a0bd10b19d8c4b2feea1be712de0cee670  tests/safari/ordinary-native-gui-probe.mjs
-          b7d1e9ba9d70c08f02f227ce712c1b41f9c196cb1963baf33d470720198a9fc8  tests/safari/ordinary-native-runtime.mjs
+          06b0fc5d11d8c2d5cdfaaf6e6b80723552fd093df88f56105ebc3d4e80be5963  tests/safari/ordinary-native-gui-probe.mjs
+          1e4541706b21ea3b2e734ecf348573daa8688dcd015e6cb8a9820629b7a0cd4e  tests/safari/ordinary-native-runtime.mjs
           8bb15551acf7c20bf46466436e10e40b073443bb17836946ed9f4d96fcf2ee32  tests/safari/ordinary-native-file-contract.mjs
-          34c46f4fd1d0ec6cef2a424958a613f7fd8340b753a1e4be26d9bcc9f351c0fd  tests/safari/ordinary-native-report-sanitize.mjs
+          cdee92ee41d07674e522c24a6384042041493449bee35831dfc1ebbee8d4cf10  tests/safari/ordinary-native-report-sanitize.mjs
           76538cb6310f56cfd50c80843842d611f5140769f761db4ebb5d9d3aa3dd944b  tests/safari/disk-access-probe-contract.mjs
           e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55  tests/fixtures/format.mp3
           REVIEWED
           sha256sum -c "$RUNNER_TEMP/ordinary-safari-reviewed.sha256"
-      - name: Use ordinary Safari and genuine native macOS file chooser (not WebDriver)
+      - name: Compile scripts and inspect ordinary Safari without native input
         timeout-minutes: 4
         env:
           COSMIC_ORDINARY_SAFARI_EXPECTED_VERSION: '27.2'
+          COSMIC_ORDINARY_SAFARI_MODE: 'inspect'
         run: node tests/safari/ordinary-native-gui-probe.mjs
       - name: Preserve ordinary Safari native picker evidence even on failure
         if: ${{ always() }}

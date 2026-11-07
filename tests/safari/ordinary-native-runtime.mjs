@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {constants} from 'node:fs';
-import {readFile,stat,lstat,copyFile,chmod,utimes} from 'node:fs/promises';
+import {readFile,stat,lstat,copyFile,chmod,utimes,mkdtemp,rm} from 'node:fs/promises';
 import path from 'node:path';
+import {tmpdir} from 'node:os';
 
 // Exact approved MP3 from certified4ec47b1f ZIP, including its original mtime.
 // Git checkout mtime is not the artifact mtime; never mutate the source file.
@@ -51,4 +52,28 @@ export function createOrdinaryRunner(report,{capture=runOrdinaryProcess}={}){
 export async function waitOrdinaryReady(promise,timeoutMs=20000){
  assert.ok(Number.isSafeInteger(timeoutMs)&&timeoutMs>0&&timeoutMs<=20000,'Bounded page deadline required');
  let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(new Error('Ordinary page readiness timed out'),{name:'TimeoutError'})),timeoutMs)})])}finally{clearTimeout(timer)}
+}
+
+// Historical source is compiled only, NEVER executed. It permits a concrete parser comparison.
+export const LEGACY_3070_CHOOSER_SCRIPT="tell application \"System Events\"\n  set frontApp to name of first application process whose frontmost is true\n  if frontApp is not \"Safari\" then error \"CTW_SAFARI_NOT_FOREGROUND\"\n  tell process \"Safari\"\n    if (count of windows) is 0 then error \"CTW_SAFARI_NATIVE_WINDOW_UNVERIFIED\"\n    if name of window 1 does not contain \"Genuine ordinary Safari file picker\" then error \"CTW_SAFARI_NATIVE_WINDOW_UNVERIFIED\"\n    if (count of sheets of window 1) is not 1 then error \"CTW_SAFARI_NATIVE_PANEL_UNVERIFIED\"\n    set filePanel to sheet 1 of window 1\n    set controls to entire contents of filePanel\n    if (count of controls) > 2000 then error \"CTW_SAFARI_NATIVE_PANEL_UNVERIFIED\"\n    set hasOpen to false\n    set hasCancel to false\n    set hasFiles to false\n    repeat with control in controls\n      try\n        if role of control is \"AXButton\" and name of control is \"Open\" then set hasOpen to true\n        if role of control is \"AXButton\" and name of control is \"Cancel\" then set hasCancel to true\n        if role of control is in {\"AXBrowser\", \"AXOutline\", \"AXTable\"} then set hasFiles to true\n      end try\n    end repeat\n    if not (hasOpen and hasCancel and hasFiles) then error \"CTW_SAFARI_NATIVE_PANEL_UNVERIFIED\"\n    if (count of sheets of filePanel) is not 0 then error \"CTW_SAFARI_NATIVE_PANEL_UNVERIFIED\"\n  end tell\nend tell\ntell application \"System Events\"\n    keystroke \"g\" using {command down, shift down}\n  end tell";
+
+const scriptNames=new Set(['legacy-3070-chooser','native-mouse-click','go-to-folder-sheet','native-parent-directory','native-parent-confirm','native-filename','native-open','cleanup','inspection']);
+export async function compileOrdinaryScripts(scripts,{capture=runOrdinaryProcess}={}){
+ assert.ok(Array.isArray(scripts)&&scripts.length>0&&scripts.length<=9);
+ const folder=await mkdtemp(path.join(tmpdir(),'ctw-ordinary-safari-compile-')),results=[];let uncertain=false,success=true,cleanupError=null;
+ try{
+  for(const item of scripts){
+   assert.ok(scriptNames.has(item.name)&&typeof item.script==='string'&&item.script.length<=30000&&typeof item.required==='boolean');
+   const output=path.join(folder,item.name+'.scpt');
+   const process=await capture('/usr/bin/osacompile',['-o',output,'-e',item.script],{timeoutMs:5000});
+   let outputBytes=0;try{const s=await stat(output);if(s.isFile())outputBytes=s.size}catch{}
+   const compiled=process.status===0&&!process.error&&!process.outcomeUncertain&&outputBytes>0;
+   results.push({name:item.name,required:item.required,scriptSha256:hash(Buffer.from(item.script)),outputBytes,compiled,process});
+   if(process.outcomeUncertain){uncertain=true;success=false;break}
+   if(item.required&&!compiled){success=false;break}
+  }
+ }finally{
+  if(!uncertain){assert.ok(path.resolve(folder).startsWith(path.resolve(tmpdir())+path.sep));try{await rm(folder,{recursive:true,force:true})}catch(error){cleanupError=error;success=false}}
+ }
+ return {success,uncertain,results,cleanupError};
 }
