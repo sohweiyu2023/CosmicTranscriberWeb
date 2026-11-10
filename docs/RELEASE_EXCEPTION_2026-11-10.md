@@ -14,6 +14,10 @@ On 10 November 2026 at 03:56 UTC the owner approved a second, exact Safari autom
 
 The result is recorded as **WAIVED** with `nativeSafariStatus:FAIL`, `genuineMacSafariValidated:false` and `certifiesRelease:false`. Static safeguards and mutations fail if either verifier dispatches by prefix, range or fallback, drops the diagnostic requirement, or records this exception under the October decision.
 
+## Enforcement record
+
+First enforced in PR #50 release CI [run 42767835146](https://github.com/sohweiyu2023/CosmicTranscriberWeb/actions/runs/42767835146). Genuine SafariDriver 27.2 again failed with the exact signature (provider calls 0, recorded requests 0, fixtures preserved). Both verifiers returned `safaridriver-27.2-native-disk-not-readable`, and every other platform job passed. Main `a970bb7c` repeated this in [run 42772320657](https://github.com/sohweiyu2023/CosmicTranscriberWeb/actions/runs/42772320657). Its first attempt stopped at an `apt-get` media-provisioning timeout before any test ran; it was re-run unchanged.
+
 ## Retained requirements and retirement
 
 Genuine desktop Mac Safari remains **not validated**; repeat [the manual Safari checklist](SAFARI_MAC_ACCEPTANCE.md) on a real Mac when possible. Every other platform, security, billing, provenance, staging-acceptance, configuration and rollback requirement remains mandatory. Retire both entries, and require a native PASS, once a shipping SafariDriver includes the upstream fix; do not carry this exception to a later Safari version or a later package version without a new owner decision.
