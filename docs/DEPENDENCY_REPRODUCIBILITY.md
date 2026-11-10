@@ -14,8 +14,8 @@ An upstream direct release can still fail the strict freshness gate and requires
 a new reviewed candidate, as happened on 2026-11-07.
 
 The standalone `workerd@latest` tag is not evidence of the Workerd version
-selected by Wrangler. Official Wrangler 4.158.0 and Miniflare
-5.20261104.0-beta declare Workerd 1.20261104.1 exactly. Vitest plugin 1.6.0
+selected by Wrangler. Official Wrangler 4.159.0 and Miniflare
+5.20261109.0-beta declare Workerd 1.20261109.1 exactly. Vitest plugin 1.6.1
 declares that Wrangler and Miniflare pair. The candidate lock confirms this
 supported combination without a Workerd override. Existing Undici and Zod
 security overrides remain unchanged.
@@ -32,7 +32,7 @@ security overrides remain unchanged.
 1. Resolve dependency changes deliberately in a development candidate with
    lifecycle scripts disabled. Review the complete package/lock diff, official
    installer metadata and exact script policy. This candidate selects Workerd
-   1.20261104.1 through the supported wrapper pair. Its official tarball integrity
+   1.20261109.1 through the supported wrapper pair. Its official tarball integrity
    and installer source require review before an exact-version policy addition;
    snapshot regeneration alone never approves execution. The exact-version
    policy was added after official SHA-512 tarball verification and independent
@@ -95,8 +95,8 @@ are finite categories and never echo arbitrary malformed file contents.
 ## Scope and release qualifications
 
 The candidate currently resolves direct versions: @noble/hashes 2.4.0, jose
-6.2.15, @cloudflare/vitest-plugin 1.6.0, @playwright/test 1.65.0, msw 3.0.4,
-vitest 5.1.0 and wrangler 4.158.0. These runtime/tooling changes require fresh
+6.2.17, @cloudflare/vitest-plugin 1.6.1, @playwright/test 1.65.0, msw 3.0.4,
+vitest 5.1.0 and wrangler 4.159.0. These runtime/tooling changes require fresh
 platform certification and a new source artifact. Earlier live acceptance does
 not automatically certify the new graph. No old package may be presented as this
 candidate. Native Safari remains FAIL/WAIVED under the separately documented

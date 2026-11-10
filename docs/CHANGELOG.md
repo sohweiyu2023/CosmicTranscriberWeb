@@ -1,5 +1,14 @@
 ## 1.2.0 - current source and upgrade qualification
 
+### 10 November 2026 release-candidate revision
+
+- Recognises genuine audio/video recordings by content as well as by extension: compatible alternate names (`.m4b`, `.m4r`, `.m4v`, `.mov`, `.oga`, `.opus`, `.wave`) and files with generic or missing MIME types are inspected locally and mapped to the supported upload format. MP4/M4A files must contain an audio track before anything is uploaded; video-only, corrupt and unrecognised files fail with conversion guidance. There is still no built-in converter.
+- Regression coverage for issue #3: a lone MPEG frame (bare, behind ID3, before an ID3v1 tail, or with a corrupt second frame) is rejected for `.mp3`, `.mpeg` and `.mpga` at Worker level before any provider dispatch, and the rejected attempt stays reusable.
+- Operational logging can no longer leak an unhandled rejection from an asynchronous log sink into successful paid work; rows record component and diagnostics revision, and unconfirmed deliveries count towards `droppedBefore`.
+- Adds an exact owner-approved SafariDriver 27.2 exception ([RELEASE_EXCEPTION_2026-11-10.md](RELEASE_EXCEPTION_2026-11-10.md)) for the upstream WebKit send-keys file-grant defect, alongside the unchanged 26.6.2 entry. Native Safari remains FAIL/WAIVED, not validated.
+- Refreshes Wrangler 4.159.0, Cloudflare Vitest plugin 1.6.1 (Workerd 1.20261109.1, installer reviewed by exact version) and jose 6.2.17 (license text unchanged).
+- Larger settings checkboxes for touch use.
+
 - Supports MP3, FLAC, MP4, MPEG, MPGA, M4A, OGG, WAV and WebM with bounded upload validation and frame-aware MP3 preparation.
 - Improves browser workflow, export, cancellation/error handling and receipt-bound staging acceptance accounting, preserving no automatic paid retries and privacy-safe evidence.
 - Repairs offline synthetic-smoke replay from source archives using an explicit local history repository and cleanup on checkout failure.

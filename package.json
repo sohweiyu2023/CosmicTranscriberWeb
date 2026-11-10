@@ -72,14 +72,14 @@
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",
-    "jose": "6.2.15"
+    "jose": "6.2.17"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.6.0",
+    "@cloudflare/vitest-plugin": "1.6.1",
     "@playwright/test": "1.65.0",
     "msw": "3.0.4",
     "vitest": "5.1.0",
-    "wrangler": "4.158.0"
+    "wrangler": "4.159.0"
   },
   "overrides": {
     "miniflare": {
@@ -105,7 +105,8 @@
     "workerd@1.20261023.1": true,
     "workerd@1.20261102.1": true,
     "workerd@1.20261103.1": true,
-    "workerd@1.20261104.1": true
+    "workerd@1.20261104.1": true,
+    "workerd@1.20261109.1": true
   },
   "packageExtensions": {
     "vitest@5.0.3": {
