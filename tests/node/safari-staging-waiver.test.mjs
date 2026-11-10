@@ -55,3 +55,15 @@ test('reviewed Safari26 waiver digest is pinned to the actual bundled MP3 bytes'
  assert.equal(bytes.length,16941);
  assert.equal(sha256,makeReport().fixtures[0].before.sha256);
 });
+
+// Exact 27.2 entry (owner-approved 2026-11-10); dispatch never maps unlisted versions.
+import {verifyApprovedSafariStagingWaiver,verifyNarrowSafari27StagingWaiver,SAFARI27_WAIVER_ID} from '../../scripts/safari-staging-waiver.mjs';
+import {readFile as readFile27} from 'node:fs/promises';
+const actual27=JSON.parse(await readFile27(new URL('../fixtures/historical-ci/safari-27.2-native-run-42384289480.json',import.meta.url),'utf8'));
+test('staging waiver accepts the actual 27.2 report only through the exact 27.2 entry',()=>{
+ assert.equal(verifyApprovedSafariStagingWaiver(structuredClone(actual27)),SAFARI27_WAIVER_ID);
+ assert.equal(verifyNarrowSafari27StagingWaiver(structuredClone(actual27)),SAFARI27_WAIVER_ID);
+ assert.throws(()=>verifyNarrowSafari26StagingWaiver(structuredClone(actual27)));
+ for(const version of ['27.2.1','27.3','28.0','27','26.6.3','',undefined]){const r=structuredClone(actual27);r.capabilities.browserVersion=version;assert.throws(()=>verifyApprovedSafariStagingWaiver(r),String(version))}
+ for(const mutate of [r=>{r.providerCalls=1},r=>{r.fixtures[0].nativeSelectionMode='picker'},r=>{r.fixtures[0].after.sha256='0'.repeat(64)},r=>{r.fixtures[0].native.error='TimeoutError'}]){const r=structuredClone(actual27);mutate(r);assert.throws(()=>verifyApprovedSafariStagingWaiver(r))}
+});

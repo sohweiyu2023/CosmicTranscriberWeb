@@ -309,7 +309,21 @@ export function safeguards(files) {
         && s("scripts/safari-staging-waiver.mjs").includes("report?.capabilities?.browserVersion,'26.6.2'")
         && s("scripts/safari-staging-waiver.mjs").includes("assert.equal(report?.providerCalls,0")
         && s("scripts/safari-staging-waiver.mjs").includes("assert.deepEqual(item.after,item.before")
-        && s("scripts/safari-staging-waiver.mjs").includes("nativeSelectionMode,'safaridriver-sendkeys'");
+        && s("scripts/safari-staging-waiver.mjs").includes("nativeSelectionMode,'safaridriver-sendkeys'")
+        // Owner-approved 2026-11-10: exactly one additional version, dispatched by
+        // strict equality and recorded with its own decision document.
+        && s("scripts/safari-staging-waiver.mjs").includes("report?.capabilities?.browserVersion,'27.2'")
+        && s("scripts/safari-staging-waiver.mjs").includes("if(version==='26.6.2')return verifyNarrowSafari26StagingWaiver(report);")
+        && s("scripts/safari-staging-waiver.mjs").includes("if(version==='27.2')return verifyNarrowSafari27StagingWaiver(report);")
+        && s("scripts/safari-staging-waiver.mjs").includes("assert.fail('No owner-approved SafariDriver waiver exists for this exact Safari version')")
+        && !/browserVersion[^\n]*(startsWith|match\(|parseFloat|parseInt|localeCompare|>=|<=)/.test(s("scripts/safari-staging-waiver.mjs")+s("scripts/safari-release-exception.mjs"))
+        && s("scripts/safari-release-exception.mjs").includes("if(version==='27.2')return verifyNarrowSafari27ReleaseException(report,{packageVersion});")
+        && s("scripts/safari-release-exception.mjs").includes("diagnosticsRequired:true,decision:'docs/RELEASE_EXCEPTION_2026-11-10.md'")
+        && s("scripts/safari-release-exception.mjs").includes("assert.ok(hasDiagnostics||!exception.diagnosticsRequired")
+        && s("scripts/safari-release-exception.mjs").includes("assert.deepEqual(report.capabilities,{browserName:'Safari',browserVersion});")
+        && s("scripts/safari-release-exception.mjs").includes("const result=verifyApprovedSafariReleaseException(report,{packageVersion:version});")
+        && s("tests/node/safari-release-exception.test.mjs").includes("safari-27.2-native-run-42384289480.json")
+        && s("tests/node/safari-release-exception.test.mjs").includes("r=>{r.capabilities.browserVersion='27.2.1'}");
     }]
     ,["Safari release exception rejects compound failures and remains explicitly waived", () => {
       const verifier=s("scripts/safari-release-exception.mjs");

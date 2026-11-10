@@ -207,11 +207,11 @@ jobs:
         id: real-safari
         continue-on-error: true
         run: npm run test:safari:real
-      - name: Verify narrowly documented SafariDriver 26.6.2 failure for STAGING ONLY
+      - name: Verify exact documented SafariDriver 26.6.2 or 27.2 failure for STAGING ONLY
         id: safari-staging-waiver
         if: ${{ steps.real-safari.outcome == 'failure' }}
         run: node scripts/safari-staging-waiver.mjs test-results/safari-native-acceptance.json
-      - name: Record owner-approved exact Safari26 release exception (not Safari certification)
+      - name: Record owner-approved exact SafariDriver release exception (not Safari certification)
         id: safari-release-exception
         if: ${{ steps.real-safari.outcome == 'failure' }}
         run: node scripts/safari-release-exception.mjs test-results/safari-native-acceptance.json
@@ -389,7 +389,7 @@ jobs:
           else
             test "$NATIVE_SAFARI_OUTCOME" = failure
             test "$SAFARI_WAIVER_OUTCOME" = success
-            echo 'STAGING ONLY: known SafariDriver 26.6.2 native-file failure waived; real Safari NOT CERTIFIED.'
+            echo 'STAGING ONLY: exact known SafariDriver native-file failure (26.6.2 or 27.2 only) waived; real Safari NOT CERTIFIED.'
             echo 'Safari26 staging waiver active; staging preflight alone does not authorize final release. See https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6' >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -455,7 +455,7 @@ jobs:
           else
             test "$NATIVE_SAFARI_OUTCOME" = failure
             test "$SAFARI_RELEASE_EXCEPTION_OUTCOME" = success
-            echo 'Native Safari FAIL / WAIVED for the exact owner-approved SafariDriver 26.6.2 signature. Genuine Mac Safari not validated; user-reported iPhone Safari success is separate evidence. All unrelated release requirements remain mandatory. See docs/RELEASE_EXCEPTION_2026-10-22.md.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Native Safari FAIL / WAIVED for an exact owner-approved SafariDriver signature (26.6.2 or 27.2 only). Genuine Mac Safari not validated; user-reported iPhone Safari success is separate evidence. All unrelated release requirements remain mandatory. See docs/RELEASE_EXCEPTION_2026-10-22.md and docs/RELEASE_EXCEPTION_2026-11-10.md.' >> "$GITHUB_STEP_SUMMARY"
           fi
 
   deploy-staging-certified:
