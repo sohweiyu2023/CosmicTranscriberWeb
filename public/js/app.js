@@ -1,7 +1,7 @@
 import {APP_VERSION,DEFAULT_PROMPT,MODELS} from './models.js';
 import {hashBlobStreaming,hashText} from './hash.js';
 import {inspectAndChunkMp3,materializeChunk,MP3_CHUNKER_REVISION} from './mp3.js';
-import {FILE_ACCEPT,fileAudioFormat,formatSpec,validateWholeFile,wholeFileInspection} from './audio-formats.js';
+import {FILE_ACCEPT,detectFileAudioFormat,formatSpec,validateWholeFile,wholeFileInspection} from './audio-formats.js';
 import {probeOggVorbisDuration} from './ogg-duration.js';
 import {checkpointId,loadCheckpoint,saveCheckpoint,settingsIdentity} from './checkpoint.js';
 import {compatibleCheckpoint} from './checkpoint-identity.js';
@@ -113,7 +113,7 @@ async function prepareFile(file,item){
  const preparedStarted=performance.now();addDiag('file_prepare_started',{fileRef:item.diagRef,size:file?.size||0});
  try{
   if(!(file instanceof File)||file.size===0)throw new Error('File is empty.');
-  const audioFormat=fileAudioFormat(file),settings=readSettings(false);
+  const audioFormat=await detectFileAudioFormat(file),settings=readSettings(false);
   const fingerprint=await hashBlobStreaming(file,{onProgress:p=>{if(item.status==='inspecting')setProgress(p*10,'Inspecting files',`Hashing ${safeDisplayName(file.name)} in bounded slices…` )}});
   let inspection,inspectionKey;
   if(audioFormat==='mp3'){

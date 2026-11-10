@@ -475,6 +475,30 @@ describe('whole-Worker integration against real Wrangler entry/config',()=>{
     expect(retry.status,await retry.clone().text()).toBe(200);expect(upstreamHits).toBe(1);
   });
 
+  // Issue #3 regression across every MPEG-family extension: one structurally
+  // valid frame (optionally behind ID3 or before an ID3v1 tail) never authorizes
+  // paid dispatch, and the rejected attempt stays reusable for valid content.
+  it.each(['mp3','mpeg','mpga'])('rejects uncorroborated %s frames before paid dispatch without consuming the attempt',async(audioFormat)=>{
+    let upstreamHits=0;
+    network.use(http.post('https://api.openai.com/v1/audio/transcriptions',async({request})=>{upstreamHits++;await request.clone().arrayBuffer();return HttpResponse.json({text:'ok'})}));
+    const cookie=await createSession(`prebill-${audioFormat}-family-key`);
+    const frame=()=>{const out=new Uint8Array(417);out.set([0xff,0xfb,0x90,0x64],0);return out};
+    const join=(...parts)=>{const out=new Uint8Array(parts.reduce((n,p)=>n+p.length,0));let at=0;for(const p of parts){out.set(p,at);at+=p.length}return out};
+    const id3=new Uint8Array(10);id3.set([0x49,0x44,0x33,4],0);
+    const id3v1=new Uint8Array(128);id3v1.set([0x54,0x41,0x47],0);
+    const valid=twoFrameMpeg();
+    const identity={v:2,audioFormat,jobId:`job-prebill-${audioFormat}-family`,fileId:`file-prebill-${audioFormat}-family`,chunkIndex:1,chunkCount:1,attemptId:`attempt-prebill-${audioFormat}-family`,durationSeconds:1,model:'gpt-transcribe',languages:[],keywords:[],prompt:'',requestKind:'transcription'};
+    const malformed=[frame(),join(id3,frame()),join(frame(),id3v1),join(frame(),new Uint8Array(417).fill(0x55)),valid.subarray(0,valid.length-1)];
+    for(const bytes of malformed){
+      const bad=await transcribe(cookie,{...identity,declaredBytes:bytes.length},{'Content-Type':'audio/mpeg'},bytes);
+      expect(bad.status).toBe(415);
+      expect((await bad.json()).error.code).toBe('audio_signature_rejected');
+      expect(upstreamHits).toBe(0);
+    }
+    const retry=await transcribe(cookie,{...identity,declaredBytes:valid.length},{'Content-Type':'audio/mpeg'},valid);
+    expect(retry.status,await retry.clone().text()).toBe(200);expect(upstreamHits).toBe(1);
+  });
+
   it('rejects unsupported/realtime model before upstream',async()=>{
     const cookie=await createSession();
     const r=await transcribe(cookie,metadata({model:'gpt-realtime'}));
