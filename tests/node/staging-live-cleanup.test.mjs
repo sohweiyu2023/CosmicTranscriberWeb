@@ -27,6 +27,14 @@ for(const [scenario,expectedPaid,expectedFailure,expectedCleanup] of [
  ['all-pass',9,undefined,'PASS'],
  ['fifth-failure',5,'paid-mpga','PASS'],
  ['one-speaker',8,'paid-wav','PASS'],
+ ['missing-result',1,'paid-mp3','PASS'],
+ ['invalid-result',1,'paid-mp3','PASS'],
+ ['missing-diagnostics',1,'paid-mp3','PASS'],
+ ['wav-missing-text',8,'paid-wav','PASS'],
+ ['wav-missing-segments',8,'paid-wav','PASS'],
+ ['wav-missing-speaker',8,'paid-wav','PASS'],
+ ['wav-missing-segment-text',8,'paid-wav','PASS'],
+ ['forged-diagnostic-pass',9,undefined,'PASS'],
  ['nonwav-empty-transcript',1,'paid-mp3','PASS'],
  ['nonwav-short-transcript',1,'paid-mp3','PASS'],
  ['wav-out-of-range',8,'paid-wav','PASS'],
@@ -76,6 +84,21 @@ for(const [scenario,expectedPaid,expectedFailure,expectedCleanup] of [
     seenJobs.add(row.jobId);seenAttempts.add(row.attemptId);
    }
    assert.equal(network.paid,expectedPaid);
+   const expectedDiagnostic={
+    'one-speaker':'diarization_speakers_insufficient',
+    'nonwav-empty-transcript':'speech_content_insufficient',
+    'nonwav-short-transcript':'speech_content_insufficient',
+    'wav-out-of-range':'diarization_timestamps_invalid',
+    'wav-out-of-order':'diarization_order_invalid',
+    'missing-result':'result_missing','invalid-result':'result_structure_invalid','missing-diagnostics':'diagnostics_missing',
+    'wav-missing-text':'diarization_text_missing','wav-missing-segments':'diarization_segments_missing',
+    'wav-missing-speaker':'diarization_speaker_missing','wav-missing-segment-text':'diarization_segment_text_missing'
+   }[scenario];
+   assert.equal(report.failure?.validationFailure,expectedDiagnostic);
+   assert.equal(report.formats.find(x=>x.status==='FAIL')?.validationFailure,expectedDiagnostic);
+   const serialized=JSON.stringify(report)+result.stdout+result.stderr;
+   assert.ok(!serialized.includes('PRIVATE_TRANSCRIPT_TOKEN_SENTINEL'));
+
    if(scenario==='redirect')assert.equal(network.redirectCancelled,true,'Redirect response body must be cancelled');
    if(['non-json-status','json-suffix-status','json-parameter-spoof-status'].includes(scenario))assert.equal(network.nonJsonCancelled,true,'Non-JSON response body must be cancelled');
    if(scenario==='oversized-status'){
