@@ -1,0 +1,120 @@
+{
+ "schema": "cosmic-real-safari-native-acceptance-1",
+ "status": "FAIL",
+ "platform": "darwin",
+ "startedAt": "2026-11-07T15:33:32.394Z",
+ "finishedAt": "2026-11-07T15:33:53.807Z",
+ "providerCalls": 0,
+ "fixturesPreserved": true,
+ "capabilities": {
+  "browserName": "Safari",
+  "browserVersion": "27.2"
+ },
+ "checks": [
+  {
+   "name": "native disk fixtures are world-readable, byte-identical and timestamp-identical",
+   "status": "PASS"
+  },
+  {
+   "name": "real Safari shell, native controls and strict localhost HTTPS origin",
+   "status": "PASS"
+  },
+  {
+   "name": "mocked BYOK setup clears plaintext and uses HttpOnly session",
+   "status": "PASS"
+  }
+ ],
+ "fixtures": [
+  {
+   "name": "format.mp3",
+   "format": "mp3",
+   "expectedDuration": 1,
+   "expectedDispatch": {
+    "bytes": 16896,
+    "sha256": "79e8469c541ed481cdc6067c038b12570ee6091f42f3955ef34f09c6132b9909"
+   },
+   "before": {
+    "size": 16941,
+    "sha256": "e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55",
+    "mtimeNs": "315532800000000000"
+   },
+   "after": {
+    "size": 16941,
+    "sha256": "e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55",
+    "mtimeNs": "315532800000000000"
+   },
+   "native": {
+    "error": "NotReadableError: The I/O read operation failed.",
+    "diskReadDiagnostics": {
+     "size": 16941,
+     "type": "audio/mpeg",
+     "sliceArrayBuffer": {
+      "ok": false,
+      "error": "NotReadableError: The I/O read operation failed."
+     },
+     "fileReader": {
+      "ok": false,
+      "error": "NotReadableError: The I/O read operation failed."
+     },
+     "blobUrlFetch": {
+      "ok": false,
+      "error": "TypeError: Load failed"
+     }
+    }
+   },
+   "nativeSelectionMode": "safaridriver-sendkeys",
+   "nativePickerDiagnostic": {
+    "mode": "not-attempted"
+   },
+   "nativePreparationStatus": "FAIL",
+   "workflowStatus": "NOT RUN"
+  }
+ ],
+ "requestCount": 0,
+ "requests": [],
+ "safariDiagnosticSummary": {
+  "available": true,
+  "filesFound": 0,
+  "filesInspected": 0,
+  "bytesInspected": 0,
+  "counts": {
+   "notReadableError": 0,
+   "sandbox": 0,
+   "permission": 0,
+   "denied": 0,
+   "fileRead": 0
+  }
+ },
+ "errorCode": "NotReadableError",
+ "requestDiagnostics": {
+  "schema": 1,
+  "phase": "cleanup",
+  "requestCount": 43,
+  "last": {
+   "phase": "cleanup",
+   "command": "driver_session_delete",
+   "elapsedMs": 10,
+   "httpStatus": 200,
+   "errorType": "unknown",
+   "protocolError": "unavailable",
+   "detail": "prose_omitted"
+  },
+  "firstFailure": null,
+  "lastReadinessFailure": {
+   "phase": "driver_startup",
+   "command": "driver_status",
+   "elapsedMs": 1,
+   "httpStatus": null,
+   "errorType": "TypeError",
+   "protocolError": "unavailable",
+   "detail": "prose_omitted"
+  },
+  "firstFailureScope": "excludes_readiness_probes",
+  "rawOutput": "omitted"
+ },
+ "failurePhase": "workflows",
+ "processDiagnostics": {
+  "driverExitCode": 0,
+  "serverExitCode": null
+ }
+}

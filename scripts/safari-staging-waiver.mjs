@@ -4,15 +4,21 @@ import {readFileSync,appendFileSync} from 'node:fs';
 // STAGING ONLY: user-authorized 2026-10-12 known SafariDriver 26.6.2
 // disk File sandbox failure. This verifier alone never certifies Safari or production.
 export const SAFARI26_WAIVER_ID='safaridriver-26.6.2-native-disk-not-readable';
+// Owner-approved 2026-11-10 (docs/RELEASE_EXCEPTION_2026-11-10.md): the same
+// upstream SafariDriver sendKeys file-grant defect, observed on exactly 27.2.
+// This is a second exact entry, never a version range or pattern.
+export const SAFARI27_WAIVER_ID='safaridriver-27.2-native-disk-not-readable';
 // The staging exception applies to the reviewed fixture bytes, not merely
 // a file with the same name and size. Keep this pinned to SHA256SUMS.txt.
 const REVIEWED_MP3_SHA256='e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55';
-export function verifyNarrowSafari26StagingWaiver(report){
+
+// Shared first-MP3 native read signature. Version identity is asserted by the
+// exact wrappers below so each approved version stays independently reviewable.
+function verifyKnownNativeReadSignature(report){
   assert.equal(report?.schema,'cosmic-real-safari-native-acceptance-1');
   assert.equal(report?.status,'FAIL');
   assert.equal(report?.platform,'darwin');
   assert.equal(report?.capabilities?.browserName,'Safari');
-  assert.equal(report?.capabilities?.browserVersion,'26.6.2');
   assert.equal(report?.providerCalls,0,'Only zero-paid-request failures may be waived for staging');
   assert.equal(report?.fixtures?.length,1,'Only known first real MP3 selection may be waived');
   const item=report.fixtures[0];
@@ -37,15 +43,34 @@ export function verifyNarrowSafari26StagingWaiver(report){
   assert.match(reads?.blobUrlFetch?.error||'',/^TypeError:/);
   const names=['native disk fixtures are world-readable, byte-identical and timestamp-identical','real Safari shell, native controls and strict localhost HTTPS origin','mocked BYOK setup clears plaintext and uses HttpOnly session'];
   assert.deepEqual(report.checks,names.map(name=>({name,status:'PASS'})));
+}
+
+export function verifyNarrowSafari26StagingWaiver(report){
+  assert.equal(report?.capabilities?.browserVersion,'26.6.2');
+  verifyKnownNativeReadSignature(report);
   return SAFARI26_WAIVER_ID;
+}
+
+export function verifyNarrowSafari27StagingWaiver(report){
+  assert.equal(report?.capabilities?.browserVersion,'27.2');
+  verifyKnownNativeReadSignature(report);
+  return SAFARI27_WAIVER_ID;
+}
+
+// Exact dispatch: an unlisted Safari version (including 27.2.1 or 28) is rejected.
+export function verifyApprovedSafariStagingWaiver(report){
+  const version=report?.capabilities?.browserVersion;
+  if(version==='26.6.2')return verifyNarrowSafari26StagingWaiver(report);
+  if(version==='27.2')return verifyNarrowSafari27StagingWaiver(report);
+  assert.fail('No owner-approved SafariDriver waiver exists for this exact Safari version');
 }
 
 if(process.argv[1]?.endsWith('/safari-staging-waiver.mjs')){
   const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
-  const verified=verifyNarrowSafari26StagingWaiver(report);
+  const verified=verifyApprovedSafariStagingWaiver(report);
   console.log('STAGING ONLY native Safari automation waiver accepted for exact known issue: '+verified);
   console.log('Real Safari is NOT CERTIFIED; this staging waiver alone does not authorize final release.');
   if(process.env.GITHUB_STEP_SUMMARY){
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY,'\n### Staging-only known SafariDriver exception\n\nSafariDriver 26.6.2 genuine native disk MP3 read FAILED with reviewed NotReadableError signature. This is NOT a passing Safari test. This staging waiver alone does not authorize final release; any separate owner-approved release exception and all unrelated gates must be verified independently. All other macOS tests must still pass. Tracking: https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6\n');
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY,`\n### Staging-only known SafariDriver exception\n\nSafariDriver ${report.capabilities.browserVersion} genuine native disk MP3 read FAILED with the reviewed NotReadableError signature (${verified}). This is NOT a passing Safari test. This staging waiver alone does not authorize final release; any separate owner-approved release exception and all unrelated gates must be verified independently. All other macOS tests must still pass. Tracking: https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6\n`);
   }
 }

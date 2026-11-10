@@ -1,0 +1,19 @@
+# Owner-approved SafariDriver 27.2 automation exception for the 1.2.0 release
+
+On 10 November 2026 at 03:56 UTC the owner approved a second, exact Safari automation exception for the 1.2.0 release, after reviewing the evidence below. It adds one entry alongside the [22 October 26.6.2 exception](RELEASE_EXCEPTION_2026-10-22.md). It does not widen that entry, introduce a version range, or relax any other release requirement.
+
+## Evidence
+
+- Genuine Safari/SafariDriver **27.2** in [run 42384289480](https://github.com/sohweiyu2023/CosmicTranscriberWeb/actions/runs/42384289480) (head `4ec47b1f`) passed the native-fixture, real-Safari shell/HTTPS and mocked BYOK checks, then failed reading the first disk-backed `format.mp3`: `arrayBuffer` and `FileReader` returned `NotReadableError: The I/O read operation failed.`, blob-URL fetch returned `TypeError: Load failed`. Safari still reported the file's size (16,941) and type (`audio/mpeg`). Provider calls and recorded requests were zero; original bytes and timestamp were unchanged; WebDriver cleanup returned 200 and the driver exited 0. The sanitized report is kept as `tests/fixtures/historical-ci/safari-27.2-native-run-42384289480.json`.
+- This is the same signature as 26.6.2, which an application-free minimal reproduction ([run 38189356040](https://github.com/sohweiyu2023/CosmicTranscriberWeb/actions/runs/38189356040)) reproduced at `/Users/Shared`, `/private/tmp`, `RUNNER_TEMP` and `~/Downloads` (issue [#6](https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6)).
+- Root cause, as described upstream: WebDriver *Element Send Keys* on a file input sets files through `Automation.setFilesForInputFileUpload`, which passes the paths to the web process without first granting them to the network process (the open-panel path does grant them). The file object therefore exists with metadata, but its file-backed blob cannot be read. See the open, unmerged [WebKit PR #80121](https://github.com/WebKit/WebKit/pull/80121) (8 November 2026). This is a SafariDriver/WebKit automation defect, not a Cosmic application, fixture, permission or harness defect, and no supported application-side fix exists.
+
+## Exact permitted exception
+
+`scripts/safari-staging-waiver.mjs` and `scripts/safari-release-exception.mjs` dispatch by exact string equality on `browserVersion`. Only `26.6.2` and `27.2` are listed; `27.2.1`, `27.3`, `28.0` and any other value are rejected. The 27.2 entry requires everything the 26.6.2 entry requires (package 1.2.0, the exact reviewed 16,941-byte MP3 digest, unchanged before/after identity, native `safaridriver-sendkeys` selection, the three initial passing checks, canonical read errors, preparation FAIL, workflow NOT RUN, zero provider calls and recorded requests, preserved fixtures, bounded diagnostic summary), and additionally the complete bounded request/process diagnostic envelope: failure phase `workflows`, no HTTP/WebDriver failure, a successful `driver_session_delete`, driver exit 0 and no failed server exit.
+
+The result is recorded as **WAIVED** with `nativeSafariStatus:FAIL`, `genuineMacSafariValidated:false` and `certifiesRelease:false`. Static safeguards and mutations fail if either verifier dispatches by prefix, range or fallback, drops the diagnostic requirement, or records this exception under the October decision.
+
+## Retained requirements and retirement
+
+Genuine desktop Mac Safari remains **not validated**; repeat [the manual Safari checklist](SAFARI_MAC_ACCEPTANCE.md) on a real Mac when possible. Every other platform, security, billing, provenance, staging-acceptance, configuration and rollback requirement remains mandatory. Retire both entries, and require a native PASS, once a shipping SafariDriver includes the upstream fix; do not carry this exception to a later Safari version or a later package version without a new owner decision.

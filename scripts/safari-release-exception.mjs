@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import {readFileSync,appendFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
-import {verifyNarrowSafari26StagingWaiver,SAFARI26_WAIVER_ID} from './safari-staging-waiver.mjs';
+import {safeRequestDiagnostics,safeProcessDiagnostics} from '../tests/safari/local-request-diagnostics.mjs';
+import {verifyNarrowSafari26StagingWaiver,verifyNarrowSafari27StagingWaiver,SAFARI26_WAIVER_ID,SAFARI27_WAIVER_ID} from './safari-staging-waiver.mjs';
 
-// Owner accepted on 2026-10-22 for the 1.2.0 release only. This recognizes a
-// failed native test; it does not certify Safari or waive any other release gate.
+// Owner accepted on 2026-10-22 (26.6.2) and 2026-11-10 (27.2) for the 1.2.0
+// release only. Each recognizes one exact failed native test; neither certifies
+// Safari or waives any other release gate.
 export const SAFARI_RELEASE_EXCEPTION_VERSION='1.2.0';
 export const SAFARI_RELEASE_EXCEPTION_ID=SAFARI26_WAIVER_ID;
+export const SAFARI27_RELEASE_EXCEPTION_ID=SAFARI27_WAIVER_ID;
+const EXACT_EXCEPTIONS=Object.freeze({
+  '26.6.2':Object.freeze({id:SAFARI_RELEASE_EXCEPTION_ID,staging:verifyNarrowSafari26StagingWaiver,diagnosticsRequired:false,decision:'docs/RELEASE_EXCEPTION_2026-10-22.md'}),
+  '27.2':Object.freeze({id:SAFARI27_RELEASE_EXCEPTION_ID,staging:verifyNarrowSafari27StagingWaiver,diagnosticsRequired:true,decision:'docs/RELEASE_EXCEPTION_2026-11-10.md'})
+});
 const READ_ERROR='NotReadableError: The I/O read operation failed.';
 const FIXTURE_IDENTITY={
   size:16941,
@@ -14,23 +21,67 @@ const FIXTURE_IDENTITY={
   mtimeNs:'315532800000000000'
 };
 
-function requireKeys(value,keys,label){
+function requireKeys(value,keys,label,additionalKeys=[]){
   assert.ok(value&&typeof value==='object'&&!Array.isArray(value),`${label} must be an object`);
-  assert.deepEqual(Object.keys(value).sort(),[...keys].sort(),`${label} contains missing or unreviewed fields`);
+  assert.deepEqual(Object.keys(value).sort(),[...keys,...additionalKeys].sort(),`${label} contains missing or unreviewed fields`);
 }
 
 export function verifyNarrowSafari26ReleaseException(report,{packageVersion}={}){
-  assert.equal(packageVersion,SAFARI_RELEASE_EXCEPTION_VERSION,'Exception is limited to the reviewed 1.2.0 release');
   // Reuse all existing staging assertions, without broadening that policy.
   assert.equal(verifyNarrowSafari26StagingWaiver(report),SAFARI_RELEASE_EXCEPTION_ID);
+  return verifyExactRelease(report,{packageVersion,browserVersion:'26.6.2'});
+}
+
+export function verifyNarrowSafari27ReleaseException(report,{packageVersion}={}){
+  assert.equal(verifyNarrowSafari27StagingWaiver(report),SAFARI27_RELEASE_EXCEPTION_ID);
+  return verifyExactRelease(report,{packageVersion,browserVersion:'27.2'});
+}
+
+// Exact dispatch only. Unlisted versions are rejected rather than mapped.
+export function verifyApprovedSafariReleaseException(report,{packageVersion}={}){
+  const version=report?.capabilities?.browserVersion;
+  if(version==='26.6.2')return verifyNarrowSafari26ReleaseException(report,{packageVersion});
+  if(version==='27.2')return verifyNarrowSafari27ReleaseException(report,{packageVersion});
+  assert.fail('No owner-approved Safari release exception exists for this exact Safari version');
+}
+
+function verifyExactRelease(report,{packageVersion,browserVersion}){
+  assert.equal(packageVersion,SAFARI_RELEASE_EXCEPTION_VERSION,'Exception is limited to the reviewed 1.2.0 release');
+  const exception=EXACT_EXCEPTIONS[browserVersion];
+  assert.ok(exception&&Object.hasOwn(EXACT_EXCEPTIONS,browserVersion),'Unreviewed Safari version');
   // The sanitized report must contain only the reviewed fields. In particular,
   // server/driver/integrity/cleanup errors (even null or empty) cannot be waived.
-  requireKeys(report,['schema','status','platform','startedAt','finishedAt','providerCalls','fixturesPreserved','capabilities','checks','fixtures','requestCount','requests','safariDiagnosticSummary','errorCode'],'Native Safari report');
+  const diagnosticKeys=['requestDiagnostics','failurePhase','processDiagnostics'];
+  const hasDiagnostics=diagnosticKeys.some(key=>Object.hasOwn(report,key));
+  assert.ok(hasDiagnostics||!exception.diagnosticsRequired,'This exception requires the complete bounded diagnostic envelope');
+  requireKeys(report,['schema','status','platform','startedAt','finishedAt','providerCalls','fixturesPreserved','capabilities','checks','fixtures','requestCount','requests','safariDiagnosticSummary','errorCode'],'Native Safari report',hasDiagnostics?diagnosticKeys:[]);
+  if(hasDiagnostics){
+    // Accept only the complete canonical diagnostic envelope; never ignore an
+    // unrelated command/cleanup failure or unknown fields to obtain a waiver.
+    assert.equal(report.failurePhase,'workflows');
+    const facts=report.requestDiagnostics;
+    assert.deepEqual(facts,safeRequestDiagnostics(facts),'Diagnostic facts must be bounded and canonical');
+    assert.equal(facts.phase,'cleanup');
+    assert.ok(Number.isSafeInteger(facts.requestCount)&&facts.requestCount>0);
+    assert.equal(facts.firstFailure,null,'No additional HTTP/WebDriver failure may be waived');
+    assert.ok(facts.last,'The cleanup command must be recorded');
+    assert.equal(facts.last.phase,'cleanup');assert.equal(facts.last.command,'driver_session_delete');
+    assert.equal(facts.last.httpStatus,200);assert.equal(facts.last.protocolError,'unavailable');assert.equal(facts.last.errorType,'unknown');
+    assert.ok(Number.isSafeInteger(facts.last.elapsedMs)&&facts.last.elapsedMs>=0);
+    if(facts.lastReadinessFailure){
+      const ready=facts.lastReadinessFailure;
+      assert.ok((ready.phase==='driver_startup'&&ready.command==='driver_status')||(ready.phase==='mock_startup'&&ready.command==='mock_health'));
+    }
+    const processes=report.processDiagnostics;
+    assert.deepEqual(processes,safeProcessDiagnostics(processes),'Process facts must be bounded and canonical');
+    assert.equal(processes.driverExitCode,0,'Driver cleanup must complete successfully');
+    assert.ok(processes.serverExitCode===null||processes.serverExitCode===0,'No failed server exit may be waived');
+  }
   assert.equal(report.errorCode,'NotReadableError','Only the native disk-read failure is covered');
   assert.equal(report.fixturesPreserved,true,'Every original native fixture must remain unchanged');
   assert.equal(report.requestCount,0,'No transcription request may have been dispatched');
   assert.deepEqual(report.requests,[],'The request receipt must explicitly be empty');
-  assert.deepEqual(report.capabilities,{browserName:'Safari',browserVersion:'26.6.2'});
+  assert.deepEqual(report.capabilities,{browserName:'Safari',browserVersion});
   for(const key of ['startedAt','finishedAt']){
     assert.equal(typeof report[key],'string',`${key} is required`);
     const timestamp=Date.parse(report[key]);
@@ -58,12 +109,12 @@ export function verifyNarrowSafari26ReleaseException(report,{packageVersion}={})
   }
   assert.ok(diagnostics.filesInspected<=diagnostics.filesFound,'Diagnostic file counts must be consistent');
   return {
-    status:'WAIVED',exceptionId:SAFARI_RELEASE_EXCEPTION_ID,packageVersion,
+    status:'WAIVED',exceptionId:exception.id,packageVersion,
     nativeSafariStatus:'FAIL',genuineMacSafariValidated:false,
-    reason:'SafariDriver 26.6.2 cannot read the unchanged native MP3 before transcription dispatch.',
+    reason:`SafariDriver ${browserVersion} cannot read the unchanged native MP3 before transcription dispatch.`,
     iphoneSafariEvidence:'User-reported successful iPhone Safari happy path; distinct from Mac Safari validation.',
     allOtherGatesRequired:true,certifiesRelease:false,
-    decision:'docs/RELEASE_EXCEPTION_2026-10-22.md'
+    decision:exception.decision
   };
 }
 
@@ -71,12 +122,12 @@ function main(){
   assert.equal(process.argv.length,3,'Usage: node scripts/safari-release-exception.mjs <sanitized-native-report.json>');
   const report=JSON.parse(readFileSync(process.argv[2],'utf8'));
   const {version}=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'));
-  const result=verifyNarrowSafari26ReleaseException(report,{packageVersion:version});
+  const result=verifyApprovedSafariReleaseException(report,{packageVersion:version});
   console.log(JSON.stringify(result));
-  const disclosure='Native Safari: WAIVED for the exact reviewed SafariDriver 26.6.2 disk-read failure. Genuine Mac Safari remains NOT VALIDATED. User-reported iPhone Safari success is separate evidence. All unrelated release gates remain required; this is not full release certification.';
+  const disclosure=`Native Safari: WAIVED for the exact reviewed SafariDriver ${report.capabilities.browserVersion} disk-read failure. Genuine Mac Safari remains NOT VALIDATED. User-reported iPhone Safari success is separate evidence. All unrelated release gates remain required; this is not full release certification.`;
   console.log(disclosure);
   if(process.env.GITHUB_STEP_SUMMARY){
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY,`\n### Owner-accepted Safari automation exception for ${version}\n\n${disclosure}\n\nException: ${result.exceptionId}. Decision: docs/RELEASE_EXCEPTION_2026-10-22.md. Tracking: https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY,`\n### Owner-accepted Safari automation exception for ${version}\n\n${disclosure}\n\nException: ${result.exceptionId}. Decision: ${result.decision}. Tracking: https://github.com/sohweiyu2023/CosmicTranscriberWeb/issues/6\n`);
   }
   if(process.env.GITHUB_OUTPUT){
     appendFileSync(process.env.GITHUB_OUTPUT,`outcome=waived\nexception_id=${result.exceptionId}\ngenuine_mac_safari_validated=false\n`);

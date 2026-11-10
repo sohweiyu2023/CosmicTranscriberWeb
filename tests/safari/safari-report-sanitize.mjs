@@ -2,6 +2,7 @@
 // after the unmodified native-file and workflow assertions; it must never
 // decide whether a browser passes. Keep the known staging-only waiver fields.
 import {safariProbeErrorCategory} from './disk-access-probe-contract.mjs';
+import {safeRequestDiagnostics,safeProcessDiagnostics} from './local-request-diagnostics.mjs';
 import {NATIVE_FIXTURES} from './native-file-contract.mjs';
 
 const knownNames=new Set(NATIVE_FIXTURES.map(item=>item.name));
@@ -95,5 +96,8 @@ export function sanitizeSafariAcceptanceReport(report){
   }:null
  };
  for(const key of ['error','serverError','integrityError','cleanupError','driverError'])if(r[key])result[key+'Code']=safeError(r[key]);
+ if(r.requestDiagnostics)result.requestDiagnostics=safeRequestDiagnostics(r.requestDiagnostics);
+ if(r.failurePhase)result.failurePhase=safeRequestDiagnostics({phase:r.failurePhase}).phase;
+ if(r.processDiagnostics)result.processDiagnostics=safeProcessDiagnostics(r.processDiagnostics);
  return result;
 }

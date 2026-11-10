@@ -7,6 +7,7 @@ import {NATIVE_FIXTURES,describeFixture,fixtureIdentity,assertNativeObservation,
 import {pinnedLocalRequest} from './pinned-local-https.mjs';
 import {summarizeSafariDiagnostics} from '../../scripts/safari-diagnostic-summary.mjs';
 import {sanitizeSafariAcceptanceReport} from './safari-report-sanitize.mjs';
+import {createRequestDiagnostics} from './local-request-diagnostics.mjs';
 import {tmpdir} from 'node:os';
 // CTW_REAL_SAFARI_PINNED_LOCALHOST_TLS: no global certificate bypass.
 
@@ -20,25 +21,31 @@ const driverOrigin=`http://127.0.0.1:${driverPort}`;
 const seeded='SAFARI-FAKE-KEY-NO-PROVIDER-7d9b4676';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const report={schema:'cosmic-real-safari-native-acceptance-1',status:'RUNNING',platform:process.platform,startedAt:new Date().toISOString(),fixtures:[],checks:[],providerCalls:0,mp3DispatchOracle:'separate Node execution of the shipped reviewed MP3 frame preparation',downloadVerification:'application-generated payloads; OS download destination is not asserted'};
+const requestDiagnostics=createRequestDiagnostics();
 const fixtures=[];
 let server,driver,sessionId,sharedNativeFixtureDirectory,pinnedTlsDirectory,pinnedTlsCertPath;
 
-async function jsonRequest(url,{method='GET',body,timeout=45000}={}){
+async function jsonRequest(url,{method='GET',body,timeout=45000,readinessProbe=false}={}){
+  const observation=requestDiagnostics.begin(url,method,readinessProbe);
+  try{
   const target=new URL(url);
   const response=target.protocol==='https:'
     ?await pinnedLocalRequest(url,{method,body,certificatePath:pinnedTlsCertPath,timeout})
-    :await (async()=>{const result=await fetch(url,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});return {status:result.status,text:await result.text()}})();
+    :await (async()=>{const result=await fetch(url,{method,headers:body===undefined?undefined:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)});observation.response(result.status);return {status:result.status,text:await result.text()}})();
+  observation.response(response.status);
   const text=response.text;
   let parsed;try{parsed=text?JSON.parse(text):{}}catch{throw new Error(`Invalid JSON from local acceptance endpoint (${response.status})`)}
+  observation.response(response.status,parsed.value?.error);
   if(response.status<200||response.status>=300||parsed.value?.error)throw new Error(`Local acceptance ${method} ${target.pathname}: ${response.status} ${parsed.value?.error||''} ${parsed.value?.message||''}`);
-  return parsed;
+  observation.end();return parsed;
+  }catch(error){observation.end(error);throw error}
 }
 async function until(label,read,accept,{timeout=30000}={}){
   const deadline=Date.now()+timeout;let last;
   do{last=await read();if(accept(last))return last;await sleep(100)}while(Date.now()<deadline);
   throw new Error(`${label} timed out; last state: ${JSON.stringify(last)}`);
 }
-async function waitEndpoint(url){return until('Local endpoint readiness',async()=>{try{return await jsonRequest(url,{timeout:1000})}catch{return null}},value=>value!==null,{timeout:20000})}
+async function waitEndpoint(url){return until('Local endpoint readiness',async()=>{try{return await jsonRequest(url,{timeout:1000,readinessProbe:true})}catch{return null}},value=>value!==null,{timeout:20000})}
 async function command(endpoint,body={},method='POST'){
   const result=await jsonRequest(`${driverOrigin}/session/${sessionId}${endpoint}`,{method,body:method==='GET'||method==='DELETE'?undefined:body});
   return result.value;
@@ -238,21 +245,26 @@ try{
   await stageWorldReadableNativeFixtures();
   pinnedTlsDirectory=await mkdtemp(path.join(tmpdir(),'ctw-safari-tls-'));
   pinnedTlsCertPath=path.join(pinnedTlsDirectory,'cert.pem');
+  requestDiagnostics.phase('mock_startup');
   server=spawn(process.execPath,['tests/e2e/mock-server.mjs'],{cwd:root,env:{...process.env,COSMIC_E2E_PORT:String(port),COSMIC_E2E_TOKEN:token,COSMIC_E2E_CONTROL:'native-file-acceptance',COSMIC_E2E_TLS_CERT_OUT:pinnedTlsCertPath},stdio:['ignore','pipe','pipe']});
   server.stdout.pipe(process.stdout);server.stderr.pipe(process.stderr);server.on('error',error=>{report.serverError=error.message});
   await waitEndpoint(`${origin}/__cosmic_e2e_health?token=${token}`);
+  requestDiagnostics.phase('driver_startup');
   driver=spawn('/usr/bin/safaridriver',['-p',String(driverPort)],{stdio:['ignore','pipe','pipe']});
   driver.stdout.pipe(process.stdout);driver.stderr.pipe(process.stderr);driver.on('error',error=>{report.driverError=error.message});
   await waitEndpoint(`${driverOrigin}/status`);
+  requestDiagnostics.phase('driver_session');
   const session=await jsonRequest(`${driverOrigin}/session`,{method:'POST',body:{capabilities:{alwaysMatch:{acceptInsecureCerts:true,browserName:'safari',strictFileInteractability:false,'safari:diagnose':true}}}});
   sessionId=session.value?.sessionId;assert.ok(sessionId,'SafariDriver did not return a W3C session id');
   report.safariDiagnosticsRequested=true;
   report.capabilities=session.value.capabilities;assert.equal(report.capabilities.browserName?.toLowerCase(),'safari','Acceptance must run the installed Safari browser');
-  await command('/timeouts',{script:20000,pageLoad:30000,implicit:0});await clearAutomationOrigin();await openApp();
+  requestDiagnostics.phase('driver_configuration');
+  await command('/timeouts',{script:20000,pageLoad:30000,implicit:0});requestDiagnostics.phase('origin_reset');await clearAutomationOrigin();requestDiagnostics.phase('app_shell');await openApp();
   const shell=await evaluate(()=>({title:document.title,brand:document.querySelector('.brand')?.textContent,heading:document.querySelector('h1')?.textContent,models:Array.from(document.querySelectorAll('#modelSelect option'),option=>option.value),startVisible:!!document.querySelector('#startBtn')&&getComputedStyle(document.querySelector('#startBtn')).display!=='none',secure:window.isSecureContext,origin:location.origin}));
   assert.equal(shell.title,'Cosmic Transcriber Web');assert.match(shell.brand,/COSMIC TRANSCRIBER/i);assert.match(shell.heading,/Your API key, your usage/i);
   assert.deepEqual(shell.models,['gpt-transcribe','gpt-4o-transcribe-diarize','gpt-4o-transcribe','gpt-4o-mini-transcribe']);assert.equal(shell.startVisible,true);assert.equal(shell.secure,true);assert.equal(shell.origin,origin);
   assert.equal(await count(),0);passed('real Safari shell, native controls and strict localhost HTTPS origin');
+  requestDiagnostics.phase('workflows');
   await click('#configureKeyBtn');await type('#apiKeyInput',seeded);await click('#createKeyBtn');
   await until('Fake BYOK session configured',()=>evaluate(()=>({status:document.querySelector('#keyStatus').textContent,value:document.querySelector('#apiKeyInput').value,open:document.querySelector('#keyDialog').open})),value=>/configured/i.test(value.status)&&value.value===''&&!value.open);
   assert.equal(await evaluate(()=>document.cookie.includes('__Host-cosmic_byok')),false,'BYOK session cookie must be HttpOnly');
@@ -313,6 +325,8 @@ try{
 }catch(error){
   report.status='FAIL';report.error=String(error?.stack||error);process.exitCode=1;console.error('Real Safari native-file acceptance FAILED; see sanitized report category.');
 }finally{
+  report.failurePhase=report.status==='FAIL'?requestDiagnostics.snapshot().phase:null;
+  requestDiagnostics.phase('cleanup');
   report.fixturesPreserved=true;
   for(const entry of report.fixtures)if(entry.nativePreparationStatus==='RUNNING')entry.nativePreparationStatus='FAIL';
   for(const fixture of fixtures){
@@ -324,6 +338,8 @@ try{
   if(sharedNativeFixtureDirectory){try{await rm(sharedNativeFixtureDirectory,{recursive:true,force:true})}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
   if(pinnedTlsDirectory){try{await rm(pinnedTlsDirectory,{recursive:true,force:true})}catch(error){report.cleanupError=String(error);report.status='FAIL';process.exitCode=1}}
   report.safariDiagnosticSummary=await summarizeSafariDiagnostics({since:report.startedAt});
+  report.requestDiagnostics=requestDiagnostics.snapshot();
+  report.processDiagnostics={driverExitCode:driver?.exitCode??null,serverExitCode:server?.exitCode??null};
   report.finishedAt=new Date().toISOString();const publicReport=sanitizeSafariAcceptanceReport(report);const text=JSON.stringify(publicReport,null,2)+'\n';
   const reportPath=path.resolve(process.env.COSMIC_SAFARI_REPORT||path.join(root,'test-results','safari-native-acceptance.json'));
   await mkdir(path.dirname(reportPath),{recursive:true});await writeFile(reportPath,text);

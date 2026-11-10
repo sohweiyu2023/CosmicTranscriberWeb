@@ -1,20 +1,21 @@
-# Candidate reproducible dependency workflow
+# Reproducible dependency workflow
 
-This proposal is local and unmerged. It changes no deployment, credentials,
-permissions, spending limit or live-test admission. No dependency installer was
-executed while preparing it. Full platform CI and independent review remain
-required before integration.
+PR44 integrated the committed-input workflow into main. The separately reviewed
+2026-11-07 dependency refresh is a candidate until its own final certification
+passes. No deployment, credentials, permissions, spending limit or live-test
+admission changes are made by this workflow.
 
-## Why the current workflow moves
+## Why dependency resolution is deliberate
 
-The current CI runs `scripts/deps-latest.mjs` on every PR and main build. That
-rewrites package metadata and the lock from the registry before validation. The
-PR and its later main build can therefore certify different graphs even when
-source dependencies were not edited.
+Earlier CI refreshed registry latest releases during certification and could
+validate different graphs for a PR and its main build. Current CI verifies the
+committed package metadata, lock and snapshot; it never silently refreshes them.
+An upstream direct release can still fail the strict freshness gate and requires
+a new reviewed candidate, as happened on 2026-11-07.
 
 The standalone `workerd@latest` tag is not evidence of the Workerd version
-selected by Wrangler. Official Wrangler 4.157.0 and Miniflare
-5.20261103.0-beta declare Workerd 1.20261103.1 exactly. Vitest plugin 1.5.1
+selected by Wrangler. Official Wrangler 4.159.0 and Miniflare
+5.20261109.0-beta declare Workerd 1.20261109.1 exactly. Vitest plugin 1.6.1
 declares that Wrangler and Miniflare pair. The candidate lock confirms this
 supported combination without a Workerd override. Existing Undici and Zod
 security overrides remain unchanged.
@@ -23,15 +24,21 @@ security overrides remain unchanged.
 | --- | --- | --- |
 | Refresh `@latest` inside each certification run | PR/main graphs drift; installer approvals race new releases | Replace with committed inputs |
 | Force a Workerd override without its supported wrapper pair | Wrangler/Miniflare API compatibility can break | Not used |
-| Commit the supported graph and keep strict audit/freshness | Later direct releases or advisories can still block a build, but cannot silently change its graph | Proposed |
+| Commit the supported graph and keep strict audit/freshness | Later direct releases or advisories can still block a build, but cannot silently change its graph | Implemented |
 | Wildcard installer approval or suppress audit/freshness | Unreviewed code executes or release failures are concealed | Not permitted |
 
-## Proposed flow
+## Verification flow
 
 1. Resolve dependency changes deliberately in a development candidate with
    lifecycle scripts disabled. Review the complete package/lock diff, official
-   installer metadata and exact script policy. This candidate uses the existing
-   approved Workerd 1.20261103.1; it does not approve standalone latest 1.20261104.1.
+   installer metadata and exact script policy. This candidate selects Workerd
+   1.20261109.1 through the supported wrapper pair. Its official tarball integrity
+   and installer source require review before an exact-version policy addition;
+   snapshot regeneration alone never approves execution. The exact-version
+   policy was added after official SHA-512 tarball verification and independent
+   installer-source comparison: only date/version strings changed from the prior
+   reviewed installer, without new commands or destinations. Native platform binaries
+   are not independently audited by an installer-source comparison.
 2. Commit `package.json`, `package-lock.json` and `DEPENDENCY_GRAPH.json` together.
    The snapshot contains exact package/lock SHA256 values, Workerd version,
    official registry and Node 26.7.0 / npm 12.0.2. It is mechanical identity data,
@@ -65,7 +72,7 @@ security overrides remain unchanged.
 
 `npm outdated --depth=0` remains a strict CI check and `deps:check` remains a
 release check. A new direct registry release can still fail freshness later.
-This proposal makes the installed graph reproducible; it does not weaken or
+This workflow makes the installed graph reproducible; it does not weaken or
 relabel that freshness rule. An explicit reviewed dependency update is then
 required instead of an automatic graph mutation. Security advisories can also
 change and correctly cause the unchanged strict audit to fail.
@@ -88,12 +95,12 @@ are finite categories and never echo arbitrary malformed file contents.
 ## Scope and release qualifications
 
 The candidate currently resolves direct versions: @noble/hashes 2.4.0, jose
-6.2.15, @cloudflare/vitest-plugin 1.5.1, @playwright/test 1.64.1, msw 3.0.3,
-vitest 5.1.0 and wrangler 4.157.0. These runtime/tooling changes require fresh
+6.2.17, @cloudflare/vitest-plugin 1.6.1, @playwright/test 1.65.0, msw 3.0.4,
+vitest 5.1.0 and wrangler 4.159.0. These runtime/tooling changes require fresh
 platform certification and a new source artifact. Earlier live acceptance does
 not automatically certify the new graph. No old package may be presented as this
 candidate. Native Safari remains FAIL/WAIVED under the separately documented
-exception; this proposal cannot turn it into PASS.
+exception; this workflow cannot turn it into PASS.
 
 If integration fails, retain the current main/release and its evidence. Repair
 or revert the source candidate through normal review. Never work around a failure

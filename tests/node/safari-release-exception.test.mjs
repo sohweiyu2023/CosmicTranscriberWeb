@@ -8,6 +8,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyNarrowSafari26ReleaseException,SAFARI_RELEASE_EXCEPTION_ID} from '../../scripts/safari-release-exception.mjs';
 
+import {sanitizeSafariAcceptanceReport} from '../safari/safari-report-sanitize.mjs';
+import {createRequestDiagnostics} from '../safari/local-request-diagnostics.mjs';
 const READ_ERROR='NotReadableError: The I/O read operation failed.';
 const identity=()=>({size:16941,sha256:'e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55',mtimeNs:'315532800000000000'});
 const makeReport=()=>({
@@ -136,4 +138,56 @@ test('release exception CLI writes explicit waiver receipts only after complete 
     assert.match(rejected.stderr,/exception REJECTED/);
     await assert.rejects(access(rejectedOutput));await assert.rejects(access(rejectedSummary));
   }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+function observedReport(){
+ const d=createRequestDiagnostics();d.phase('driver_startup');let t=d.begin('http://localhost/status','GET',true);t.end(new TypeError('synthetic startup poll'));
+ d.phase('cleanup');t=d.begin('http://localhost/session/synthetic-only','DELETE');t.response(200);t.end();
+ return sanitizeSafariAcceptanceReport({...makeReport(),error:READ_ERROR,requestDiagnostics:d.snapshot(),failurePhase:'workflows',processDiagnostics:{driverExitCode:0,serverExitCode:null}});
+}
+test('new sanitizer diagnostics preserve the exact existing26.6.2 exception contract',()=>{
+ const report=observedReport();const result=verify(report);assert.equal(result.status,'WAIVED');assert.equal(result.genuineMacSafariValidated,false);assert.equal(result.certifiesRelease,false);
+});
+test('diagnostic compatibility never admits27.2, mixed command failures or unreviewed metadata',()=>{
+ const changes=[r=>{r.capabilities.browserVersion='27.2'},r=>{delete r.failurePhase},r=>{r.failurePhase='driver_session'},r=>{r.requestDiagnostics.firstFailure={...r.requestDiagnostics.last}},r=>{r.processDiagnostics.driverExitCode=1},r=>{r.processDiagnostics.serverExitCode=1},r=>{r.requestDiagnostics.secret='PRIVATE-SYNTHETIC-CANARY'},r=>{r.requestDiagnostics.last.errorType='PRIVATE-SYNTHETIC-CANARY'},r=>{r.requestDiagnostics.last.httpStatus=500},r=>{r.requestDiagnostics.last.command='driver_execute'},r=>{r.requestDiagnostics.requestCount=-1},r=>{r.processDiagnostics.extra='PRIVATE-SYNTHETIC-CANARY'}];
+ for(const mutate of changes){const report=observedReport();mutate(report);assert.throws(()=>verify(report));}
+});
+
+// Owner-approved 2026-11-10: exact Safari 27.2 entry, anchored on the actual
+// sanitized report emitted by genuine SafariDriver 27.2 in CI run 42384289480.
+import {verifyNarrowSafari27ReleaseException,verifyApprovedSafariReleaseException,SAFARI27_RELEASE_EXCEPTION_ID} from '../../scripts/safari-release-exception.mjs';
+const observed27=JSON.parse(await readFile(new URL('../fixtures/historical-ci/safari-27.2-native-run-42384289480.json',import.meta.url),'utf8'));
+const verify27=report=>verifyApprovedSafariReleaseException(report,{packageVersion:'1.2.0'});
+test('actual genuine SafariDriver 27.2 report is waived only by the exact 27.2 entry and stays FAIL',()=>{
+ const report=structuredClone(observed27),result=verify27(report);
+ assert.equal(result.status,'WAIVED');assert.equal(result.nativeSafariStatus,'FAIL');assert.equal(result.exceptionId,SAFARI27_RELEASE_EXCEPTION_ID);
+ assert.equal(result.genuineMacSafariValidated,false);assert.equal(result.certifiesRelease,false);assert.equal(result.decision,'docs/RELEASE_EXCEPTION_2026-11-10.md');
+ assert.deepEqual(report,observed27,'Verification must not mutate evidence');
+ assert.throws(()=>verify(structuredClone(observed27)),'The 26.6.2 exception must still reject 27.2');
+ assert.deepEqual(verifyNarrowSafari27ReleaseException(structuredClone(observed27),{packageVersion:'1.2.0'}),result);
+});
+test('27.2 entry is exact: other versions, missing diagnostics, paid requests and altered evidence are rejected',()=>{
+ const changes=[
+  r=>{r.capabilities.browserVersion='27.2.1'},r=>{r.capabilities.browserVersion='27.3'},r=>{r.capabilities.browserVersion='28.0'},r=>{r.capabilities.browserVersion='27'},
+  r=>{delete r.requestDiagnostics;delete r.failurePhase;delete r.processDiagnostics},
+  r=>{r.requestCount=1},r=>{r.providerCalls=1},r=>{r.requests=[{path:'/api/transcribe'}]},r=>{r.fixturesPreserved=false},
+  r=>{r.fixtures[0].after.mtimeNs='1'},r=>{r.fixtures[0].before.sha256='0'.repeat(64)},r=>{r.fixtures[0].nativeSelectionMode='synthetic-file'},
+  r=>{r.fixtures[0].native.diskReadDiagnostics.sliceArrayBuffer={ok:true}},r=>{r.errorCode='TimeoutError'},r=>{r.failurePhase='driver_session'},
+  r=>{r.requestDiagnostics.firstFailure={...r.requestDiagnostics.last}},r=>{r.processDiagnostics.driverExitCode=1},r=>{r.checks[1].status='FAIL'},
+  r=>{r.unreviewed='PRIVATE-SYNTHETIC-CANARY'},r=>{r.fixtures.push(structuredClone(r.fixtures[0]))}
+ ];
+ for(const mutate of changes){const report=structuredClone(observed27);mutate(report);assert.throws(()=>verify27(report))}
+ assert.throws(()=>verifyApprovedSafariReleaseException(structuredClone(observed27),{packageVersion:'1.2.1'}));
+});
+test('release exception CLI waives the observed 27.2 report and records its own decision document',async()=>{
+ const dir=await mkdtemp(path.join(tmpdir(),'cosmic-safari27-'));const script=fileURLToPath(new URL('../../scripts/safari-release-exception.mjs',import.meta.url));
+ try{
+  const input=path.join(dir,'report.json'),summary=path.join(dir,'summary.md'),output=path.join(dir,'output.txt');
+  await writeFile(input,JSON.stringify(observed27));
+  const result=spawnSync(process.execPath,[script,input],{encoding:'utf8',env:{...process.env,GITHUB_STEP_SUMMARY:summary,GITHUB_OUTPUT:output}});
+  assert.equal(result.status,0,result.stderr);
+  assert.match(result.stdout,/WAIVED for the exact reviewed SafariDriver 27\.2 disk-read failure/);
+  assert.match(await readFile(summary,'utf8'),/RELEASE_EXCEPTION_2026-11-10\.md/);
+  assert.match(await readFile(output,'utf8'),new RegExp(`exception_id=${SAFARI27_RELEASE_EXCEPTION_ID}`));
+ }finally{await rm(dir,{recursive:true,force:true})}
 });

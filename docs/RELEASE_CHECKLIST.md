@@ -2,7 +2,7 @@
 
 A checked box means only the stated evidence exists. Never promote a candidate by editing `RELEASE_MANIFEST.json`. CI produces a staging-only ZIP (`releaseReady:false`, `certificationLevel:staging`); final Windows packaging after external CI and live staging acceptance produces the production release ZIP.
 
-The [22 October 2026 owner exception](RELEASE_EXCEPTION_2026-10-22.md) changes only the genuine Safari acceptance requirement for this 1.2.0 regression release: record the exact verified automation failure as **WAIVED**, never check its PASS box. The release browser gate must still require every other platform result. Exact-source live staging acceptance, account/configuration verification and rollback remain required before production promotion.
+The [22 October 2026](RELEASE_EXCEPTION_2026-10-22.md) and [10 November 2026](RELEASE_EXCEPTION_2026-11-10.md) owner exceptions (exactly SafariDriver 26.6.2 and 27.2) change only the genuine Safari acceptance requirement for this 1.2.0 regression release: record the exact verified automation failure as **WAIVED**, never check its PASS box. The release browser gate must still require every other platform result. Exact-source live staging acceptance, account/configuration verification and rollback remain required before production promotion.
 
 ## Inherited 1.1.1 evidence — not current 1.2 certification
 

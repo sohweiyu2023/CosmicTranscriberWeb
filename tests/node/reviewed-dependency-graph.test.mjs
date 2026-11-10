@@ -16,7 +16,7 @@ function fixture(){
  const lock={lockfileVersion:3,packages:{'':{name:pkg.name,version:pkg.version,dependencies:pkg.dependencies,devDependencies:{}},'node_modules/workerd':{version:'1.20261103.1',resolved:'https://registry.npmjs.org/workerd/-/workerd-1.20261103.1.tgz',integrity,hasInstallScript:true},'node_modules/@cloudflare/workerd-win32-64':{version:'1.20261103.1',resolved:'https://registry.npmjs.org/@cloudflare/workerd-win32-64/-/workerd-win32-64-1.20261103.1.tgz',integrity},'node_modules/esbuild':{version:'0.28.2',resolved:'https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz',integrity,hasInstallScript:true}}};return {pkg,lock};
 }
 function input({pkg,lock}){const packageBytes=Buffer.from(JSON.stringify(pkg)),lockBytes=Buffer.from(JSON.stringify(lock));return {packageBytes,lockBytes,snapshot:{schema:'cosmic-dependency-snapshot-1',packageSha256:sha(packageBytes),lockSha256:sha(lockBytes),nodeVersion:'26.7.0',npmVersion:'12.0.2',registry:'https://registry.npmjs.org/',workerdVersion:'1.20261103.1',fixturePaths:['tests/fixtures/synthetic.wav'],generatedFixturePaths:[]}}}
-test('committed candidate graph verifies without installing any dependencies',async()=>{const [packageBytes,lockBytes,snapshot]=await Promise.all(['package.json','package-lock.json','DEPENDENCY_GRAPH.json'].map(p=>readFile(path.join(root,p))));const result=verifyDependencySnapshot({packageBytes,lockBytes,snapshot:JSON.parse(snapshot)});assert.equal(result.status,'PASS');assert.equal(result.workerdVersion,'1.20261103.1');assert.ok(result.workerdPlatformCount>=1)});
+test('committed candidate graph verifies without installing any dependencies',async()=>{const [packageBytes,lockBytes,snapshot]=await Promise.all(['package.json','package-lock.json','DEPENDENCY_GRAPH.json'].map(p=>readFile(path.join(root,p))));const result=verifyDependencySnapshot({packageBytes,lockBytes,snapshot:JSON.parse(snapshot)});assert.equal(result.status,'PASS');assert.equal(result.workerdVersion,'1.20261109.1');assert.ok(result.workerdPlatformCount>=1)});
 test('package and lock byte changes cannot inherit old snapshot identity',()=>{for(const key of ['packageBytes','lockBytes']){const x=input(fixture());x[key]=Buffer.concat([x[key],Buffer.from('\n')]);assert.throws(()=>verifyDependencySnapshot(x),/hash_mismatch/)}});
 test('all snapshot fields and exact reviewed toolchain are required',()=>{for(const change of [s=>delete s.lockSha256,s=>s.extra='synthetic',s=>s.packageSha256='x',s=>s.registry='https://synthetic.invalid/',s=>s.nodeVersion='26.7.1',s=>s.npmVersion='12.0.3']){const x=input(fixture());change(x.snapshot);assert.throws(()=>verifyDependencySnapshot(x))}const x=input(fixture());assert.throws(()=>verifyDependencySnapshot({...x,nodeVersion:'27.0.0'}),/toolchain_mismatch/)});
 test('new Workerd and nested mismatched Workerd remain blocked even after hash recomputation',()=>{for(const node of ['node_modules/workerd','node_modules/other/node_modules/workerd','node_modules/@cloudflare/workerd-win32-64']){const f=fixture();f.lock.packages[node]={...f.lock.packages['node_modules/workerd'],version:'1.20261104.1'};assert.throws(()=>verifyDependencySnapshot(input(f)),/workerd_mismatch/)}});
@@ -86,7 +86,12 @@ test('checkout-owned CLI rejects archive self-authentication and ignores target 
   result=cli(target,target);assert.equal(result.status,1);assert.equal(JSON.parse(result.stderr).code,'dependency_snapshot_source_mismatch');
   result=cli(outside);assert.equal(result.status,1);assert.equal(JSON.parse(result.stderr).code,'dependency_snapshot_target_rejected');
   await assert.rejects(readFile(marker),{code:'ENOENT'});
- }finally{await rm(directory,{recursive:true,force:true});await rm(outside,{recursive:true,force:true})}
+ }finally{
+  // Windows can report an owned fixture directory busy after child exit.
+  // Retry cleanup briefly; keep failure visible if it remains locked.
+  await rm(directory,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+  await rm(outside,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+ }
 });
 async function bundleFixture(run){
  const directory=await mkdtemp(path.join(tmpdir(),'cosmic-input-bundle-'));

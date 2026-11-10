@@ -100,13 +100,13 @@
           <div><p class="eyebrow">AUDIO QUEUE</p><h2 id="queueHeading">Files</h2></div>
           <div class="inline-actions"><button id="addFilesBtn" class="secondary" type="button">+ Files</button><button id="clearQueueBtn" class="ghost" type="button">Clear</button></div>
         </div>
-        <input id="fileInput" type="file" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.flac,.ogg" multiple hidden>
+        <input id="fileInput" type="file" accept=".mp3,.mp4,.mpeg,.mpga,.m4a,.wav,.webm,.flac,.ogg,.m4b,.m4r,.m4v,.mov,.oga,.opus,.wave,audio/*,video/*" multiple hidden>
         <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-describedby="dropHint">
           <div class="drop-icon" aria-hidden="true">⇩</div>
           <strong>Drop audio files here</strong>
-          <span id="dropHint">or choose Files · MP3, MP4, MPEG, MPGA, M4A, WAV, WebM, FLAC or OGG</span>
+          <span id="dropHint">or choose Files · MP3, M4A, WAV, FLAC, OGG, WebM and compatible audio/video containers</span>
         </div>
-        <p class="fineprint">Long recordings: use MP3 for automatic chunking. Other formats: 24 MB maximum per file. No microphone recording.</p>
+        <p class="fineprint">Long recordings: use MP3 for automatic chunking. Other formats: 24 MB maximum per file. Compatible alternate names are inspected locally. Containers must contain usable audio; codec support varies. No built-in converter or microphone recording.</p>
         <div id="queueEmpty" class="empty-state">No audio files queued.</div>
         <ol id="queueList" class="queue-list" aria-live="polite"></ol>
       </section>
