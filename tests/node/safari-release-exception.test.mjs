@@ -8,6 +8,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyNarrowSafari26ReleaseException,SAFARI_RELEASE_EXCEPTION_ID} from '../../scripts/safari-release-exception.mjs';
 
+import {sanitizeSafariAcceptanceReport} from '../safari/safari-report-sanitize.mjs';
+import {createRequestDiagnostics} from '../safari/local-request-diagnostics.mjs';
 const READ_ERROR='NotReadableError: The I/O read operation failed.';
 const identity=()=>({size:16941,sha256:'e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55',mtimeNs:'315532800000000000'});
 const makeReport=()=>({
@@ -136,4 +138,17 @@ test('release exception CLI writes explicit waiver receipts only after complete 
     assert.match(rejected.stderr,/exception REJECTED/);
     await assert.rejects(access(rejectedOutput));await assert.rejects(access(rejectedSummary));
   }finally{await rm(dir,{recursive:true,force:true})}
+});
+
+function observedReport(){
+ const d=createRequestDiagnostics();d.phase('driver_startup');let t=d.begin('http://localhost/status','GET',true);t.end(new TypeError('synthetic startup poll'));
+ d.phase('cleanup');t=d.begin('http://localhost/session/synthetic-only','DELETE');t.response(200);t.end();
+ return sanitizeSafariAcceptanceReport({...makeReport(),error:READ_ERROR,requestDiagnostics:d.snapshot(),failurePhase:'workflows',processDiagnostics:{driverExitCode:0,serverExitCode:null}});
+}
+test('new sanitizer diagnostics preserve the exact existing26.6.2 exception contract',()=>{
+ const report=observedReport();const result=verify(report);assert.equal(result.status,'WAIVED');assert.equal(result.genuineMacSafariValidated,false);assert.equal(result.certifiesRelease,false);
+});
+test('diagnostic compatibility never admits27.2, mixed command failures or unreviewed metadata',()=>{
+ const changes=[r=>{r.capabilities.browserVersion='27.2'},r=>{delete r.failurePhase},r=>{r.failurePhase='driver_session'},r=>{r.requestDiagnostics.firstFailure={...r.requestDiagnostics.last}},r=>{r.processDiagnostics.driverExitCode=1},r=>{r.processDiagnostics.serverExitCode=1},r=>{r.requestDiagnostics.secret='PRIVATE-SYNTHETIC-CANARY'},r=>{r.requestDiagnostics.last.errorType='PRIVATE-SYNTHETIC-CANARY'},r=>{r.requestDiagnostics.last.httpStatus=500},r=>{r.requestDiagnostics.last.command='driver_execute'},r=>{r.requestDiagnostics.requestCount=-1},r=>{r.processDiagnostics.extra='PRIVATE-SYNTHETIC-CANARY'}];
+ for(const mutate of changes){const report=observedReport();mutate(report);assert.throws(()=>verify(report));}
 });
