@@ -1,11 +1,11 @@
 {
   "schema": "cosmic-dependency-snapshot-1",
-  "packageSha256": "8cf7cb96d5e00c1f6b130a02097e9507fc0d62efa53c75128047dcf9f96b8669",
-  "lockSha256": "dab265adda45beb96c761104e57389e901ca7920a29c75b476d42e5e7ed39ec5",
+  "packageSha256": "23ab8c4b8222694e03bef7b26bd95303ec7887f3551977a6ff16e57456167035",
+  "lockSha256": "80a2fb43b78f3e93b3394d127f1ada317ad12681ee8f8875212508ebbf34cd9e",
   "nodeVersion": "26.7.0",
   "npmVersion": "12.0.2",
   "registry": "https://registry.npmjs.org/",
-  "workerdVersion": "1.20261109.1",
+  "workerdVersion": "1.20261110.1",
   "fixturePaths": [
     "tests/fixtures/ID3 Unicode \u6771\u4eac.mp3",
     "tests/fixtures/approved-remaining-eight/README.md",

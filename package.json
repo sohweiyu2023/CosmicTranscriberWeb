@@ -75,11 +75,11 @@
     "jose": "6.2.17"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "1.6.1",
+    "@cloudflare/vitest-plugin": "1.7.0",
     "@playwright/test": "1.65.0",
     "msw": "3.0.4",
     "vitest": "5.1.0",
-    "wrangler": "4.159.0"
+    "wrangler": "4.160.0"
   },
   "overrides": {
     "miniflare": {
@@ -106,7 +106,8 @@
     "workerd@1.20261102.1": true,
     "workerd@1.20261103.1": true,
     "workerd@1.20261104.1": true,
-    "workerd@1.20261109.1": true
+    "workerd@1.20261109.1": true,
+    "workerd@1.20261110.1": true
   },
   "packageExtensions": {
     "vitest@5.0.3": {
