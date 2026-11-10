@@ -60,7 +60,18 @@ globalThis.fetch=async function(url,options={}){
   if(scenario==='nonwav-short-transcript'&&meta.audioFormat==='mp3')result.text='Yes';
   if(scenario==='wav-out-of-range'&&meta.audioFormat==='wav')result.segments[1].end=meta.durationSeconds+30;
   if(scenario==='wav-out-of-order'&&meta.audioFormat==='wav'){result.segments[0].start=4;result.segments[0].end=5;result.segments[1].start=3;result.segments[1].end=6;}
-  return json({ok:true,result,diagnostics:{openaiRequestId:'mock'}});
+  const marker='PRIVATE_TRANSCRIPT_TOKEN_SENTINEL';
+  if(scenario==='missing-result')return json({ok:true,validationFailure:marker,diagnostics:{openaiRequestId:marker}});
+  if(scenario==='invalid-result')return json({ok:true,result:{text:23,validationFailure:marker},diagnostics:{openaiRequestId:marker}});
+  if(scenario==='missing-diagnostics')return json({ok:true,result,validationFailure:marker});
+  if(meta.audioFormat==='wav'){
+   if(scenario==='wav-missing-text')result.text='';
+   if(scenario==='wav-missing-segments')result.segments=[];
+   if(scenario==='wav-missing-speaker')result.segments[1].speaker='';
+   if(scenario==='wav-missing-segment-text')result.segments[1].text='';
+  }
+  result.validationFailure=marker;result.error={code:marker,message:marker};
+  return json({ok:true,result,diagnostics:{openaiRequestId:'mock',validationFailure:marker},validationFailure:marker});
  }
  if(route==='/api/key/forget'){
   if(scenario==='midstream-access-redirect')return new Response('',{status:302,headers:{location:'https://access.invalid/login'}});

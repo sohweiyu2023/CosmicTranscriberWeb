@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {acceptanceAssertion,acceptanceFailureDetails} from './acceptance-diagnostics.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {readFile,writeFile,mkdir,appendFile} from 'node:fs/promises';
 import {parseStagingAccessCredential} from './staging-access-credential.mjs';
@@ -187,21 +188,21 @@ async function run(){
   report.attempted++;
   try{
    const {j}=await api('/api/transcribe','POST',bytes,headers);
-   assert.ok(j.result&&typeof j.result==='object','Missing OpenAI result');
-   assert.ok(typeof j.result.text==='string'||Array.isArray(j.result.segments),'Invalid OpenAI transcript structure');
-   assert.ok(j.diagnostics&&typeof j.diagnostics==='object','Missing upstream diagnostics');
+   assert.ok(j.result&&typeof j.result==='object',acceptanceAssertion('result_missing','Missing OpenAI result'));
+   assert.ok(typeof j.result.text==='string'||Array.isArray(j.result.segments),acceptanceAssertion('result_structure_invalid','Invalid OpenAI transcript structure'));
+   assert.ok(j.diagnostics&&typeof j.diagnostics==='object',acceptanceAssertion('diagnostics_missing','Missing upstream diagnostics'));
    const diarization=format==='wav'?assertSpeechDiarization(j.result,durationSeconds):null;
    const speech=format==='wav'?null:assertSpeechTranscription(j.result);
    report.formats.push({format,model,jobId:metadata.jobId,attemptId:metadata.attemptId,status:'PASS',requestIdPresent:!!j.diagnostics.openaiRequestId,...(diarization?{speakerCount:diarization.speakers,segmentCount:diarization.segments}:{}),...(speech?{speechWordCount:speech.wordCount}:{})});
    console.log('STAGING PAID PASS '+format+' model='+model);
-  }catch(e){report.formats.push({format,model,jobId:metadata.jobId,attemptId:metadata.attemptId,status:'FAIL',code:safeError(e),httpStatus:e?.httpStatus||null});throw e}
+  }catch(e){report.formats.push({format,model,jobId:metadata.jobId,attemptId:metadata.attemptId,status:'FAIL',code:safeError(e),httpStatus:e?.httpStatus||null,...acceptanceFailureDetails(e)});throw e}
  }
  await forgetByok();
  report.phase='complete';report.status='PASS';
 }
 try{await run()}catch(e){
  // Preserve the primary failure even if nonbillable BYOK cleanup also fails.
- const primaryFailure={phase:report.phase,code:safeError(e),httpStatus:e?.httpStatus||null};
+ const primaryFailure={phase:report.phase,code:safeError(e),httpStatus:e?.httpStatus||null,...acceptanceFailureDetails(e)};
  report.status='FAIL';
  if(byokCookie&&!byokForgetAttempted){
   try{await forgetByok()}

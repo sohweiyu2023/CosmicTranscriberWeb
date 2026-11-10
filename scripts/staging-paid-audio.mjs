@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {acceptanceAssertion} from './acceptance-diagnostics.mjs';
 
 // This fixture is separate from the 1-second tone used for native browser file checks.
 // Verify its disk bytes and format before any paid request, not after dispatch.
@@ -29,21 +30,21 @@ export function assertSpeechDiarization(result,durationSeconds){
   // The WAV duration comes from the independently hashed on-disk fixture.
   // Provider segments may overlap; their start times should still be ordered.
   // Allow two seconds for model rounding, never unbounded timestamps.
-  assert.ok(Number.isFinite(durationSeconds)&&durationSeconds>=12&&durationSeconds<=60,'Invalid independently measured WAV duration');
-  assert.ok(result&&typeof result.text==='string'&&result.text.trim().length>=20,'Diarization must contain meaningful spoken text');
-  assert.ok(Array.isArray(result.segments)&&result.segments.length>=2,'Diarization must return speaker-labelled segments');
+  assert.ok(Number.isFinite(durationSeconds)&&durationSeconds>=12&&durationSeconds<=60,acceptanceAssertion('diarization_duration_invalid','Invalid independently measured WAV duration'));
+  assert.ok(result&&typeof result.text==='string'&&result.text.trim().length>=20,acceptanceAssertion('diarization_text_missing','Diarization must contain meaningful spoken text'));
+  assert.ok(Array.isArray(result.segments)&&result.segments.length>=2,acceptanceAssertion('diarization_segments_missing','Diarization must return speaker-labelled segments'));
   const speakers=new Set();
   let previousStart=-1;
   for(const segment of result.segments){
-    assert.ok(segment&&typeof segment.speaker==='string'&&segment.speaker.trim(),'Missing diarization speaker label');
-    assert.ok(typeof segment.text==='string'&&segment.text.trim(),'Missing diarization segment text');
+    assert.ok(segment&&typeof segment.speaker==='string'&&segment.speaker.trim(),acceptanceAssertion('diarization_speaker_missing','Missing diarization speaker label'));
+    assert.ok(typeof segment.text==='string'&&segment.text.trim(),acceptanceAssertion('diarization_segment_text_missing','Missing diarization segment text'));
     assert.ok(Number.isFinite(segment.start)&&Number.isFinite(segment.end)&&segment.start>=0&&
-      segment.end>segment.start&&segment.end<=durationSeconds+2,'Invalid or out-of-bounds diarization timestamps');
-    assert.ok(segment.start>=previousStart,'Diarization segments are not chronological');
+      segment.end>segment.start&&segment.end<=durationSeconds+2,acceptanceAssertion('diarization_timestamps_invalid','Invalid or out-of-bounds diarization timestamps'));
+    assert.ok(segment.start>=previousStart,acceptanceAssertion('diarization_order_invalid','Diarization segments are not chronological'));
     previousStart=segment.start;
     speakers.add(segment.speaker);
   }
-  assert.ok(speakers.size>=2,'Two-speaker WAV must identify at least two speakers');
+  assert.ok(speakers.size>=2,acceptanceAssertion('diarization_speakers_insufficient','Two-speaker WAV must identify at least two speakers'));
   return {speakers:speakers.size,segments:result.segments.length};
 }
 
@@ -52,9 +53,9 @@ export function assertSpeechDiarization(result,durationSeconds){
 // response without recognizable words must not certify speech transcription.
 // This is a minimum-content check, not a claim of word-error-rate accuracy.
 export function assertSpeechTranscription(result){
-  assert.ok(result&&typeof result.text==='string','Speech transcript text missing');
+  assert.ok(result&&typeof result.text==='string',acceptanceAssertion('speech_text_missing','Speech transcript text missing'));
   const words=result.text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g)||[];
   const letters=words.join('').length;
-  assert.ok(words.length>=3&&letters>=12&&new Set(words.map(w=>w.toLowerCase())).size>=2,'Speech fixture must yield meaningful English words');
+  assert.ok(words.length>=3&&letters>=12&&new Set(words.map(w=>w.toLowerCase())).size>=2,acceptanceAssertion('speech_content_insufficient','Speech fixture must yield meaningful English words'));
   return {wordCount:words.length};
 }
