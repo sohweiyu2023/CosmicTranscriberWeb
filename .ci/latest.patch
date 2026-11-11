@@ -1,0 +1,41 @@
+--- a/scripts/audit-lib.mjs
++++ b/scripts/audit-lib.mjs
+@@ -169,6 +169,7 @@
+     ,["post-certification Access helper changes only the four permitted private fields", () => /const provenanceBefore = await verifyReleaseProvenance\(root/.test(s("scripts/configure-access.mjs")) && /vars\.ACCESS_TEAM_DOMAIN/.test(s("scripts/configure-access.mjs")) && /vars\.ACCESS_AUDIENCE/.test(s("scripts/configure-access.mjs")) && /await writeFile\(wranglerPath, original/.test(s("scripts/configure-access.mjs")) && /Access configuration changes only the selected environment Access fields/.test(s("tests/node/configure-access.test.mjs"))]
+     ,["Windows certification prepares a fresh deploy copy from the certified ZIP", () => /Prepared deployment folder/.test(s("RELEASE-WINDOWS.ps1")) && /ExtractToDirectory\(\$zip, \$deployBase\)/.test(s("RELEASE-WINDOWS.ps1")) && /package-lock\.json/.test(s("RELEASE-WINDOWS.ps1")) && /configure:access:staging/.test(s("RELEASE-WINDOWS.ps1"))]
+     ,["Windows Wrangler OAuth guidance opts into OS keychain storage", () => /wrangler-invoke\.mjs login --use-keyring/.test(s("RELEASE-WINDOWS.ps1"))]
++    ,["Windows release executes the private toolchain self-test before dependency-backed gates", () => /Windows toolchain executable self-test: PASS/.test(s("WINDOWS-TOOLCHAIN-SELFTEST.ps1")) && /WINDOWS-TOOLCHAIN-SELFTEST\.ps1/.test(s("FIRST-DEPLOY-WINDOWS.ps1")) && /WINDOWS-TOOLCHAIN-SELFTEST\.ps1/.test(s("RELEASE-WINDOWS.ps1")) && /test:windows-toolchain/.test(s("package.json"))]
+     ,["CI resolves one reviewed lock and reuses it across every platform", () => /name: Resolve one reviewed dependency graph/.test(s(".github/workflows/ci.yml")) && /reviewed-release-inputs/.test(s(".github/workflows/ci.yml")) && /package-lock\.json/.test(s(".github/workflows/ci.yml")) && (s(".github/workflows/ci.yml").match(/actions\/download-artifact@v8\.0\.1/g)||[]).length===4]
+     ,["CI executes real Safari via SafariDriver on macOS 26", () => /runs-on: macos-26/.test(s(".github/workflows/ci.yml")) && /safaridriver --enable/.test(s(".github/workflows/ci.yml")) && /test:safari:real/.test(s(".github/workflows/ci.yml"))]
+     ,["CI withholds certified ZIP until Linux macOS Safari and Windows release gates all pass", () => /needs: \[linux-full, macos-safari, windows-release\]/.test(s(".github/workflows/ci.yml")) && /ALL RELEASE GATES GREEN/.test(s(".github/workflows/ci.yml"))]
+--- a/scripts/static-audit.mjs
++++ b/scripts/static-audit.mjs
+@@ -6,5 +6,5 @@
+ const files={};
+ async function walk(dir){for(const e of await readdir(path.join(root,dir),{withFileTypes:true})){const rel=path.join(dir,e.name).replaceAll('\\','/');if(e.isDirectory())await walk(rel);else if(/\.(js|mjs|html|css|jsonc)$/.test(e.name)||rel==='public/_headers')files[rel]=await readFile(path.join(root,rel),'utf8')}}
+ for(const d of wanted)await walk(d);
+-for(const f of ['wrangler.jsonc','vitest.config.js','vitest.integration.config.js','playwright.config.js','package.json','.github/workflows/ci.yml','RELEASE-WINDOWS.ps1','FIRST-DEPLOY-WINDOWS.ps1','PASTE-ONCE-WINDOWS.ps1','WINDOWS-TOOLCHAIN.ps1','.npmrc','.nvmrc','RELEASE_MANIFEST.json','README.md'])files[f]=await readFile(path.join(root,f),'utf8');
++for(const f of ['wrangler.jsonc','vitest.config.js','vitest.integration.config.js','playwright.config.js','package.json','.github/workflows/ci.yml','RELEASE-WINDOWS.ps1','FIRST-DEPLOY-WINDOWS.ps1','PASTE-ONCE-WINDOWS.ps1','WINDOWS-TOOLCHAIN.ps1','WINDOWS-TOOLCHAIN-SELFTEST.ps1','.npmrc','.nvmrc','RELEASE_MANIFEST.json','README.md'])files[f]=await readFile(path.join(root,f),'utf8');
+ let fail=0;for(const [name,test] of safeguards(files)){const ok=!!test();console.log(`${ok?'PASS':'FAIL'} ${name}`);if(!ok)fail++}if(fail){console.error(`${fail} safeguard audit failure(s).`);process.exit(1)}console.log(`Static safeguard audit PASS (${safeguards(files).length} checks).`);
+--- a/scripts/mutation-suite.mjs
++++ b/scripts/mutation-suite.mjs
+@@ -15,7 +15,7 @@
+ await walk("public");
+ await walk("tests");
+ await walk("scripts");
+-for (const f of ["wrangler.jsonc","vitest.config.js","vitest.integration.config.js","playwright.config.js","package.json",".github/workflows/ci.yml","RELEASE-WINDOWS.ps1","FIRST-DEPLOY-WINDOWS.ps1","PASTE-ONCE-WINDOWS.ps1","WINDOWS-TOOLCHAIN.ps1",".npmrc",".nvmrc","RELEASE_MANIFEST.json","README.md"]) files[f] = await readFile(path.join(root, f), "utf8");
++for (const f of ["wrangler.jsonc","vitest.config.js","vitest.integration.config.js","playwright.config.js","package.json",".github/workflows/ci.yml","RELEASE-WINDOWS.ps1","FIRST-DEPLOY-WINDOWS.ps1","PASTE-ONCE-WINDOWS.ps1","WINDOWS-TOOLCHAIN.ps1","WINDOWS-TOOLCHAIN-SELFTEST.ps1",".npmrc",".nvmrc","RELEASE_MANIFEST.json","README.md"]) files[f] = await readFile(path.join(root, f), "utf8");
+ 
+ const mutations = [
+   ["remove HttpOnly", "src/byok.js", /HttpOnly/g, ""],
+@@ -234,6 +234,10 @@
+   ["remove exact private npm PowerShell command binding", "WINDOWS-TOOLCHAIN.ps1", /  Install-CosmicNpmCommandBinding \$nodeExe \$npmCli\n/, ""],
+   ["make PowerShell npm binding call ambient npm instead of exact private CLI", "WINDOWS-TOOLCHAIN.ps1", /    & \$env:COSMIC_NODE_EXE \$env:COSMIC_NPM_CLI @args/, "    & npm @args"],
+   ["stop verifying exact private npm CLI with exact private Node", "WINDOWS-TOOLCHAIN.ps1", /  \$npmCliText = \(& \$nodeExe \$npmCli --version\)\.Trim\(\)\n[\s\S]{0,220}?\n  \}/, "  $npmCliText = $script:CosmicNpmVersion\n  }"],
++  ["remove executable Windows private-toolchain self-test from certification", "RELEASE-WINDOWS.ps1", /& pwsh -NoProfile -ExecutionPolicy Bypass -File \(Join-Path \$PSScriptRoot 'WINDOWS-TOOLCHAIN-SELFTEST\.ps1'\)\n/g, ""],
++  ["stop CI from sharing one reviewed lock across platforms", ".github/workflows/ci.yml", /name: reviewed-release-inputs/g, "name: per-platform-inputs"],
++  ["remove real SafariDriver execution from macOS CI", ".github/workflows/ci.yml", /        run: npm run test:safari:real\n/g, ""],
++  ["allow final CI release gate without macOS Safari", ".github/workflows/ci.yml", /needs: \[linux-full, macos-safari, windows-release\]/g, "needs: [linux-full, windows-release]"],
+   ["turn npm install-script policy back into advisory mode", ".npmrc", /strict-allow-scripts=true/g, "strict-allow-scripts=false"],
+   ["allow npm 12 to ignore unknown project npmrc settings", ".npmrc", /strict-npmrc=true/g, "strict-npmrc=false"],
+   ["let Access configuration bypass certified provenance", "scripts/configure-access.mjs", /const provenanceBefore = await verifyReleaseProvenance\(root, \{ packageVersion: pkg\.version \}\);/g, "const provenanceBefore = [];"],
