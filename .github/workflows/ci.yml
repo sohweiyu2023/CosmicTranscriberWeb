@@ -55,7 +55,7 @@ jobs:
       - name: Verify exact approved single MP3 bytes (no provider calls)
         run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
       - name: Preserve only the approved MP3 for the manual smoke workflow
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: cosmic-approved-single-mp3-fixture
           path: tests/fixtures/approved-single-mp3/staging-speech.mp3
@@ -64,7 +64,7 @@ jobs:
       - name: Validate exactly the eight approved synthetic speech fixtures (no provider calls)
         run: node scripts/prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight "$RUNNER_TEMP/approved-eight"
       - name: Preserve only the eight approved speech fixtures for bounded staging acceptance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: cosmic-approved-remaining-eight-fixtures
           path: ${{ runner.temp }}/approved-eight/files/*
@@ -74,7 +74,7 @@ jobs:
         id: reviewed-input-bundle
         run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --prepare-input-bundle
       - name: Upload reviewed lock and fixtures
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: reviewed-release-inputs
           path: ${{ runner.temp }}/cosmic-reviewed-inputs.zip
@@ -219,7 +219,7 @@ jobs:
         run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}"
       - name: Preserve macOS browser evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-native-browser-evidence
           path: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-${{ needs.windows-release.outputs.version }}/test-results/
@@ -358,7 +358,7 @@ jobs:
       - name: Verify committed inputs before certified artifact publication
         run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
       - name: Upload staging-certified candidate
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ steps.certified.outputs.artifact-name }}
           path: ${{ steps.certified.outputs.path }}
@@ -626,7 +626,7 @@ jobs:
         run: node scripts/staging-live-acceptance.mjs
       - name: Preserve sanitized nine-format paid receipts
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: staging-live-nine-format-evidence
           path: test-results/staging-live-acceptance.json
