@@ -21,12 +21,12 @@
     },
     {
       "path": "node_modules/@cloudflare/vitest-plugin",
-      "version": "1.7.0",
+      "version": "1.8.1",
       "license": "MIT",
       "dev": true,
       "optional": false,
-      "resolved": "https://registry.npmjs.org/@cloudflare/vitest-plugin/-/vitest-plugin-1.7.0.tgz",
-      "integrity": "sha512-mIXpoJMKamKHrL9eTGVKxIu1Qt+GVHikRqukDkCG7Wtv4x18GIY6akz2PCmpRjDStDC/6J2Yt1XyTM6Pjza38g=="
+      "resolved": "https://registry.npmjs.org/@cloudflare/vitest-plugin/-/vitest-plugin-1.8.1.tgz",
+      "integrity": "sha512-YVrXJcU89Vol5oIsksBJgyOpiqTIDAW1V8SWDNu+Un2LN92ponHroUjmPwXjRf0DTW9czbrwiZgi7Ukjw+Ic4w=="
     },
     {
       "path": "node_modules/@cloudflare/workerd-darwin-64",
@@ -651,12 +651,12 @@
     },
     {
       "path": "node_modules/@mswjs/interceptors",
-      "version": "0.45.7",
+      "version": "0.45.12",
       "license": "MIT",
       "dev": true,
       "optional": false,
-      "resolved": "https://registry.npmjs.org/@mswjs/interceptors/-/interceptors-0.45.7.tgz",
-      "integrity": "sha512-PPZQBiojRuy1jJQoUqbrJhoac47GC1GwRazDrYwwbE70zfqMkOY/5a+Du4hp3vlPUXLt/um4TMcmRabmooAkxw=="
+      "resolved": "https://registry.npmjs.org/@mswjs/interceptors/-/interceptors-0.45.12.tgz",
+      "integrity": "sha512-LLttQ/SSmseGFD/sNiHv9q34hd4gmPLN9uQdIIsU/V/o2AgTJm3dWoKHA4KTj0BzAans6CoEmpHYmp80yp69VA=="
     },
     {
       "path": "node_modules/@noble/hashes",
@@ -1362,12 +1362,12 @@
     },
     {
       "path": "node_modules/miniflare",
-      "version": "5.20261110.0-beta",
+      "version": "5.20261110.2-beta",
       "license": "MIT",
       "dev": true,
       "optional": false,
-      "resolved": "https://registry.npmjs.org/miniflare/-/miniflare-5.20261110.0-beta.tgz",
-      "integrity": "sha512-UiJRL6D4pNkHxgZ3QXDCaz/N27FFuuHRRgOmD/SucEZIwDOfWwX7s/n8ZrFemFlURRfnQpBfAdWy8ixsW0yJWA=="
+      "resolved": "https://registry.npmjs.org/miniflare/-/miniflare-5.20261110.2-beta.tgz",
+      "integrity": "sha512-vzUwcal5OtR/1nr5cmjCbZSrsR3QRA1cDnRUDVgET17HeDkdpQNG2QxeIkuHFLyszjdBqme59w8Nrrj4FkuFsQ=="
     },
     {
       "path": "node_modules/ms",
@@ -1380,12 +1380,12 @@
     },
     {
       "path": "node_modules/msw",
-      "version": "3.0.4",
+      "version": "3.0.5",
       "license": "MIT",
       "dev": true,
       "optional": false,
-      "resolved": "https://registry.npmjs.org/msw/-/msw-3.0.4.tgz",
-      "integrity": "sha512-lrILj+WEoJ4pp3SZHdEDnnZvP6jfWrNua+v2jgXz82RAaATAVqOqMNMxj2n2TUMNR9JP/eWG5tBry3mKnxPNbA=="
+      "resolved": "https://registry.npmjs.org/msw/-/msw-3.0.5.tgz",
+      "integrity": "sha512-RkzyWIaG+T2jYf9KOUrNOZuXl4sCpz35m13nVlt1ACFQhl/WjHU9zKMwlrR/6NatgKjL5U84UmVXOz9/+mvGsw=="
     },
     {
       "path": "node_modules/mute-stream",
@@ -1740,12 +1740,12 @@
     },
     {
       "path": "node_modules/wrangler",
-      "version": "4.160.0",
+      "version": "4.161.0",
       "license": "MIT OR Apache-2.0",
       "dev": true,
       "optional": false,
-      "resolved": "https://registry.npmjs.org/wrangler/-/wrangler-4.160.0.tgz",
-      "integrity": "sha512-nwzmpu7Hd5Csax02twpCNRAloC+kduXKw9rjfq+oEuo8RnjWRaahSV+qk+p0w88EgafMcDE0XnZRSfOM3lKEKg=="
+      "resolved": "https://registry.npmjs.org/wrangler/-/wrangler-4.161.0.tgz",
+      "integrity": "sha512-yOHZUYEq9AP7vutWmkCADzCKAH9ynfvZdoKJRIGTzkiailf9/L+jhT7WRb+9p6jRDtuBXVFtCzLo7kGAcGw+pA=="
     },
     {
       "path": "node_modules/wrap-ansi",
