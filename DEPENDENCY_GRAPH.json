@@ -1,7 +1,7 @@
 {
   "schema": "cosmic-dependency-snapshot-1",
-  "packageSha256": "23ab8c4b8222694e03bef7b26bd95303ec7887f3551977a6ff16e57456167035",
-  "lockSha256": "80a2fb43b78f3e93b3394d127f1ada317ad12681ee8f8875212508ebbf34cd9e",
+  "packageSha256": "ab4d1ee7c93b29013008029156ee39d5f0657bac7b33df170b08f71b2d5f57ab",
+  "lockSha256": "7cedd070f9d628ead68c55b56e449d6933eb4642c11ea0a1cb4bb48a935f17b8",
   "nodeVersion": "26.7.0",
   "npmVersion": "12.0.2",
   "registry": "https://registry.npmjs.org/",
