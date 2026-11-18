@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
 import {tmpdir} from 'node:os';
-import {PIN,assertManualIdentity,verifyCertification,checkProtectedStaging,verifyCoordinatorChanges,verifyRollback,verifyRollbackEvidence,diagnoseProtectedStaging,accessClaimMetadata,readCurrentStagingBindings,stagingSettingsOutputPath,safeDeployFailure} from '../../scripts/staging-deploy-only.mjs';
+import {PIN,certificationOutputs,assertManualIdentity,verifyCertification,checkProtectedStaging,verifyCoordinatorChanges,verifyRollback,verifyRollbackEvidence,diagnoseProtectedStaging,accessClaimMetadata,readCurrentStagingBindings,stagingSettingsOutputPath,safeDeployFailure} from '../../scripts/staging-deploy-only.mjs';
 const env=()=>({GITHUB_REPOSITORY:PIN.repo,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REF:'refs/heads/main',GITHUB_RUN_ATTEMPT:'1',GITHUB_WORKFLOW:'Deploy pinned certified source to STAGING ONLY',GITHUB_SHA:'a'.repeat(40),GITHUB_RUN_ID:'123',CREDENTIAL_REVIEW:'owner-authorized-existing-secret-use'});
 const names=['Resolve one reviewed dependency graph','Linux Worker + integration + browser matrix','Windows toolchain + Chrome/Edge + staging-certified ZIP','macOS native ZIP + WebKit/mobile + Chrome + real Safari','RELEASE BROWSER GATE - native Safari PASS or exact disclosed exception','STAGING PREFLIGHT - reviewed Safari26 automation exception, no final release'];
 const metadata=()=>{const common={status:'completed',conclusion:'success',head_sha:PIN.commit,event:'push',head_branch:'main',run_attempt:1};return [{...common,id:PIN.run},names.map(name=>({name,status:'completed',conclusion:'success'})),{id:PIN.artifact,name:PIN.artifactName,expired:false,digest:PIN.outerDigest,workflow_run:{id:PIN.run,head_sha:PIN.commit}},{...common,id:PIN.licensingRun}]};
@@ -29,7 +29,7 @@ test('manual workflow preserves deployment-only staging boundaries and existing 
  assert.match(text,/default: unresolved-refuse-deployment/);
  assert.doesNotMatch(text,/STAGING_OPENAI_API_KEY|staging-live-acceptance|\/api\/transcribe|deploy:production|LOCAL_AUTH_BYPASS.*true/);
  assert.ok(text.indexOf('staging-deploy-only.mjs access')<text.indexOf('npm run deploy:staging'));
- assert.match(text,new RegExp(PIN.sourceDigest));assert.equal(PIN.rollback,null);assert.equal(PIN.rollbackSourceMessage,null);
+ assert.match(text,/steps.certification.outputs.source_digest/);assert.equal(PIN.rollback,null);assert.equal(PIN.rollbackSourceMessage,null);
  assert.match(text,/releaseReady.*false/);assert.match(text,/BYOK_SESSION_MASTER_KEY_CURRENT/);
  const old=readFileSync(new URL('../../scripts/staging-access-preflight.mjs',import.meta.url),'utf8');assert.match(old,/GITHUB_EVENT_NAME,'push'/);assert.match(old,/GITHUB_RUN_ATTEMPT,'1'/);
 });
@@ -66,7 +66,9 @@ test('missing live rollback stays blocked; pure evidence checks reject stale/spl
 test('updated immutable pins and workflow stay synchronized without paid or production successor',()=>{
  const y=readFileSync(new URL('../../.github/workflows/staging-deploy-only.yml',import.meta.url),'utf8');
  assert.equal(PIN.commit,'d34edd9ef4cccf648d65c71a3b016d78fd76d7bf');assert.equal(PIN.run,41165444076);assert.equal(PIN.artifact,13029840169);assert.equal(PIN.licensingRun,41165444000);
- for(const value of [PIN.commit,String(PIN.run),String(PIN.artifact),PIN.sourceDigest])assert.ok(y.includes(value));
+ for(const value of [PIN.commit,String(PIN.run),String(PIN.artifact),PIN.sourceDigest])assert.ok(!y.includes(value),'Immutable identity must not be duplicated in workflow');
+ for(const field of ['commit','run','artifact','source_digest','source_message'])assert.ok(y.includes('steps.certification.outputs.'+field));
+ assert.ok(y.includes("x.annotations?.['workers/message']!==process.env.SOURCE_MESSAGE"));
  assert.ok(y.includes('(cd "$GITHUB_WORKSPACE" && node scripts/staging-deploy-only.mjs rollback)'));assert.ok(y.includes('Main advanced before deployment'));
  assert.equal((y.match(/npm run deploy:staging/g)||[]).length,1);assert.doesNotMatch(y,/deploy:production|STAGING_OPENAI_API_KEY|api\/transcribe/);
 });
@@ -98,4 +100,15 @@ test('settings private output is exclusive and restricted to the existing runner
 test('deployment failure logs retain bounded phase/status categories without raw errors or unsupported fields',()=>{
  const secret='synthetic-token-and-private-settings';const unsafe=safeDeployFailure(secret,{code:secret,httpStatus:9999,message:secret,stack:secret,body:secret});assert.equal(unsafe.phase,'unknown');assert.equal(unsafe.code,'preflight_rejected');assert.equal(unsafe.httpStatus,null);assert.equal(JSON.stringify(unsafe).includes(secret),false);
  const known=safeDeployFailure('settings',{code:'settings_http_rejected',httpStatus:403,message:secret});assert.equal(known.code,'settings_http_rejected');assert.equal(known.httpStatus,403);assert.equal(JSON.stringify(known).includes(secret),false);
+});
+
+test('certified workflow outputs bind every field and reject missing, stale or injected identities',()=>{
+ const receipt=verifyCertification(...metadata());
+ const out=certificationOutputs(receipt);
+ assert.ok(out.includes(`commit=${PIN.commit}\n`));assert.ok(out.includes(`source_message=Source${PIN.commit} CI${PIN.run} artifact${PIN.artifact}\n`));
+ assert.equal(out.trim().split('\n').length,5);
+ for(const patch of [{schema:'other'},{commit:'a'.repeat(40)},{commit:PIN.commit+'\nartifact=123'},{run:PIN.run+1},{artifact:PIN.artifact+1},{sourceDigest:'a'.repeat(64)},{releaseReady:true}])assert.throws(()=>certificationOutputs({...receipt,...patch}));
+ assert.throws(()=>certificationOutputs(null));
+ const source=readFileSync(new URL('../../scripts/staging-deploy-only.mjs',import.meta.url),'utf8');
+ assert.ok(source.indexOf('const receipt=verifyCertification')<source.indexOf('await appendFile(process.env.GITHUB_OUTPUT,outputs)'));
 });

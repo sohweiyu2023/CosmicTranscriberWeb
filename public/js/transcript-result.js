@@ -1,5 +1,8 @@
-export function normalizeOpenAiResult(result, chunk) {
+export function normalizeOpenAiResult(result, chunk, {requireDiarization = false} = {}) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('OpenAI returned an invalid transcription result.');
+  // A text-only response cannot satisfy a requested speaker-label contract.
+  // Preserve empty diarized responses only when they explicitly contain [].
+  if (requireDiarization && !Array.isArray(result.segments)) throw new Error('OpenAI returned a diarization response without a segments array.');
   if (Array.isArray(result.segments)) {
     if (typeof result.text !== 'string') throw new Error('OpenAI returned diarized transcription JSON without a string text field.');
     if (result.segments.length > 50_000) throw new Error('OpenAI returned too many diarization segments.');

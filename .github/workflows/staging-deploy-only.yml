@@ -41,21 +41,24 @@ jobs:
           node-version: '26.7.0'
           package-manager-cache: false
       - name: Verify exact successful CI/licensing and certified artifact
+        id: certification
         run: node scripts/staging-deploy-only.mjs certification
       - name: Verify legitimate protected staging shell before deployment or D1 migration
         run: node scripts/staging-deploy-only.mjs access
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          artifact-ids: '13029840169'
-          run-id: '41165444076'
+          artifact-ids: ${{ steps.certification.outputs.artifact }}
+          run-id: ${{ steps.certification.outputs.run }}
           github-token: ${{ github.token }}
           merge-multiple: true
           path: certified
       - name: Verify pinned source ZIP and staging-only manifest
+        env:
+          SOURCE_DIGEST: ${{ steps.certification.outputs.source_digest }}
         shell: bash
         run: |
           set -euo pipefail
-          printf '%s  %s\n' '65a57e43bbaac1369c187a86f3ac8679c4326233affda69228769fcd2f6e4bdd' 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
+          printf '%s  %s\n' "$SOURCE_DIGEST" 'certified/CosmicTranscriberWeb-1.2.0-source.zip' | sha256sum -c -
           root="$RUNNER_TEMP/pinned-staging-source"
           mkdir -p "$root"
           unzip -q certified/CosmicTranscriberWeb-1.2.0-source.zip -d "$root"
@@ -125,12 +128,14 @@ jobs:
           node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));fs.writeFileSync(process.argv[2],JSON.stringify(a.map(({id,created_on,versions,annotations})=>({id,created_on,versions,sourceMessage:annotations?.['workers/message']}))))" "$RUNNER_TEMP/staging-before-raw.json" "$GITHUB_WORKSPACE/staging-before.json"
           (cd "$GITHUB_WORKSPACE" && node scripts/staging-deploy-only.mjs rollback)
       - name: Deploy STAGING ONLY
+        env:
+          SOURCE_MESSAGE: ${{ steps.certification.outputs.source_message }}
         shell: bash
         run: |
           set -euo pipefail
           cd "$CANDIDATE"
           test "$(git -C "$GITHUB_WORKSPACE" ls-remote origin refs/heads/main | cut -f1)" = "$GITHUB_SHA" || { echo 'Main advanced before deployment; refusing stale coordinator.' >&2; exit 1; }
-          npm run deploy:staging -- --message "Sourced34edd9ef4cccf648d65c71a3b016d78fd76d7bf CI41165444076 artifact13029840169"
+          npm run deploy:staging -- --message "$SOURCE_MESSAGE"
       - name: Staging reachability smoke
         shell: bash
         run: |
@@ -141,11 +146,14 @@ jobs:
             *) echo "Unexpected staging HTTP status: $code" >&2; exit 1 ;;
           esac
       - name: Record newly deployed staging version
+        env:
+          SOURCE_MESSAGE: ${{ steps.certification.outputs.source_message }}
+          SOURCE_COMMIT: ${{ steps.certification.outputs.commit }}
         shell: bash
         run: |
           cd "$CANDIDATE"
           node scripts/wrangler-invoke.mjs deployments list --env staging --json > "$RUNNER_TEMP/staging-after-raw.json"
-          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const before=JSON.parse(fs.readFileSync(process.argv[3]));const oldVersion=before.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0].versions[0].version_id;const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id===oldVersion||!String(x.annotations?.['workers/message']).includes('Sourced34edd9ef4cccf648d65c71a3b016d78fd76d7bf CI41165444076 artifact13029840169'))process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:'d34edd9ef4cccf648d65c71a3b016d78fd76d7bf',fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json" "$GITHUB_WORKSPACE/staging-before.json"
+          node -e "const fs=require('fs');const a=JSON.parse(fs.readFileSync(process.argv[1]));const before=JSON.parse(fs.readFileSync(process.argv[3]));const oldVersion=before.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0].versions[0].version_id;const x=a.toSorted((a,b)=>Date.parse(b.created_on)-Date.parse(a.created_on))[0];if(x.versions.length!==1||x.versions[0].percentage!==100||x.versions[0].version_id===oldVersion||x.annotations?.['workers/message']!==process.env.SOURCE_MESSAGE)process.exit(1);fs.writeFileSync(process.argv[2],JSON.stringify({deploymentId:x.id,createdOn:x.created_on,versionId:x.versions[0].version_id,sourceCommit:process.env.SOURCE_COMMIT,fullAcceptance:false,releaseReady:false}))" "$RUNNER_TEMP/staging-after-raw.json" "$GITHUB_WORKSPACE/staging-after.json" "$GITHUB_WORKSPACE/staging-before.json"
       - name: Reassert release boundary
         shell: bash
         run: |
