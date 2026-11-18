@@ -1,6 +1,6 @@
 // Manual STAGING deployment coordinator; no paid/API-transcription operation.
 import assert from 'node:assert/strict';
-import {readFile,writeFile} from 'node:fs/promises';
+import {readFile,writeFile,appendFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {pathToFileURL} from 'node:url';
 import path from 'node:path';
@@ -40,6 +40,16 @@ export function verifyCertification(run,jobs,artifact,licensing){
  assert.equal(artifact.id,PIN.artifact);assert.equal(artifact.name,PIN.artifactName);assert.equal(artifact.expired,false);assert.equal(artifact.digest,PIN.outerDigest);
  assert.equal(artifact.workflow_run.id,PIN.run);assert.equal(artifact.workflow_run.head_sha,PIN.commit);
  return {schema:'cosmic-manual-staging-ci-1',commit:PIN.commit,run:PIN.run,artifact:PIN.artifact,sourceDigest:PIN.sourceDigest,nativeSafari:'FAIL/WAIVED; genuine Mac Safari not validated',releaseReady:false,credentialUseDecision:'Owner authorized existing GitHub secret use; exposed-token relationship remains unresolved; no pasted token used'};
+}
+// Export only a successfully verified immutable identity, never workflow inputs.
+export function certificationOutputs(receipt){
+ assert.equal(receipt?.schema,'cosmic-manual-staging-ci-1');
+ assert.equal(receipt.commit,PIN.commit);assert.match(receipt.commit,/^[a-f0-9]{40}$/);
+ assert.equal(receipt.run,PIN.run);assert.ok(Number.isSafeInteger(receipt.run)&&receipt.run>0);
+ assert.equal(receipt.artifact,PIN.artifact);assert.ok(Number.isSafeInteger(receipt.artifact)&&receipt.artifact>0);
+ assert.equal(receipt.sourceDigest,PIN.sourceDigest);assert.match(receipt.sourceDigest,/^[a-f0-9]{64}$/);
+ assert.equal(receipt.releaseReady,false);
+ return `commit=${receipt.commit}\nrun=${receipt.run}\nartifact=${receipt.artifact}\nsource_digest=${receipt.sourceDigest}\nsource_message=Source${receipt.commit} CI${receipt.run} artifact${receipt.artifact}\n`;
 }
 export async function checkProtectedStaging(credential,fetchImpl=fetch){
   let parsed;try{parsed=parseStagingAccessCredential(credential)}catch{reject(typeof credential==='string'&&credential.trim()?'access_credential_format':'access_credential_missing')}
@@ -158,7 +168,11 @@ async function main(){
   const changed=execFileSync('git',['diff','--name-only',PIN.commit,process.env.GITHUB_SHA],{encoding:'utf8'}).trim().split('\n').filter(Boolean);
   verifyCoordinatorChanges(changed);
   const run=await github('/actions/runs/'+PIN.run),jobs=await github('/actions/runs/'+PIN.run+'/jobs?per_page=100'),artifact=await github('/actions/artifacts/'+PIN.artifact),licensing=await github('/actions/runs/'+PIN.licensingRun);
-  await writeFile('staging-certification-receipt.json',JSON.stringify(verifyCertification(run,jobs.jobs,artifact,licensing),null,2)+'\n');
+  const receipt=verifyCertification(run,jobs.jobs,artifact,licensing);
+  const outputs=certificationOutputs(receipt);
+  assert.ok(process.env.GITHUB_OUTPUT,'GitHub step output path missing');
+  await writeFile('staging-certification-receipt.json',JSON.stringify(receipt,null,2)+'\n');
+  await appendFile(process.env.GITHUB_OUTPUT,outputs);
   console.log('Pinned current-source CI/licensing/artifact eligible for STAGING only; native Safari FAIL/WAIVED.');
  }else if(process.argv[2]==='settings'){
   const target=stagingSettingsOutputPath(process.env);
