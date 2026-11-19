@@ -1,0 +1,13 @@
+# Dependency refresh, 18 November 2026
+
+This isolated draft succeeds published review commit c5a2afbd1f18f080473de7c6b7b9d08634a48f7a (tree d818d46452f275dff87c11e4f027d94358211dcb). Its one manual CI run 44389616441 failed the strict direct-dependency freshness check after npm ci, graph/install-script checks, npm ls and full audit passed. Platform jobs were skipped. This document does not turn that run into a pass.
+
+The five exact direct development updates are @cloudflare/vitest-plugin 1.8.1 to 1.8.4, @playwright/test 1.65.0 to 1.65.1, msw 3.0.5 to 3.0.7, vitest 5.1.0 to 5.1.1, and wrangler 4.161.0 to 4.164.0. Cloudflare's coordinated pair resolves Miniflare 5.20261117.0-beta and one Workerd 1.20261117.1 graph, including all five platform packages. Normal targeted npm resolution changes 19 package entries plus the root record; cascades include Playwright/core, Vitest mocker/spy, @msw/url and tinybench. It also selects compatible @jridgewell/resolve-uri 3.1.3 through existing trace-mapping ranges. No additional direct package or override is introduced.
+
+Resolution and installation use verified Node 26.7.0/npm 12.0.2, official registry URLs and lifecycle scripts disabled. Both old/new Workerd tarballs match locked SHA-512 integrity. Independent installer comparison found only date/version substitutions; postinstall remains node install.js. The exact workerd@1.20261117.1 approval follows that review. No wildcard approval is added; existing esbuild approvals and fsevents denial remain. Installer comparison does not independently audit native binaries, and rebuild success alone does not establish native startup.
+
+DEPENDENCY_GRAPH.json preserves registry/toolchain/fixture policy while refreshing package/lock hashes and the runtime version. The current-version test assertion, exact license inventory and checksum manifest are regenerated. Runtime direct dependencies, security overrides, compatibility dates, fixtures, model/privacy/checkpoint behavior and release gates remain unchanged.
+
+Official GHSA-fc5q-39xc-vjpf was withdrawn at 2026-11-18T15:38:56Z; withdrawal is not a code patch. The refreshed installed graph passes full npm audit with zero findings and direct npm outdated --depth=0 with no outdated packages at the recorded local check. The separate evidence package retains exact commands, results and failures.
+
+Playwright 1.65.1 changes Chromium/headless-shell from revision1254 to1255; matching browser and all-platform qualification remain necessary. Local mock tests cannot certify native Safari, authentic historical Git fixtures, staging, paid acceptance or production. No hosted execution, remote publication, PR, provider request or deployment is performed for this refresh.
