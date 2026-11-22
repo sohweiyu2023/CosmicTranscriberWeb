@@ -1,0 +1,153 @@
+name: Cosmic PR57 six-pin resolver (temporary, artifact only)
+on:
+  push:
+    branches: [ci/pr57-dependency-resolver-20261123]
+    paths:
+      - package.json
+      - .github/workflows/pr57-dependency-resolver.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/ci/pr57-dependency-resolver-20261123' && github.repository == 'sohweiyu2023/CosmicTranscriberWeb' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      BASE: a5425972f37c643b3d564a821a5f04b8929d3710
+      REVIEWED_PACKAGE: b9bfe479cd04f040f52d34546e417d2b5b793ce0a225eaa03694abd27bda609c
+      BASE_LOCK: 7cedd070f9d628ead68c55b56e449d6933eb4642c11ea0a1cb4bb48a935f17b8
+      REGISTRY: https://registry.npmjs.org/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Enforce exact reviewed inputs and only two changed paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" && "$(git rev-list --parents -n1 HEAD)" == "$GITHUB_SHA $BASE" ]]
+          diff -u <(printf '%s\n' .github/workflows/pr57-dependency-resolver.yml package.json) <(git diff --name-only "$BASE" HEAD)
+          printf '%s  %s\n' "$REVIEWED_PACKAGE" package.json "$BASE_LOCK" package-lock.json | sha256sum -c -
+          [[ "$(git hash-object .npmrc)" == de0f410972d6e3929fe491a9ad38b4406fc943f9 ]]
+          [[ "$(git hash-object DEPENDENCY_GRAPH.json)" == 4dbdbf0f5a8b2816c29fbc8ceb56db6a9d460ff2 ]]
+          [[ "$(git hash-object .github/workflows/ci.yml)" == 9a4e0e8c9eb87c7b3ec7933ed02693bc44282519 ]]
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Resolve public lock only, with clean process environment and no lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d "$RUNNER_TEMP/cosmic-resolver.XXXXXX")
+          evidence="$RUNNER_TEMP/cosmic-resolver-evidence"
+          mkdir -m 700 "$work/home" "$work/tool" "$work/graph" "$evidence"
+          : > "$work/user.npmrc"; : > "$work/global.npmrc"
+          node_bin="$(dirname "$(command -v node)")"
+          export CLEAN_PATH="$work/tool/bin:$node_bin:/usr/bin:/bin"
+          clean() {
+            env -i PATH="$CLEAN_PATH" HOME="$work/home" CI=true \
+              npm_config_userconfig="$work/user.npmrc" npm_config_globalconfig="$work/global.npmrc" \
+              npm_config_cache="$work/home/npm-cache" npm_config_registry="$REGISTRY" \
+              npm_config_ignore_scripts=true "$@"
+          }
+          [[ "$(clean node --version)" == v26.7.0 ]]
+          (cd "$work/tool"; clean npm install --global --prefix "$work/tool" npm@12.0.2 --ignore-scripts --no-audit --no-fund --registry="$REGISTRY")
+          [[ "$(clean npm --version)" == 12.0.2 ]]
+          printf 'base=%s\ninputCommit=%s\nnode=%s\nnpm=%s\nregistry=%s\n' "$BASE" "$GITHUB_SHA" "$(clean node --version)" "$(clean npm --version)" "$REGISTRY" > "$evidence/identity.txt"
+          cp package.json package-lock.json .npmrc DEPENDENCY_GRAPH.json "$work/graph/"
+          cp package-lock.json "$work/base-lock.json"
+          cd "$work/graph"
+          clean npm install --package-lock-only --ignore-scripts --no-audit --no-fund --registry="$REGISTRY"
+          printf '%s  %s\n' "$REVIEWED_PACKAGE" package.json | sha256sum -c -
+          clean node --input-type=module - "$evidence" "$work/base-lock.json" <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import {join} from 'node:path';
+          const [evidence,baseLockPath]=process.argv.slice(2);
+          const read=p=>readFileSync(p);
+          const hash=b=>createHash('sha256').update(b).digest('hex');
+          const pkgBytes=read('package.json'),lockBytes=read('package-lock.json');
+          const pkg=JSON.parse(pkgBytes),lock=JSON.parse(lockBytes),prior=JSON.parse(read(baseLockPath));
+          const snapshot=JSON.parse(read('DEPENDENCY_GRAPH.json'));
+          assert.equal(lock.lockfileVersion,4);
+          const root=lock.packages[''];
+          assert.equal(root.name,pkg.name); assert.equal(root.version,pkg.version);
+          for(const key of ['dependencies','devDependencies','engines']) assert.deepEqual(root[key],pkg[key],key);
+          const scripts=[],workerd=new Map();
+          for(const [loc,entry] of Object.entries(lock.packages)) {
+            if(!loc) continue;
+            assert.match(loc,/^node_modules\//);
+            assert.ok(!loc.includes('\\')&&loc.split('/').every(p=>p&&p!=='.'&&p!=='..'));
+            assert.ok(entry&&!entry.link,loc);
+            if(entry.resolved) {
+              const u=new URL(entry.resolved);
+              assert.ok(u.protocol==='https:'&&u.hostname==='registry.npmjs.org'&&!u.port&&!u.username&&!u.password&&!u.search&&!u.hash,loc);
+              assert.match(entry.integrity,/^sha512-[A-Za-z0-9+/]{86}==$/,loc);
+            } else assert.equal(entry.inBundle,true,loc);
+            const name=loc.slice(loc.lastIndexOf('node_modules/')+13);
+            if(name==='workerd'||name.startsWith('@cloudflare/workerd-')) workerd.set(loc,entry.version);
+            if(entry.hasInstallScript){
+              const id=name+'@'+entry.version;
+              const policy=pkg.allowScripts?.[id]===true?'existing-exact-allow':pkg.allowScripts?.[name]===false?'existing-deny':'review-required';
+              scripts.push({location:loc,id,policy,resolved:entry.resolved??null,integrity:entry.integrity??null});
+            }
+          }
+          assert.ok([...workerd.keys()].some(x=>x.endsWith('/workerd')));
+          assert.ok([...workerd.keys()].some(x=>x.includes('/@cloudflare/workerd-')));
+          assert.equal(new Set(workerd.values()).size,1);
+          snapshot.workerdVersion=[...workerd.values()][0];
+          assert.match(snapshot.workerdVersion,/^1\.\d{8}\.\d+$/);
+          snapshot.packageSha256=hash(pkgBytes);
+          snapshot.lockSha256=hash(lockBytes);
+          const locations=[...new Set([...Object.keys(prior.packages),...Object.keys(lock.packages)])].sort();
+          const {isDeepStrictEqual}=await import('node:util');
+          const delta=locations.filter(x=>!isDeepStrictEqual(prior.packages[x],lock.packages[x])).map(x=>({location:x,before:prior.packages[x]??null,after:lock.packages[x]??null}));
+          const write=(file,value)=>writeFileSync(join(evidence,file),JSON.stringify(value,null,2)+'\n',{flag:'wx'});
+          write('DEPENDENCY_GRAPH.candidate.json',snapshot);
+          write('install-script-inventory.json',{scripts,workerd:Object.fromEntries(workerd),unreviewed:scripts.filter(x=>x.policy==='review-required'),ready:false});
+          write('graph-delta.json',delta);
+          JS
+          cp package.json package-lock.json "$evidence/"
+          (cd "$evidence"; sha256sum package.json package-lock.json DEPENDENCY_GRAPH.candidate.json > SHA256SUMS)
+          echo resolved > "$evidence/RESOLUTION_STATUS.txt"
+          # Public npm readbacks only. Audit/outdated codes are retained, not interpreted as release proof.
+          set +e
+          clean npm audit --package-lock-only --ignore-scripts --json --registry="$REGISTRY" > "$evidence/npm-audit.json"
+          audit_status=$?
+          # Use an isolated script-disabled install for an accurate current-vs-latest readback.
+          clean npm ci --ignore-scripts --no-audit --no-fund --registry="$REGISTRY"
+          ci_status=$?
+          if [[ "$ci_status" == 0 ]]; then
+            clean npm outdated --depth=0 --json --ignore-scripts --registry="$REGISTRY" > "$evidence/npm-outdated.json"
+            outdated_status=$?
+          else
+            outdated_status=not-run
+          fi
+          set -e
+          printf 'audit=%s\nscriptDisabledCi=%s\noutdated=%s\n' "$audit_status" "$ci_status" "$outdated_status" > "$evidence/readback-exits.txt"
+          cmp package.json "$evidence/package.json"
+          cmp package-lock.json "$evidence/package-lock.json"
+          clean node --input-type=module - "$evidence" "$audit_status" "$ci_status" "$outdated_status" <<'JS'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const [dir,auditCode,installCode,outdatedCode]=process.argv.slice(2);
+          const audit=JSON.parse(readFileSync(dir+'/npm-audit.json','utf8'));
+          assert.equal(auditCode,'0'); assert.equal(audit.metadata?.vulnerabilities?.total,0);
+          assert.equal(installCode,'0'); assert.ok(['0','1'].includes(outdatedCode));
+          const outdated=JSON.parse(readFileSync(dir+'/npm-outdated.json','utf8'));
+          assert.ok(outdated&&typeof outdated==='object'&&!outdated.error);
+          JS
+      - name: Retain review evidence (not a release)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cosmic-pr57-dependency-resolver-review-only-${{ github.sha }}
+          path: ${{ runner.temp }}/cosmic-resolver-evidence/
+          if-no-files-found: ignore
+          retention-days: 5
