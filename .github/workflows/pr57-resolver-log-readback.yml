@@ -1,0 +1,124 @@
+name: Cosmic resolver artifact readback (static only)
+on:
+  push:
+    branches: [review/pr57-resolver-log-readback-20261123]
+    paths: [.github/workflows/pr57-resolver-log-readback.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  transfer:
+    if: github.repository == 'sohweiyu2023/CosmicTranscriberWeb' && github.event_name == 'push' && github.ref == 'refs/heads/review/pr57-resolver-log-readback-20261123' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Enforce isolated exact parent and sole changed path
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=a5425972f37c643b3d564a821a5f04b8929d3710
+          test "$(git rev-list --parents -n1 HEAD)" = "$GITHUB_SHA $base"
+          test "$(git diff --name-only "$base" HEAD)" = ".github/workflows/pr57-resolver-log-readback.yml"
+          test "$(git hash-object .github/workflows/ci.yml)" = "9a4e0e8c9eb87c7b3ec7933ed02693bc44282519"
+      - name: Read and validate only the pinned artifact member bytes
+        shell: bash
+        env:
+          GH_READ_TOKEN: ${{ github.token }}
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          /usr/bin/python3 -I -B - <<'PY'
+          import base64, hashlib, io, json, os, stat, sys, zipfile
+          from urllib.error import HTTPError
+          from urllib.parse import urlsplit
+          from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
+          token=os.environ.pop("GH_READ_TOKEN")
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          http=build_opener(ProxyHandler({}),NoRedirect())
+          base="https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions/artifacts/14761888683"
+          digest="ef846f24da5fc5b54657d4d61266a6653122cfcda1f967cea0055f28d7b7320e"
+          producer="7d45603c93a456c5d9c98b7812e4db7fa15c42aa"
+          headers={"Authorization":"Bearer "+token,"Accept":"application/vnd.github+json",
+                   "X-GitHub-Api-Version":"2022-11-28","User-Agent":"Cosmic-Artifact-Readback"}
+          def read(url,headers,limit):
+              with http.open(Request(url,headers=headers),timeout=20) as resp:
+                  assert resp.status==200
+                  data=resp.read(limit+1)
+                  assert len(data)<=limit
+                  return data
+          # Never include exceptions, request headers, or signed redirect in the job log.
+          try:
+              m=json.loads(read(base,headers,65536))
+              assert m["id"]==14761888683 and m["digest"]=="sha256:"+digest and m["size_in_bytes"]==44357
+              assert not m["expired"] and m["workflow_run"]["id"]==45042098322 and m["workflow_run"]["head_sha"]==producer
+              assert m["workflow_run"]["repository_id"]==1329367706 and m["workflow_run"]["head_repository_id"]==1329367706
+              try:
+                  received=http.open(Request(base+"/zip",headers=headers),timeout=20)
+              except HTTPError as e:
+                  assert e.code in {302,303}
+                  signed=e.headers["Location"]
+                  u=urlsplit(signed)
+                  assert u.scheme=="https" and u.hostname and u.hostname.endswith(".blob.core.windows.net")
+                  assert not u.username and not u.password and not u.port and not u.fragment
+                  b=read(signed,{"User-Agent":"Cosmic-Artifact-Readback"},44357)
+              else:
+                  with received: b=received.read(44358)
+              assert len(b)==44357 and hashlib.sha256(b).hexdigest()==digest
+          except Exception:
+              sys.exit("Artifact request, identity or trusted redirect verification failed; details suppressed.")
+          names={"RESOLUTION_STATUS.txt","SHA256SUMS","DEPENDENCY_GRAPH.candidate.json","graph-delta.json",
+                 "identity.txt","install-script-inventory.json","npm-audit.json","npm-outdated.json",
+                 "package-lock.json","package.json","readback-exits.txt"}
+          expected={
+             "package.json":(6914,"b9bfe479cd04f040f52d34546e417d2b5b793ce0a225eaa03694abd27bda609c"),
+             "package-lock.json":(133757,"fa1492c206a7deed71e80d31b60faeaf58ae46ea72383f331e1346e23f401ec9"),
+             "DEPENDENCY_GRAPH.candidate.json":(2980,"627a498495bf4dbbbd749482a130422cbd7ce097e30d5b1f86897b56abd2bbb9")}
+          with zipfile.ZipFile(io.BytesIO(b)) as z:
+              rows=z.infolist()
+              assert len(rows)==len(names) and {x.filename for x in rows}==names
+              assert sum(x.file_size for x in rows)<=200000
+              assert all(not x.flag_bits&1 and stat.S_IFMT(x.external_attr>>16) in {0,stat.S_IFREG} for x in rows)
+              assert z.testzip() is None
+              data={name:z.read(name) for name in expected}
+              manifest={k:v for v,k in [line.split() for line in z.read("SHA256SUMS").decode("ascii").splitlines()]}
+              assert manifest=={name:v[1] for name,v in expected.items()}
+              for name,(size,dig) in expected.items():
+                  assert len(data[name])==size and hashlib.sha256(data[name]).hexdigest()==dig
+                  assert json.loads(data[name].decode("utf-8"))
+          pkg=json.loads(data["package.json"])
+          lock=json.loads(data["package-lock.json"])
+          graph=json.loads(data["DEPENDENCY_GRAPH.candidate.json"])
+          assert lock["lockfileVersion"]==4 and graph["registry"]=="https://registry.npmjs.org/"
+          assert graph["packageSha256"]==expected["package.json"][1] and graph["lockSha256"]==expected["package-lock.json"][1]
+          assert all(pkg[k]==lock["packages"][""][k] for k in ("dependencies","devDependencies","engines"))
+          for location,entry in lock["packages"].items():
+              if not location: continue
+              assert location.startswith("node_modules/") and not entry.get("link")
+              if "resolved" in entry:
+                  url=urlsplit(entry["resolved"])
+                  assert url.scheme=="https" and url.hostname=="registry.npmjs.org" and not (url.port or url.query or url.fragment or url.username or url.password)
+              else: assert entry.get("inBundle") is True
+          # Public package resolution and exact pinned hashes are both required.
+          import re
+          for blob in data.values():
+              assert not re.search(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:proj-)?[A-Za-z0-9_-]{30,}",blob)
+          def emit(label,offset,blob):
+              # Fixed label and ASCII base64, no raw artifact text interpreted as a workflow command.
+              enc=base64.b64encode(blob).decode("ascii")
+              count=(len(enc)+719)//720
+              assert len(enc)<=45000
+              for i in range(count):
+                  print(f"RESOLVER_BYTES {label} {offset} {i+1}/{count} {enc[i*720:(i+1)*720]}",flush=True)
+          emit("package",0,data["package.json"])
+          emit("graph",0,data["DEPENDENCY_GRAPH.candidate.json"])
+          for idx in range(4):
+              start=idx*33440
+              emit("lock",start,data["package-lock.json"][start:start+33440])
+          print("RESOLVER_BYTES_COMPLETE all",flush=True)
+          PY
