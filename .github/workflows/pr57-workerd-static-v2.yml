@@ -1,13 +1,13 @@
-name: Exact workerd static provenance (review only)
+name: Exact workerd static log readback (review only)
 on:
   push:
-    branches: [review/pr57-workerd-static-v2-20261123]
+    branches: [review/pr57-workerd-static-log-20261123]
     paths: [.github/workflows/pr57-workerd-static-v2.yml]
 permissions:
   contents: read
 jobs:
   static:
-    if: github.repository == 'sohweiyu2023/CosmicTranscriberWeb' && github.event_name == 'push' && github.ref == 'refs/heads/review/pr57-workerd-static-v2-20261123' && github.run_attempt == 1
+    if: github.repository == 'sohweiyu2023/CosmicTranscriberWeb' && github.event_name == 'push' && github.ref == 'refs/heads/review/pr57-workerd-static-log-20261123' && github.run_attempt == 1
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -20,13 +20,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base=a5425972f37c643b3d564a821a5f04b8929d3710
+          base=7610b4d2006c66706747625297bb994c78ce3f50
           test "$(git rev-list --parents -n1 HEAD)" = "$GITHUB_SHA $base"
           test "$(git diff --name-only "$base" HEAD)" = ".github/workflows/pr57-workerd-static-v2.yml"
           test "$(git hash-object .github/workflows/ci.yml)" = "9a4e0e8c9eb87c7b3ec7933ed02693bc44282519"
           mkdir -m 700 "$RUNNER_TEMP/workerd-proof"
           env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -B - "$RUNNER_TEMP/workerd-proof" "$GITHUB_SHA" <<'PY'
-          import base64, hashlib, json, pathlib, sys, tarfile, tempfile
+          import base64, difflib, hashlib, json, pathlib, re, sys, tarfile, tempfile
           from urllib.request import Request, build_opener, HTTPRedirectHandler, ProxyHandler
           output, sha = pathlib.Path(sys.argv[1]), sys.argv[2]
           old_lock = pathlib.Path("package-lock.json").read_bytes()
@@ -96,11 +96,34 @@ jobs:
                   files[member] = {"file":dest,"sha256":hashlib.sha256(data).hexdigest()}
               rows.append({"package":name,"version":version,"url":url,"bytes":size,"sha256":s.hexdigest(),"matchedLockIntegrity":"sha512-"+pin,"scripts":scripts,"text":files})
           manifest = {"schema":"cosmic-workerd-static-v2","producerCommit":sha,"resolverRun":45042098322,"resolverArtifact":14761888683,"oldLockSha256":old_hash,"reviewedLockSha256":new_hash,"mode":"static-only, no installation or allowlist change","packages":rows}
-          (output/"provenance.json").write_text(json.dumps(manifest,indent=2)+"\n",encoding="utf-8")
+          def emit(label, obj):
+              # ASCII base64 payload and fixed prefix prevent package text from emitting workflow commands.
+              data = json.dumps(obj, ensure_ascii=True, separators=(",",":")).encode("ascii")
+              enc = base64.b64encode(data).decode("ascii")
+              assert re.fullmatch("[a-z0-9-]+",label) and len(enc) <= 16000
+              slices = [enc[i:i+720] for i in range(0,len(enc),720)]
+              for i,segment in enumerate(slices,1):
+                  print(f"STATIC_PROOF {label} {i}/{len(slices)} {segment}", flush=True)
+          assert len(rows) == 7
+          emit("manifest",manifest)
+          for member,label,required in [("package/install.js","installer",True),("package/lib/main.js","shim",False)]:
+              sources = [row["text"].get(member) for row in rows[:2]]
+              if not all(sources):
+                  assert not required
+                  emit(label,{"member":member,"present":[bool(s) for s in sources],"status":"not-compared"})
+                  continue
+              raw = [(output / src["file"]).read_bytes() for src in sources]
+              assert all(hashlib.sha256(data).hexdigest()==src["sha256"] for data,src in zip(raw,sources))
+              text = [data.decode("utf-8","strict") for data in raw]
+              normal = [txt.replace(ver,"<reviewed-workerd-version>") for txt,ver in zip(text,[rows[0]["version"],rows[1]["version"]])]
+              def diff(a,b):
+                  return list(difflib.unified_diff(a.splitlines(),b.splitlines(),fromfile="old",tofile="new",n=2,lineterm=""))
+              lines = diff(*text)
+              normal_lines = diff(*normal)
+              def preview(values):
+                  # Bound UTF-8 bytes before encoding for output, and report truncation explicitly.
+                  encoded = "\n".join(values).encode("utf-8")
+                  return {"lines":len(values),"bytes":len(encoded),"sha256":hashlib.sha256(encoded).hexdigest(),"truncated":len(encoded)>2000,"excerpt":encoded[:2000].decode("utf-8","replace")}
+              emit(label,{"member":member,"hashes":[s["sha256"] for s in sources],"exactEqual":raw[0]==raw[1],
+                          "versionLiteralOnlyEqual":normal[0]==normal[1],"diff":preview(lines),"normalizedDiff":preview(normal_lines)})
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: cosmic-workerd-static-v2-${{ github.sha }}
-          path: ${{ runner.temp }}/workerd-proof/
-          if-no-files-found: error
-          retention-days: 5
