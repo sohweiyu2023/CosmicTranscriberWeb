@@ -29,7 +29,61 @@ jobs:
           test "$(git hash-object tests/safari/ordinary-native-gui-probe.mjs)" = 6c6de53d91bbf2b6f48376a4d6a7c4ed44e08492
           echo "e799ee1a44f73c9a4b146e76cce9deae6390ebc2aad3f51da13ce9dda2182b55  tests/fixtures/format.mp3" | shasum -a 256 -c
           test "$(head -c 1024 tests/fixtures/format.mp3 | shasum -a 256 | cut -d' ' -f1)" = e48ee45b3f57d3837c75c83898d243a59bdccc0c4b8c40e45e5500475ea10702
-          shasum -a 256 -c SHA256SUMS.txt > /dev/null
+          test "$(git hash-object tests/safari/ordinary-native-file-contract.mjs)" = 100f7c5966c17be310ffb2b9f7c8cebdc980791c
+          test "$(git hash-object tests/safari/ordinary-native-report-sanitize.mjs)" = 85a05b3e27a055d9c6e3e9a134fda7f5ee10268d
+          test "$(git hash-object tests/safari/disk-access-probe-contract.mjs)" = 02cc7c6dc6507e1e42ab7e60012c8451ed8fbe2c
+          if ! shasum -a 256 -c SHA256SUMS.txt > "$RUNNER_TEMP/ordinary-whole-manifest-audit"; then
+            echo 'Whole-checkout archived manifest mismatch (separate release investigation; not a test-page fixture/input check):'
+            grep ': FAILED
+          test "$(node --version)" = v26.7.0
+          sw_vers
+          defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString
+          defaults read /Applications/Safari.app/Contents/Info CFBundleVersion
+      - name: Use real ordinary Safari chooser only after observing its native file panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results
+          test -d test-results && test -w test-results
+          echo 'Diagnostic screenshot directory: exists and writable before first capture'
+          overlay=tests/safari/.ordinary-native-gui-run-only.mjs
+          test ! -e "$overlay"
+          trap 'rm -f "$overlay"; git diff --exit-code' EXIT
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          let code=readFileSync('tests/safari/ordinary-native-gui-probe.mjs','utf8');
+          function insertOnce(anchor,addition){
+            if(code.split(anchor).length!==2)throw Error('Unexpected exact diagnostic anchor count');
+            code=code.replace(anchor,anchor+addition);
+          }
+          insertOnce("throw Object.assign(new Error(`Native picker stage ${stage.name} failed`),{stages});",`
+              if(stage.name==='native-mouse-click'){
+                const panel=run('/usr/bin/osascript',['-e', 'tell application "System Events" to tell process "Safari"\\nif (count windows) is 0 then return false\\nif not frontmost then return false\\nif not (exists (sheet 1 of front window)) then return false\\ntell sheet 1 of front window to return (exists button "Cancel") and ((exists button "Open") or (exists button "Choose"))\\nend tell'],8000);
+                recorded.pickerPanelReady=panel.status===0&&panel.stdout.trim()==='true';
+                console.log(recorded.pickerPanelReady?'NATIVE_OPEN_PANEL_CONFIRMED':'NATIVE_OPEN_PANEL_NOT_CONFIRMED');
+                if(!recorded.pickerPanelReady)throw Object.assign(new Error('Native file chooser could not be confirmed; no keyboard events sent'),{stages});
+              }`);
+          insertOnce("result.bytesRead=full.byteLength;result.sha256=await digest(full);result.sliceSha256=await digest(part);",`
+              const decoder=new AudioContext();
+              try{
+                const decoded=await decoder.decodeAudioData(full.slice(0));
+                if(!Number.isFinite(decoded.duration)||Math.abs(decoded.duration-1)>0.15)throw Error('Decoded audio duration mismatch');
+              }finally{void decoder.close().catch(()=>{});}
+          `);
+          writeFileSync('tests/safari/.ordinary-native-gui-run-only.mjs',code,{flag:'wx'});
+          NODE
+          node --check "$overlay"
+          node "$overlay"
+      - name: Preserve only allowlisted report fields (no screenshots or file content)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr57-ordinary-safari-one-fixture-report
+          path: test-results/ordinary-safari-native-picker.json
+          if-no-files-found: warn
+          retention-days: 7
+ "$RUNNER_TEMP/ordinary-whole-manifest-audit"
+          fi
           test "$(node --version)" = v26.7.0
           sw_vers
           defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString
