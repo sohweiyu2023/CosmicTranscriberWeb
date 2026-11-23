@@ -289,3 +289,11 @@ jobs:
           checked_head="$(git rev-parse HEAD)"
           test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
           GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
+      - name: Retain exact staging-only source ZIP for native macOS input
+        id: staging-source
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ steps.certified.outputs.artifact-name }}
+          path: ${{ steps.certified.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
