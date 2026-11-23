@@ -1,4 +1,4 @@
-name: Cosmic PR57 Windows FFmpeg 9.1 offline proof
+name: Cosmic PR57 Windows FFmpeg 9.1 offline artifact-bound proof
 
 on:
   push:
@@ -9,89 +9,12 @@ permissions:
   contents: read
 
 jobs:
-  resolve-lock:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/review/pr57-windows-ffmpeg-910-proof-20261123' }}
-    name: Resolve one reviewed dependency graph
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    outputs:
-      reviewed_inputs_sha256: ${{ steps.reviewed-input-bundle.outputs.reviewed_inputs_sha256 }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: 94d87e6239ed0cddfdfc40e3443625c1f4b80513
-          persist-credentials: false
-      - name: Verify immutable source checkout
-        shell: bash
-        run: test "$(git rev-parse HEAD)" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513" && test -z "$(git status --porcelain)"
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
-        with:
-          node-version: '26.7.0'
-          package-manager-cache: false
-      - name: Activate reviewed npm
-        run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
-      - name: Verify tool versions
-        run: |
-          node --version
-          test "$(node --version)" = "v26.7.0"
-          test "$(npm --version)" = "12.0.2"
-      - name: Verify the committed dependency snapshot before installation
-        shell: bash
-        run: |
-          checked_head="$(git rev-parse HEAD)"
-          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
-          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
-      - name: Install the exact committed graph without lifecycle execution
-        run: npm ci --ignore-scripts
-      - name: Verify package metadata and lock remain unchanged
-        shell: bash
-        run: |
-          checked_head="$(git rev-parse HEAD)"
-          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
-          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
-      - name: Verify reviewed install-script policy
-        run: npm run deps:install-scripts:verify
-      - name: Verify complete installed dependency tree
-        run: npm ls --all
-      - name: Audit resolved graph
-        run: npm audit
-      - name: Require direct dependencies to be current
-        run: npm outdated --depth=0
-      - name: Provision audio fixture toolchain
-        timeout-minutes: 10
-        run: node scripts/provision-ci-media.mjs
-      - name: Generate deterministic MP3 and nine-format fixtures
-        run: node scripts/generate-test-fixtures.mjs
-      - name: Full dependency-free adversarial gate
-        run: npm run validate
-      - name: Verify committed inputs after validation
-        shell: bash
-        run: |
-          checked_head="$(git rev-parse HEAD)"
-          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
-          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
-      - name: Verify exact approved single MP3 bytes (no provider calls)
-        run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
-      - name: Validate exactly the eight approved synthetic speech fixtures (no provider calls)
-        run: node scripts/prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight "$RUNNER_TEMP/approved-eight"
-      - name: Bind exact reviewed inputs and fixture bytes
-        id: reviewed-input-bundle
-        shell: bash
-        run: |
-          checked_head="$(git rev-parse HEAD)"
-          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
-          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci --prepare-input-bundle
-      - name: Upload reviewed lock and fixtures
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: reviewed-release-inputs
-          path: ${{ runner.temp }}/cosmic-reviewed-inputs.zip
-          if-no-files-found: error
-          retention-days: 7
   windows-release:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/review/pr57-windows-ffmpeg-910-proof-20261123' }}
     name: Windows toolchain + Chrome/Edge + staging-certified ZIP
-    needs: resolve-lock
+    permissions:
+      contents: read
+      actions: read
     runs-on: windows-latest
     outputs:
       version: ${{ steps.certified.outputs.version }}
@@ -110,13 +33,72 @@ jobs:
         with:
           node-version: '26.7.0'
           package-manager-cache: false
+      - name: Verify exact prior resolver run and artifact metadata
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $reviewedBody = @'
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REPOSITORY -cne 'sohweiyu2023/CosmicTranscriberWeb') { throw 'Proof repository mismatch.' }
+          if (Test-Path -LiteralPath (Join-Path $env:RUNNER_TEMP 'cosmic-reviewed-inputs-raw')) { throw 'Raw input directory already exists.' }
+          if (Test-Path -LiteralPath (Join-Path $env:RUNNER_TEMP 'cosmic-reviewed-inputs-download')) { throw 'Verified input directory already exists.' }
+          $base = 'https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions'
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $expectedSource = '94d87e6239ed0cddfdfc40e3443625c1f4b80513'
+          $expectedBranch = 'ci/pr57-exact-workerd-20261123'
+          $run = Invoke-RestMethod -Uri "$base/runs/45085759133" -Headers $headers -MaximumRedirection 0 -TimeoutSec 30
+          if ($run.id -ne 45085759133 -or $run.repository.id -ne 1329367706 -or $run.head_repository.id -ne 1329367706 -or $run.head_sha -cne $expectedSource -or $run.head_branch -cne $expectedBranch -or $run.status -cne 'completed') { throw 'Prior source run metadata mismatch.' }
+          $job = Invoke-RestMethod -Uri "$base/jobs/137403875242" -Headers $headers -MaximumRedirection 0 -TimeoutSec 30
+          if ($job.id -ne 137403875242 -or $job.run_id -ne 45085759133 -or $job.name -cne 'Resolve one reviewed dependency graph' -or $job.status -cne 'completed' -or $job.conclusion -cne 'success') { throw 'Exact prior resolver did not succeed.' }
+          $artifact = Invoke-RestMethod -Uri "$base/artifacts/14779166747" -Headers $headers -MaximumRedirection 0 -TimeoutSec 30
+          $source = $artifact.workflow_run
+          if ($artifact.id -ne 14779166747 -or $artifact.name -cne 'reviewed-release-inputs' -or $artifact.expired -isnot [bool] -or $artifact.expired -or $artifact.size_in_bytes -ne 8355755 -or $artifact.digest -cne 'sha256:18e920d500c5af9e302fda0ea9205528d36b43fe76690f1ee087d0655a619aa9' -or $source.id -ne 45085759133 -or $source.repository_id -ne 1329367706 -or $source.head_repository_id -ne 1329367706 -or $source.head_sha -cne $expectedSource -or $source.head_branch -cne $expectedBranch) { throw 'Pinned prior artifact metadata mismatch or expiry.' }
+          '@
+          $parseTokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseInput($reviewedBody, [ref]$parseTokens, [ref]$parseErrors)
+          if ($parseErrors.Count -ne 0) { throw 'Artifact proof body did not parse; refusing to execute.' }
+          & ([ScriptBlock]::Create($reviewedBody))
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: reviewed-release-inputs
-          path: ${{ runner.temp }}/cosmic-reviewed-inputs-download
+          repository: sohweiyu2023/CosmicTranscriberWeb
+          run-id: '45085759133'
+          artifact-ids: '14779166747'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/cosmic-reviewed-inputs-raw
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify the exact outer and inner archives before restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $reviewedBody = @'
+          $ErrorActionPreference = 'Stop'
+          $rawDir = Join-Path $env:RUNNER_TEMP 'cosmic-reviewed-inputs-raw'
+          $files = @(Get-ChildItem -LiteralPath $rawDir -Force)
+          if ($files.Count -ne 1 -or $files[0].PSIsContainer -or ($files[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -or $files[0].Length -ne 8355755 -or (Get-FileHash -LiteralPath $files[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne '18e920d500c5af9e302fda0ea9205528d36b43fe76690f1ee087d0655a619aa9') { throw 'Pinned outer archive check failed.' }
+          $targetDir = Join-Path $env:RUNNER_TEMP 'cosmic-reviewed-inputs-download'
+          $target = Join-Path $targetDir 'cosmic-reviewed-inputs.zip'
+          $archive = [IO.Compression.ZipFile]::OpenRead($files[0].FullName)
+          try {
+            if ($archive.Entries.Count -ne 1) { throw 'Unexpected outer archive member count.' }
+            $entry = $archive.Entries[0]
+            if ($entry.FullName -cne 'cosmic-reviewed-inputs.zip' -or $entry.Length -le 0 -or $entry.Length -gt 16777216) { throw 'Unexpected outer archive member.' }
+            New-Item -Path $targetDir -ItemType Directory | Out-Null
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $false)
+          } finally { $archive.Dispose() }
+          if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -cne 'ced0d50c708ab61d84c2d156b895185880ffc2e99f57b6e1d32d21ecf73136ed') { throw 'Pinned inner archive check failed.' }
+          '@
+          $parseTokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseInput($reviewedBody, [ref]$parseTokens, [ref]$parseErrors)
+          if ($parseErrors.Count -ne 0) { throw 'Artifact proof body did not parse; refusing to execute.' }
+          & ([ScriptBlock]::Create($reviewedBody))
       - name: Verify isolated reviewed input bundle before restoring fixture data
         env:
-          REVIEWED_INPUTS_SHA256: ${{ needs.resolve-lock.outputs.reviewed_inputs_sha256 }}
+          REVIEWED_INPUTS_SHA256: ced0d50c708ab61d84c2d156b895185880ffc2e99f57b6e1d32d21ecf73136ed
         shell: bash
         run: |
           checked_head="$(git rev-parse HEAD)"
