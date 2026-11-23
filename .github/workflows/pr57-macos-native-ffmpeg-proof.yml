@@ -224,6 +224,7 @@ jobs:
           with tarfile.open(sys.argv[1], "r:xz") as z:
               count = size = 0
               seen = set()
+              markers = {}
               for m in z:
                   p = pathlib.PurePosixPath(m.name)
                   assert not p.is_absolute() and p.parts and p.parts[0] == "ffmpeg-9.1"
@@ -231,10 +232,19 @@ jobs:
                   assert "\\" not in m.name and str(p) not in seen and len(m.name) < 1024
                   assert m.isdir() or m.isreg(), m.name
                   seen.add(str(p))
+                  if str(p) == "ffmpeg-9.1/configure":
+                      assert m.isreg() and m.size > 0, "signed configure must be a nonempty regular file"
+                  if str(p) in ("ffmpeg-9.1/RELEASE", "ffmpeg-9.1/FF_VERSION"):
+                      assert m.isreg() and 0 < m.size <= 16, f"invalid signed version marker {m.name!r}"
+                      with z.extractfile(m) as stream:
+                          markers[p.name] = stream.read(17)
                   count += 1
                   size += m.size
                   assert count < 50000 and size < 500000000
-              assert "ffmpeg-9.1/configure" in seen and "ffmpeg-9.1/VERSION" in seen
+              assert "ffmpeg-9.1/configure" in seen, "signed configure missing"
+              assert markers.get("RELEASE") in (b"9.1", b"9.1\n"), "signed RELEASE missing/mismatched"
+              assert markers.get("FF_VERSION", b"9.1") in (b"9.1", b"9.1\n", b"n9.1", b"n9.1\n"), "signed optional FF_VERSION mismatched"
+              print(f"Validated authenticated FFmpeg 9.1 archive layout: {count} entries")
           PY
           nominal="/Applications/Xcode_26.6.app/Contents/Developer"
           DEVELOPER_DIR="$(cd "$nominal" && pwd -P)"
@@ -262,7 +272,10 @@ jobs:
           mkdir "$d/sources" "$d/build" "$d/home"
           /usr/bin/tar -xf "$d/source.tar.xz" --no-same-owner --no-same-permissions -C "$d/sources"
           src="$d/sources/ffmpeg-9.1"
-          test "$(cat "$src/VERSION")" = 9.1
+          test "$(cat "$src/RELEASE")" = 9.1
+          observed_version=9.1
+          if test -f "$src/FF_VERSION"; then observed_version="$(cat "$src/FF_VERSION")"; fi
+          case "$observed_version" in 9.1|n9.1) ;; *) exit 1 ;; esac
           cd "$d/build"
           build_env=(/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$d/home" DEVELOPER_DIR="$DEVELOPER_DIR" SDKROOT="$sdk" LC_ALL=C)
           "${build_env[@]}" /bin/sh "$src/configure" --prefix="$d/scratch-install" \
@@ -284,7 +297,7 @@ jobs:
           (cd "$target"; /usr/bin/shasum -a 256 ffmpeg ffprobe > SHA256SUMS; cat SHA256SUMS)
           for b in ffmpeg ffprobe; do
             "$target/$b" -version >"$d/$b.version"
-            /usr/bin/sed -n '1p' "$d/$b.version" | /usr/bin/grep -E "^$b version 9[.]1([[:space:]]|$)"
+            /usr/bin/awk -v tool="$b" -v version="$observed_version" 'NR==1 { ok=($1==tool && $2=="version" && $3==version) } END { exit !ok }' "$d/$b.version"
           done
           printf '%s\n' "$target" >>"${GITHUB_PATH:?}"
           printf 'FFPROBE=%s/ffprobe\n' "$target" >>"${GITHUB_ENV:?}"
