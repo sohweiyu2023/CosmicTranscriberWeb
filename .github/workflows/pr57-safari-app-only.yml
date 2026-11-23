@@ -1,0 +1,366 @@
+name: Cosmic PR57 Native Safari application acceptance
+on:
+  push:
+    branches: ['review/pr57-safari-app-only-20261123']
+    paths: ['.github/workflows/pr57-safari-app-only.yml']
+permissions:
+  contents: read
+jobs:
+  macos-safari:
+    if: ${{ github.repository == 'sohweiyu2023/CosmicTranscriberWeb' && github.event_name == 'push' && github.run_attempt == 1 && github.ref == 'refs/heads/review/pr57-safari-app-only-20261123' }}
+    name: Native macOS ZIP + installed SafariDriver application acceptance
+    runs-on: macos-26
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-1.2.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 94d87e6239ed0cddfdfc40e3443625c1f4b80513
+          persist-credentials: false
+      - name: Verify immutable source checkout
+        working-directory: ${{ github.workspace }}
+        run: test "$(git rev-parse HEAD)" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513" && test -z "$(git status --porcelain)"
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: '26.7.0'
+          package-manager-cache: false
+      - name: Verify immutable Windows artifact provenance
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I - <<'PY'
+          import json, os, urllib.request
+          class no_redirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+          origin = "https://api.github.com/repos/sohweiyu2023/CosmicTranscriberWeb/actions"
+          assert os.environ["GITHUB_REPOSITORY"] == "sohweiyu2023/CosmicTranscriberWeb"
+          opener = urllib.request.build_opener(no_redirect)
+          def get(path):
+              req = urllib.request.Request(origin + path, headers={
+                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                  "Accept": "application/vnd.github+json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              })
+              with opener.open(req, timeout=25) as res:
+                  assert res.status == 200
+                  body = res.read(2_000_001)
+              assert 0 < len(body) <= 2_000_000
+              return json.loads(body)
+          run = get("/runs/45129425208")
+          branch = "review/pr57-windows-ffmpeg-910-proof-20261123"
+          sha = "3c60bdc34bbf27d37235e89edec7887433fab69d"
+          assert (run["id"], run["repository"]["id"], run["head_repository"]["id"],
+                  run["head_branch"], run["head_sha"], run["event"], run["status"], run["conclusion"], run["run_attempt"]) == (
+                  45129425208, 1329367706, 1329367706, branch, sha, "push", "completed", "success", 1)
+          job = get("/jobs/137541250658")
+          assert (job["run_id"], job["conclusion"]) == (45129425208, "success")
+          steps = [s for s in job["steps"] if s["name"] == "Retain exact staging-only source ZIP for native macOS input"]
+          assert len(steps) == 1 and steps[0]["conclusion"] == "success"
+          a = get("/artifacts/14797679084")
+          s = a["workflow_run"]
+          assert (a["id"], a["name"], a["size_in_bytes"], a["digest"], s["id"], s["repository_id"],
+                  s["head_repository_id"], s["head_branch"], s["head_sha"]) == (
+                  14797679084, "CosmicTranscriberWeb-1.2.0-staging-certified", 8986063,
+                  "sha256:f01645e09bf96394160764af334f45e327fed240b0556369bf48253efa068109",
+                  45129425208, 1329367706, 1329367706, branch, sha)
+          assert a["expired"] is False
+          PY
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          repository: sohweiyu2023/CosmicTranscriberWeb
+          run-id: '45129425208'
+          artifact-ids: '14797679084'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/cosmic-archive-raw
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Verify raw archive and recover its sole exact staged member
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 -I - <<'PY'
+          import hashlib, io, os, pathlib, stat, zipfile
+          tmp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          raw = tmp / "cosmic-archive-raw"
+          items = list(raw.iterdir())
+          assert len(items) == 1 and items[0].is_file() and not items[0].is_symlink()
+          assert items[0].stat().st_size == 8986063
+          outer = items[0].read_bytes()
+          assert hashlib.sha256(outer).hexdigest() == "f01645e09bf96394160764af334f45e327fed240b0556369bf48253efa068109"
+          with zipfile.ZipFile(io.BytesIO(outer)) as z:
+              m, = z.infolist()
+              assert m.filename == "CosmicTranscriberWeb-1.2.0-source.zip"
+              assert m.file_size == 13218786 and not m.is_dir() and not (m.flag_bits & 1)
+              assert stat.S_IFMT(m.external_attr >> 16) in (0, stat.S_IFREG)
+              assert z.testzip() is None
+              inner = z.read(m)
+          assert hashlib.sha256(inner).hexdigest() == "92f23c991b17ffb2f7b3153cf25677520b7418e45b48517c1423ffde199e39c5"
+          out = tmp / "cosmic-archive"
+          out.mkdir(mode=0o700, exist_ok=False)
+          with (out / m.filename).open("xb") as f:
+              f.write(inner)
+          PY
+      - name: Verify and natively extract exact Windows staging ZIP
+        working-directory: ${{ github.workspace }}
+        env:
+          SOURCE_FILE: CosmicTranscriberWeb-1.2.0-source.zip
+          SOURCE_SHA256: 92f23c991b17ffb2f7b3153cf25677520b7418e45b48517c1423ffde199e39c5
+          RELEASE_VERSION: 1.2.0
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, stat, subprocess, time, zipfile
+          version = os.environ['RELEASE_VERSION']
+          expected = os.environ['SOURCE_SHA256']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?', version)
+          assert re.fullmatch(r'[0-9a-f]{64}', expected)
+          root = f'CosmicTranscriberWeb-{version}'
+          assert os.environ['SOURCE_FILE'] == f'{root}-source.zip'
+          archive_dir = pathlib.Path(os.environ['RUNNER_TEMP']) / 'cosmic-archive'
+          source = archive_dir / os.environ['SOURCE_FILE']
+          assert list(archive_dir.iterdir()) == [source] and source.is_file() and not source.is_symlink()
+          assert source.stat().st_size == 13218786
+          with source.open('rb') as stream:
+              assert hashlib.file_digest(stream, 'sha256').hexdigest() == expected
+          destination = pathlib.Path(os.environ['GITHUB_WORKSPACE']) / 'cosmic-native'
+          assert not destination.exists() and not destination.is_symlink()
+          with zipfile.ZipFile(source) as archive:
+              entries = archive.infolist()
+              assert len(entries) == 350
+              assert sum(e.file_size for e in entries) <= 512 * 1024 * 1024
+              seen = set()
+              for entry in entries:
+                  name = entry.filename
+                  parts = name.split('/')
+                  # The exact source packager writes regular files, not directory entries.
+                  assert len(parts) > 1 and parts[0] == root
+                  assert not any(part in ('', '.', '..') for part in parts)
+                  assert not any(c in name for c in ('\\', ':', '\x00'))
+                  assert not entry.is_dir() and not (entry.flag_bits & 1)
+                  assert stat.S_IFMT(entry.external_attr >> 16) in (0, stat.S_IFREG)
+                  assert name.casefold() not in seen
+                  seen.add(name.casefold())
+              assert archive.testzip() is None
+              manifest = json.loads(archive.read(f'{root}/RELEASE_MANIFEST.json'))
+              lock_hash = hashlib.sha256(pathlib.Path('package-lock.json').read_bytes()).hexdigest()
+              assert manifest['version'] == version and manifest['releaseReady'] is False
+              assert manifest['certificationLevel'] == 'staging'
+              assert manifest['dependencyLock']['status'] == 'verified'
+              assert manifest['dependencyLock']['sha256'] == lock_hash == 'fa1492c206a7deed71e80d31b60faeaf58ae46ea72383f331e1346e23f401ec9'
+              subprocess.run(['/usr/bin/ditto', '-xk', str(source), str(destination)], check=True)
+              for entry in entries:
+                  target = destination / entry.filename
+                  assert target.is_file() and not target.is_symlink(), entry.filename
+                  assert target.read_bytes() == archive.read(entry.filename), entry.filename
+                  assert tuple(time.localtime(target.stat().st_mtime)[:6]) == entry.date_time, entry.filename
+              print(f'Untouched native archive verified: {source.name}; SHA256={expected}')
+          PY
+      - name: Establish pinned Node and npm on macOS
+        run: |
+          test "$(node --version)" = 'v26.7.0'
+          npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '12.0.2'
+      - name: Verify official FFmpeg 9.1 source and build native ARM64 FFmpeg/ffprobe
+        working-directory: ${{ github.workspace }}
+        timeout-minutes: 35
+        shell: bash
+        env:
+          FF_RELEASE_FPR: FCF986EA15E6E293A5644F10B4322F04D67658D8
+          FF_RELEASE_KEY_SHA256: fd543a75d3bba61b759ca25b135e6f91b34aa37ae6987316e5c636bf3c78ae8d
+          FF_RELEASE_SIG_SHA256: 847abec601f2c21dfbee600edd9c7dcd675f41a6e3986bcfe6b78c7c5c2fac98
+          FF_RELEASE_SOURCE_SHA256: 1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$(uname -m)" = arm64
+          d="$(mktemp -d "${RUNNER_TEMP:?}/ffmpeg-auth.XXXXXXXX")"
+          trap 'rm -rf -- "$d"' EXIT
+          mkdir -m 700 "$d/gnupg"
+          fetch() {
+            local lim="$1" target="$2" url="$3" http size
+            http="$(/usr/bin/curl -q --silent --show-error --fail --proto '=https' \
+              --connect-timeout 10 --max-time 60 --max-filesize "$lim" \
+              --output "$d/$target" --write-out '%{http_code}' -- "$url")"
+            test "$http" = 200
+            size="$(/usr/bin/stat -f %z "$d/$target")"
+            test "$size" -gt 0 && test "$size" -le "$lim"
+          }
+          fetch 10000 release-key.asc https://ffmpeg.org/ffmpeg-devel.asc
+          fetch 10000 source.sig.asc https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz.asc
+          fetch 30000000 source.tar.xz https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz
+          gpg="$(command -v gpg)"
+          test -x "$gpg"
+          "$gpg" --version | /usr/bin/sed -n '1p'
+          PGP=( "$gpg" --homedir "$d/gnupg" --batch --no-options --no-autostart --no-auto-key-retrieve --no-default-keyring )
+          "${PGP[@]}" --dearmor --output "$d/release-key.gpg" "$d/release-key.asc"
+          "${PGP[@]}" --dearmor --output "$d/source.sig.gpg" "$d/source.sig.asc"
+          ( cd "$d"
+            printf '%s  %s\n' "$FF_RELEASE_KEY_SHA256" release-key.gpg \
+              "$FF_RELEASE_SIG_SHA256" source.sig.gpg \
+              "$FF_RELEASE_SOURCE_SHA256" source.tar.xz | /usr/bin/shasum -a 256 -c
+          )
+          "${PGP[@]}" --with-colons --show-keys "$d/release-key.gpg" >"$d/key-status"
+          /usr/bin/awk -F: -v pin="$FF_RELEASE_FPR" '
+            $1=="pub" { primary++; pending=1; if ($2=="r" || $2=="e" || $2=="d") bad=1 }
+            $1=="fpr" && pending { matched += ($10==pin); pending=0 }
+            END { exit !(primary==1 && matched==1 && !bad) }' "$d/key-status"
+          "${PGP[@]}" --keyring "$d/release-key.gpg" --status-fd 1 \
+            --verify "$d/source.sig.gpg" "$d/source.tar.xz" >"$d/verify-status"
+          /usr/bin/awk -v pin="$FF_RELEASE_FPR" '
+            $1=="[GNUPG:]" && $2=="VALIDSIG" { valid++; matched+=($3==pin && $NF==pin && $5==1795133900) }
+            $1=="[GNUPG:]" && $2 ~ /^(BADSIG|ERRSIG|REVKEYSIG|EXPKEYSIG|EXPSIG|KEYEXPIRED|SIGEXPIRED|NO_PUBKEY|NODATA|FAILURE)$/ { bad=1 }
+            END { exit !(valid==1 && matched==1 && !bad) }' "$d/verify-status"
+          printf 'FFmpeg 9.1 source PGP valid; exact release primary %s, SHA-256 %s\n' \
+            "$FF_RELEASE_FPR" "$FF_RELEASE_SOURCE_SHA256"
+          # Only authenticated source reaches this reader or the compiler.
+          python3 -I - "$d/source.tar.xz" <<'PY'
+          import pathlib, sys, tarfile
+          with tarfile.open(sys.argv[1], "r:xz") as z:
+              count = size = 0
+              seen = set()
+              markers = {}
+              for m in z:
+                  p = pathlib.PurePosixPath(m.name)
+                  assert not p.is_absolute() and p.parts and p.parts[0] == "ffmpeg-9.1"
+                  assert all(part not in ("", ".", "..") for part in p.parts)
+                  assert "\\" not in m.name and str(p) not in seen and len(m.name) < 1024
+                  assert m.isdir() or m.isreg(), m.name
+                  seen.add(str(p))
+                  if str(p) == "ffmpeg-9.1/configure":
+                      assert m.isreg() and m.size > 0, "signed configure must be a nonempty regular file"
+                  if str(p) in ("ffmpeg-9.1/RELEASE", "ffmpeg-9.1/FF_VERSION"):
+                      assert m.isreg() and 0 < m.size <= 16, f"invalid signed version marker {m.name!r}"
+                      with z.extractfile(m) as stream:
+                          markers[p.name] = stream.read(17)
+                  count += 1
+                  size += m.size
+                  assert count < 50000 and size < 500000000
+              assert "ffmpeg-9.1/configure" in seen, "signed configure missing"
+              assert markers.get("RELEASE") in (b"9.1", b"9.1\n"), "signed RELEASE missing/mismatched"
+              assert markers.get("FF_VERSION", b"9.1") in (b"9.1", b"9.1\n", b"n9.1", b"n9.1\n"), "signed optional FF_VERSION mismatched"
+              print(f"Validated authenticated FFmpeg 9.1 archive layout: {count} entries")
+          PY
+          nominal="/Applications/Xcode_26.6.app/Contents/Developer"
+          DEVELOPER_DIR="$(cd "$nominal" && pwd -P)"
+          export DEVELOPER_DIR
+          test "$(uname -m)" = arm64
+          test "${ImageVersion:?}" = 20261117.0516.1
+          test "$(/usr/bin/sw_vers -productVersion)" = 26.7.2
+          test "$(/usr/bin/sw_vers -buildVersion)" = 25G332
+          test "$(/usr/bin/xcodebuild -version)" = $'Xcode 26.6\nBuild version 17F113'
+          test "$(/usr/bin/xcrun --sdk macosx --show-sdk-version)" = 26.5
+          clang="$(/usr/bin/xcrun --sdk macosx --find clang)"
+          reported_sdk="$(/usr/bin/xcrun --sdk macosx --show-sdk-path)"
+          sdk="$(cd "$reported_sdk" && pwd -P)"
+          case "$clang" in "$DEVELOPER_DIR"/*/usr/bin/clang) ;; *) exit 1 ;; esac
+          case "$sdk" in "$DEVELOPER_DIR"/*/SDKs/MacOSX26.5.sdk|"$DEVELOPER_DIR"/*/SDKs/MacOSX.sdk) ;; *) exit 1 ;; esac
+          test "$(SDKROOT="$sdk" /usr/bin/xcrun --sdk macosx --show-sdk-version)" = 26.5
+          test -x "$clang" && test -d "$sdk"
+          "$clang" --version | tee "$d/clang-version"
+          /usr/bin/grep -Eq '^Apple clang version 21\.' "$d/clang-version"
+          /usr/bin/grep -Eq '^Target: arm64-apple-darwin[0-9.]+' "$d/clang-version"
+          printf 'int main(void){return 0;}\n' >"$d/native.c"
+          "$clang" -isysroot "$sdk" "$d/native.c" -o "$d/native"
+          test "$(/usr/bin/lipo -archs "$d/native")" = arm64
+          "$d/native"
+          mkdir "$d/sources" "$d/build" "$d/home"
+          /usr/bin/tar -xf "$d/source.tar.xz" --no-same-owner --no-same-permissions -C "$d/sources"
+          src="$d/sources/ffmpeg-9.1"
+          test "$(cat "$src/RELEASE")" = 9.1
+          observed_version=9.1
+          if test -f "$src/FF_VERSION"; then observed_version="$(cat "$src/FF_VERSION")"; fi
+          case "$observed_version" in 9.1|n9.1) ;; *) exit 1 ;; esac
+          cd "$d/build"
+          build_env=(/usr/bin/env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME="$d/home" DEVELOPER_DIR="$DEVELOPER_DIR" SDKROOT="$sdk" LC_ALL=C)
+          "${build_env[@]}" /bin/sh "$src/configure" --prefix="$d/scratch-install" \
+            --arch=aarch64 --target-os=darwin --cc="$clang" --objcc="$clang" --pkg-config=false \
+            --extra-cflags="-isysroot $sdk" --extra-ldflags="-isysroot $sdk" \
+            --disable-autodetect --disable-network --disable-ffplay --disable-doc --disable-shared --enable-static
+          "${build_env[@]}" /usr/bin/make -j 3 ffmpeg ffprobe
+          target="$RUNNER_TEMP/cosmic-verified-media"
+          test ! -e "$target" && test ! -L "$target"
+          mkdir -m 700 "$target"
+          for b in ffmpeg ffprobe; do
+            test -f "$b" && test ! -L "$b"
+            test "$(/usr/bin/lipo -archs "$b")" = arm64
+            /usr/bin/otool -L "$b" | /usr/bin/awk '
+              NR>1 {if ($1 !~ /^\/(usr\/lib\/|System\/Library\/Frameworks\/)/) bad=1; n++}
+              END {exit !(n>0 && !bad)}'
+            /usr/bin/install -m 500 "$b" "$target/$b"
+          done
+          (cd "$target"; /usr/bin/shasum -a 256 ffmpeg ffprobe > SHA256SUMS; cat SHA256SUMS)
+          for b in ffmpeg ffprobe; do
+            "$target/$b" -version >"$d/$b.version"
+            /usr/bin/awk -v tool="$b" -v version="$observed_version" 'NR==1 { ok=($1==tool && $2=="version" && $3==version) } END { exit !ok }' "$d/$b.version"
+          done
+          printf '%s\n' "$target" >>"${GITHUB_PATH:?}"
+          printf 'FFPROBE=%s/ffprobe\n' "$target" >>"${GITHUB_ENV:?}"
+      - name: Probe exact unchanged native media fixtures with the signed-source ARM64 build
+        run: |
+          set -euo pipefail
+          media="$RUNNER_TEMP/cosmic-verified-media"
+          test "$(command -v ffmpeg)" = "$media/ffmpeg"
+          test "$(command -v ffprobe)" = "$media/ffprobe"
+          test "${FFPROBE:?}" = "$media/ffprobe"
+          (cd "$media"; /usr/bin/shasum -a 256 -c SHA256SUMS)
+          python3 -I - <<'PY'
+          import hashlib, math, os, pathlib, subprocess
+          base = pathlib.Path.cwd() / 'tests' / 'fixtures'
+          ten = tuple((f'format.{ext}', 1) for ext in ('mp3','flac','mp4','mpeg','mpga','m4a','ogg','wav','webm','opus'))
+          for name, expected in (*ten, ('ID3 Unicode 東京.mp3', 4)):
+              path = base / name
+              assert path.is_file() and not path.is_symlink()
+              before = (path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+              value = float(subprocess.check_output([os.environ['FFPROBE'], '-v', 'error',
+                  '-protocol_whitelist', 'file', '-show_entries', 'format=duration',
+                  '-of', 'default=nw=1:nk=1', str(path)], text=True, timeout=15))
+              assert math.isfinite(value) and abs(value-expected) <= max(.15, expected*.03), (name, value)
+              assert before == (path.stat().st_mtime_ns, hashlib.sha256(path.read_bytes()).hexdigest())
+              print(f'{name}: {value:.6f}s sha256={before[1]}')
+          PY
+      - name: Verify the shared exact dependency snapshot before lifecycle execution
+        run: |
+          checked_head="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
+          test "$checked_head" = '94d87e6239ed0cddfdfc40e3443625c1f4b80513'
+          GITHUB_SHA="$checked_head" node "$GITHUB_WORKSPACE/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "$PWD"
+      - run: npm run deps:install-scripts:verify
+      - run: npm ci
+      - name: Verify installation preserved the reviewed graph
+        run: |
+          checked_head="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
+          test "$checked_head" = '94d87e6239ed0cddfdfc40e3443625c1f4b80513'
+          GITHUB_SHA="$checked_head" node "$GITHUB_WORKSPACE/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "$PWD"
+      - run: npm ls --all
+      - run: npm run deps:install-scripts:verify
+      - run: npm audit
+      - run: npm run validate
+      - name: Enable installed native SafariDriver on the hosted runner
+        run: sudo /usr/bin/safaridriver --enable
+      - name: Real Safari native files and mocked transcription acceptance
+        run: |
+          set -euo pipefail
+          media="$RUNNER_TEMP/cosmic-verified-media"
+          test "${FFPROBE:?}" = "$media/ffprobe"
+          (cd "$media"; /usr/bin/shasum -a 256 -c SHA256SUMS)
+          npm run test:safari:real
+      - name: Verify committed inputs after macOS certification
+        run: |
+          checked_head="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
+          test "$checked_head" = '94d87e6239ed0cddfdfc40e3443625c1f4b80513'
+          GITHUB_SHA="$checked_head" node "$GITHUB_WORKSPACE/scripts/verify-reviewed-dependency-graph.mjs" --ci --target-root "$PWD"
+      - name: Preserve synthetic Safari evidence even on failure
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: macos-native-browser-evidence
+          path: |
+            ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-1.2.0/test-results/safari-native-acceptance.json
+            ${{ github.workspace }}/cosmic-native/CosmicTranscriberWeb-1.2.0/test-results/safari-native-picker-panel.png
+          if-no-files-found: warn
+          retention-days: 7
