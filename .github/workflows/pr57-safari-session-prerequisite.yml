@@ -1,0 +1,114 @@
+name: Cosmic SafariDriver empty-session prerequisite
+on:
+  push:
+    branches: ['review/pr57-safari-session-prerequisite-20261123']
+    paths: ['.github/workflows/pr57-safari-session-prerequisite.yml']
+permissions: {}
+jobs:
+  safari-session:
+    if: ${{ github.repository == 'sohweiyu2023/CosmicTranscriberWeb' && github.event_name == 'push' && github.run_attempt == 1 && github.ref == 'refs/heads/review/pr57-safari-session-prerequisite-20261123' }}
+    runs-on: macos-26
+    timeout-minutes: 4
+    steps:
+      - name: Verify preinstalled native SafariDriver can open and close one empty session
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          /usr/bin/sw_vers
+          printf 'Runner image OS: %s; version: %s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+          /usr/bin/safaridriver --version
+          found=0
+          for bundle in /Applications/Safari.app /System/Applications/Safari.app /System/Cryptexes/App/System/Applications/Safari.app; do
+            info="$bundle/Contents/Info.plist"
+            if test -r "$info"; then
+              printf 'Installed Safari: %s / %s\n' "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info")" "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info")"
+              found=1
+              break
+            fi
+          done
+          test "$found" -eq 1
+          sudo -n /usr/bin/safaridriver --enable
+          python3 -I -u - <<'PY'
+          import hashlib, http.client, json, re, socket, subprocess, time
+          from urllib.parse import quote
+
+          driver = "/usr/bin/safaridriver"
+          host = "127.0.0.1"
+          with socket.socket() as sock:
+              sock.bind((host, 0))
+              port = sock.getsockname()[1]
+
+          def emit(stage, **fields):
+              print(json.dumps({"stage": stage, **fields}, sort_keys=True), flush=True)
+
+          def safe_token(value):
+              return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9. _-]{1,64}", value) else None
+
+          def request(method, path, timeout=3, body=None):
+              c = http.client.HTTPConnection(host, port, timeout=timeout)
+              started = time.monotonic()
+              try:
+                  headers = {} if body is None else {"Content-Type": "application/json; charset=utf-8"}
+                  c.request(method, path, body=body, headers=headers)
+                  r = c.getresponse()
+                  raw = r.read(16385)
+                  if len(raw) > 16384:
+                      return r.status, None, round((time.monotonic()-started)*1000), "oversize", None
+                  try:
+                      result = json.loads(raw)
+                      parsed = isinstance(result, dict) and "value" in result
+                      value = result["value"] if parsed else None
+                  except (ValueError, UnicodeError):
+                      parsed, value = False, None
+                  return r.status, value, round((time.monotonic()-started)*1000), None if parsed else "invalid_webdriver_json", hashlib.sha256(raw).hexdigest()
+              except (OSError, http.client.HTTPException) as e:
+                  return None, None, round((time.monotonic()-started)*1000), type(e).__name__, None
+              finally:
+                  c.close()
+
+          proc = subprocess.Popen([driver, "--port", str(port)], stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          try:
+              deadline = time.monotonic() + 12
+              while True:
+                  status, value, elapsed, transport, fingerprint = request("GET", "/status", timeout=1)
+                  ready = value.get("ready") if isinstance(value, dict) else None
+                  if (status == 200 and ready is True) or proc.poll() is not None or time.monotonic() >= deadline:
+                      break
+                  time.sleep(0.25)
+              emit("driver_status", http=status, ready=ready if isinstance(ready, bool) else None,
+                   elapsed_ms=elapsed, transport=transport, early_exit_code=proc.poll(), response_sha256=fingerprint)
+              if status != 200 or ready is not True or proc.poll() is not None:
+                  raise SystemExit(1)
+
+              body = b'{"capabilities":{"alwaysMatch":{"browserName":"safari"}}}'
+              status, value, elapsed, transport, fingerprint = request("POST", "/session", timeout=45, body=body)
+              data = value if isinstance(value, dict) else {}
+              caps = data.get("capabilities")
+              caps = caps if isinstance(caps, dict) else {}
+              session_id = data.get("sessionId")
+              has_id = isinstance(session_id, str) and 0 < len(session_id) <= 256
+              browser = safe_token(caps.get("browserName"))
+              emit("empty_session_create", http=status, error=safe_token(data.get("error")),
+                   elapsed_ms=elapsed, transport=transport, has_session_id=has_id,
+                   browser=browser, browser_version=safe_token(caps.get("browserVersion")),
+                   response_sha256=fingerprint)
+              closed = False
+              if has_id:
+                  status_delete, reply, elapsed, transport, fingerprint = request(
+                      "DELETE", "/session/" + quote(session_id, safe=""), timeout=8)
+                  closed = status_delete == 200 and reply is None and transport is None
+                  emit("empty_session_delete", http=status_delete, elapsed_ms=elapsed,
+                       transport=transport, closed=closed, response_sha256=fingerprint)
+              if status != 200 or not has_id or not browser or browser.lower() != "safari" or not closed:
+                  raise SystemExit(1)
+          finally:
+              if proc.poll() is None:
+                  proc.terminate()
+                  try:
+                      proc.wait(timeout=4)
+                  except subprocess.TimeoutExpired:
+                      proc.kill()
+                      proc.wait(timeout=4)
+          PY
