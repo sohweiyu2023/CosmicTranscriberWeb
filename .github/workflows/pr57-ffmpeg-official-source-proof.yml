@@ -1,0 +1,63 @@
+name: FFmpeg 9.1 official source authenticity preflight
+on:
+  push:
+    branches: ['review/pr57-windows-ffmpeg-910-proof-20261123']
+    paths: ['.github/workflows/pr57-ffmpeg-official-source-proof.yml']
+permissions:
+  contents: read
+jobs:
+  verify-upstream-source:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/review/pr57-windows-ffmpeg-910-proof-20261123' }}
+    runs-on: macos-26
+    timeout-minutes: 5
+    steps:
+      - name: Verify official inputs only (no unpacking or build)
+        shell: bash
+        env:
+          FF_RELEASE_FPR: FCF986EA15E6E293A5644F10B4322F04D67658D8
+          FF_RELEASE_KEY_SHA256: fd543a75d3bba61b759ca25b135e6f91b34aa37ae6987316e5c636bf3c78ae8d
+          FF_RELEASE_SIG_SHA256: 847abec601f2c21dfbee600edd9c7dcd675f41a6e3986bcfe6b78c7c5c2fac98
+          FF_RELEASE_SOURCE_SHA256: 1a4d394ae63d190a526cd052eb4415c156b5c5e2df37efab41a7de0b8fde2433
+        run: |
+          set -euo pipefail
+          umask 077
+          test "$(uname -m)" = arm64
+          d="$(mktemp -d "${RUNNER_TEMP:?}/ffmpeg-auth.XXXXXXXX")"
+          trap 'rm -rf -- "$d"' EXIT
+          mkdir -m 700 "$d/gnupg"
+          fetch() {
+            local lim="$1" target="$2" url="$3" http size
+            http="$(/usr/bin/curl -q --silent --show-error --fail --proto '=https' \
+              --connect-timeout 10 --max-time 60 --max-filesize "$lim" \
+              --output "$d/$target" --write-out '%{http_code}' -- "$url")"
+            test "$http" = 200
+            size="$(/usr/bin/stat -f %z "$d/$target")"
+            test "$size" -gt 0 && test "$size" -le "$lim"
+          }
+          fetch 10000 release-key.asc https://ffmpeg.org/ffmpeg-devel.asc
+          fetch 10000 source.sig.asc https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz.asc
+          fetch 30000000 source.tar.xz https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz
+          gpg="$(command -v gpg)"
+          test -x "$gpg"
+          "$gpg" --version | /usr/bin/sed -n '1p'
+          PGP=( "$gpg" --homedir "$d/gnupg" --batch --no-options --no-autostart --no-auto-key-retrieve --no-default-keyring )
+          "${PGP[@]}" --dearmor --output "$d/release-key.gpg" "$d/release-key.asc"
+          "${PGP[@]}" --dearmor --output "$d/source.sig.gpg" "$d/source.sig.asc"
+          ( cd "$d"
+            printf '%s  %s\n' "$FF_RELEASE_KEY_SHA256" release-key.gpg \
+              "$FF_RELEASE_SIG_SHA256" source.sig.gpg \
+              "$FF_RELEASE_SOURCE_SHA256" source.tar.xz | /usr/bin/shasum -a 256 -c
+          )
+          "${PGP[@]}" --with-colons --show-keys "$d/release-key.gpg" >"$d/key-status"
+          /usr/bin/awk -F: -v pin="$FF_RELEASE_FPR" '
+            $1=="pub" { primary++; pending=1; if ($2=="r" || $2=="e" || $2=="d") bad=1 }
+            $1=="fpr" && pending { matched += ($10==pin); pending=0 }
+            END { exit !(primary==1 && matched==1 && !bad) }' "$d/key-status"
+          "${PGP[@]}" --keyring "$d/release-key.gpg" --status-fd 1 \
+            --verify "$d/source.sig.gpg" "$d/source.tar.xz" >"$d/verify-status"
+          /usr/bin/awk -v pin="$FF_RELEASE_FPR" '
+            $1=="[GNUPG:]" && $2=="VALIDSIG" { valid++; matched+=($3==pin && $NF==pin && $5==1795133900) }
+            $1=="[GNUPG:]" && $2 ~ /^(BADSIG|ERRSIG|REVKEYSIG|EXPKEYSIG|EXPSIG|KEYEXPIRED|SIGEXPIRED|NO_PUBKEY|NODATA|FAILURE)$/ { bad=1 }
+            END { exit !(valid==1 && matched==1 && !bad) }' "$d/verify-status"
+          printf 'FFmpeg 9.1 source PGP valid; exact release primary %s, SHA-256 %s\n' \
+            "$FF_RELEASE_FPR" "$FF_RELEASE_SOURCE_SHA256"
