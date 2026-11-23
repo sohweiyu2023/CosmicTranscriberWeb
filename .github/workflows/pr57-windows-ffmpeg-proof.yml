@@ -36,11 +36,19 @@ jobs:
           test "$(node --version)" = "v26.7.0"
           test "$(npm --version)" = "12.0.2"
       - name: Verify the committed dependency snapshot before installation
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
       - name: Install the exact committed graph without lifecycle execution
         run: npm ci --ignore-scripts
       - name: Verify package metadata and lock remain unchanged
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
       - name: Verify reviewed install-script policy
         run: npm run deps:install-scripts:verify
       - name: Verify complete installed dependency tree
@@ -57,14 +65,22 @@ jobs:
       - name: Full dependency-free adversarial gate
         run: npm run validate
       - name: Verify committed inputs after validation
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
       - name: Verify exact approved single MP3 bytes (no provider calls)
         run: node --input-type=module -e "import {readFile} from 'node:fs/promises'; import {verifyFixedMp3} from './scripts/staging-single-mp3-smoke.mjs'; verifyFixedMp3(await readFile('tests/fixtures/approved-single-mp3/staging-speech.mp3'));"
       - name: Validate exactly the eight approved synthetic speech fixtures (no provider calls)
         run: node scripts/prepare-remaining-eight-fixtures.mjs tests/fixtures/approved-remaining-eight "$RUNNER_TEMP/approved-eight"
       - name: Bind exact reviewed inputs and fixture bytes
         id: reviewed-input-bundle
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --prepare-input-bundle
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci --prepare-input-bundle
       - name: Upload reviewed lock and fixtures
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -101,16 +117,28 @@ jobs:
       - name: Verify isolated reviewed input bundle before restoring fixture data
         env:
           REVIEWED_INPUTS_SHA256: ${{ needs.resolve-lock.outputs.reviewed_inputs_sha256 }}
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci --restore-input-bundle
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci --restore-input-bundle
       - name: Activate reviewed npm for shared-lock preflight
         shell: pwsh
         run: npm install --global npm@12.0.2 --ignore-scripts --no-audit --no-fund
       - name: Verify the shared exact dependency snapshot before lifecycle execution
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
       - run: npm run deps:install-scripts:verify
       - run: npm ci
       - name: Verify installation preserved the reviewed graph
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
       - run: npm ls --all
       - run: npm run deps:install-scripts:verify
       - run: npm audit
@@ -274,4 +302,8 @@ jobs:
           Write-Output ('source-file=' + $sourceFile) >> $env:GITHUB_OUTPUT
           Write-Output ('source-sha256=' + $sourceHash) >> $env:GITHUB_OUTPUT
       - name: Verify committed inputs before certified artifact publication
-        run: node "${{ github.workspace }}/scripts/verify-reviewed-dependency-graph.mjs" --ci
+        shell: bash
+        run: |
+          checked_head="$(git rev-parse HEAD)"
+          test "$checked_head" = "94d87e6239ed0cddfdfc40e3443625c1f4b80513"
+          GITHUB_SHA="$checked_head" node ./scripts/verify-reviewed-dependency-graph.mjs --ci
