@@ -223,9 +223,10 @@ export async function adminListUsers(env, { status = 'all', limit = 100, offset 
     jobs_started, chunks_started, chunks_succeeded, chunks_failed, bytes_requested, audio_seconds_requested
     FROM cosmic_users ${where} ORDER BY last_seen_at DESC, created_at DESC LIMIT ? OFFSET ?`);
   const result = await stmt.bind(...params, boundedLimit, boundedOffset).all();
+  const admins = configuredAdminEmails(env);
   return {
     users: (result?.results || []).map(row => ({
-      id: Number(row.id), email: row.email, status: row.status, isAdmin: configuredAdminEmails(env).has(normalizeIdentityEmail(row.email)),
+      id: Number(row.id), email: row.email, status: row.status, isAdmin: admins.has(normalizeIdentityEmail(row.email)),
       createdAt: Number(row.created_at), lastSeenAt: Number(row.last_seen_at),
       approvedAt: row.approved_at == null ? null : Number(row.approved_at), blockedAt: row.blocked_at == null ? null : Number(row.blocked_at),
       jobsStarted: Number(row.jobs_started || 0), chunksStarted: Number(row.chunks_started || 0), chunksSucceeded: Number(row.chunks_succeeded || 0),

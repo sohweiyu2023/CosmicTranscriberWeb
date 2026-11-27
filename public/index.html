@@ -155,7 +155,7 @@
     <form id="keyForm" method="dialog" class="dialog-card">
       <div class="dialog-head"><div><p class="eyebrow">SECURE BYOK SESSION</p><h2 id="keyDialogTitle">Configure OpenAI API key</h2></div><button id="closeKeyBtn" class="icon-btn" type="button" aria-label="Close">×</button></div>
       <p>Use a dedicated OpenAI Project and a restricted key where practical. ChatGPT subscription billing and OpenAI API billing are separate.</p>
-      <label>OpenAI API key <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" maxlength="512" required></label>
+      <label for="apiKeyInput">OpenAI API key <div class="secret-input-row"><input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" maxlength="512" required><button id="toggleKeyVisibilityBtn" class="ghost secret-toggle" type="button" aria-pressed="false" aria-label="Show or hide API key">Show</button></div></label>
       <p class="fineprint">The plaintext key is posted once over HTTPS to this site's Worker. It is never stored in localStorage, sessionStorage or IndexedDB, and the encrypted credential cookie is HttpOnly.</p>
       <div id="keyDialogError" class="error-text" role="alert"></div>
       <p id="keyDialogProgress" class="muted" role="status" aria-live="polite" hidden></p>
