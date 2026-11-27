@@ -1,5 +1,7 @@
 # Cosmic Transcriber Web — Full Independent System Audit Report
 
+> **Scope of the November 22 evidence:** This is the historical application-only audit at PR #57 base `209c1b1`. The manifest, lock and platform test status below describe that snapshot, not the later isolated dependency candidate. See `HANDOVER.md` for the newer gate. A package advisory subsequently withdrawn by its publisher does not by itself establish that required CI passed.
+
 **Audit Date:** 2026-11-22  
 **Repository:** [CosmicTranscriberWeb](https://github.com/sohweiyu2023/CosmicTranscriberWeb) ([PR #57](https://github.com/sohweiyu2023/CosmicTranscriberWeb/pull/57))  
 **Scope:** Web edition only (Cosmic Desktop untouched). Zero pushes, merges, live provider calls, spending, or deployments executed from this sandbox.

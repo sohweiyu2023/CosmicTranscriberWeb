@@ -1,5 +1,11 @@
 # Cosmic Transcriber Web — Complete System Handover
 
+## Current review gate (2026-11-27)
+
+The sections below preserve the November 22 application-only handover. The separate verification candidate applies those app changes and an independent upstream dependency refresh; it does not incorporate the excluded `72436580` descendant. The original app-only stage leaves the manifest and lock unchanged. The pinned refreshed graph passed local lock audit, committed graph verification, license inventory verification and frontend build, plus five focused regressions. Full Windows validation was incomplete on the local sandbox; hosted Linux, Windows and macOS browser verification is still required. Production was not changed.
+
+For verification, use a separate offline CI branch, not the existing staging-certification ref. Neither merging to main nor any staging or production deployment, real provider calls or migration is part of this verification pass. Do not present a WebKit result as native Safari evidence.
+
 **Handover Date:** 2026-11-22  
 **Repository:** [CosmicTranscriberWeb](https://github.com/sohweiyu2023/CosmicTranscriberWeb) ([PR #57](https://github.com/sohweiyu2023/CosmicTranscriberWeb/pull/57))  
 **Current Version:** `1.2.0` (Desktop behavioral baseline: `1.0.27`)  
