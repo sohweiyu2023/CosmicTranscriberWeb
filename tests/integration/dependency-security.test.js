@@ -9,7 +9,7 @@ const miniflareRequire=createRequire(atRoot.resolve('miniflare'));
 const pluginPackage=new URL('../../node_modules/@cloudflare/vitest-plugin/package.json',import.meta.url);
 const pluginRequire=createRequire(pluginPackage);
 test('actual tooling parents resolve the patched same-major libraries',()=>{
- assert.equal(installed('undici',miniflareRequire).version,'7.30.1');assert.equal(installed('zod',pluginRequire).version,'4.6.6');
+ assert.equal(installed('undici',miniflareRequire).version,'7.30.2');assert.equal(installed('zod',pluginRequire).version,'4.6.6');
  assert.match(installed('miniflare').version,/^5\./);assert.match(JSON.parse(readFileSync(pluginPackage,'utf8')).version,/^1\./);
 });
 test('patched Undici verifies uppercase integrity tokens and rejects wrong response bytes',async()=>{
